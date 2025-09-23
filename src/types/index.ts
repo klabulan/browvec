@@ -33,5 +33,14 @@ export {
   CollectionUtils
 } from '../embedding/utils.js';
 
-// Embedding provider interfaces
+// Embedding provider interfaces and implementations
 export * from '../embedding/providers/BaseProvider.js';
+export {
+  TransformersProvider,
+  createTransformersProvider,
+  isTransformersSupported,
+  getModelInfo
+} from '../embedding/providers/TransformersProvider.js';
+
+// Embedding cache implementation
+export { MemoryCache } from '../embedding/cache/MemoryCache.js';

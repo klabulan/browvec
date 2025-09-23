@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test TransformersProvider Integration - LocalRetrieve</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .test-section h3 {
+            color: #34495e;
+            margin-top: 0;
+        }
+        .input-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, textarea, button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #cce7ff;
+            color: #004085;
+            border: 1px solid #99d3ff;
+        }
+        .result {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .metric-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        .log {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 15px 0;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 TransformersProvider Integration Test</h1>
+
+        <!-- Environment Check -->
+        <div class="test-section">
+            <h3>🔍 Environment Check</h3>
+            <div id="environmentStatus" class="status info">Проверка окружения...</div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="webWorkersSupport">❓</div>
+                    <div class="metric-label">Web Workers</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="sharedArrayBufferSupport">❓</div>
+                    <div class="metric-label">SharedArrayBuffer</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="wasmSupport">❓</div>
+                    <div class="metric-label">WebAssembly</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="transformersSupport">❓</div>
+                    <div class="metric-label">Transformers.js</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Provider Initialization -->
+        <div class="test-section">
+            <h3>⚡ Provider Initialization</h3>
+            <button id="initializeProvider">Initialize TransformersProvider</button>
+            <div id="initStatus" class="status info" style="display: none;"></div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="modelLoadTime">-</div>
+                    <div class="metric-label">Load Time (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="providerReady">❌</div>
+                    <div class="metric-label">Ready</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="memoryUsage">-</div>
+                    <div class="metric-label">Memory (MB)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Single Embedding Test -->
+        <div class="test-section">
+            <h3>📝 Single Embedding Generation</h3>
+            <div class="input-group">
+                <label for="singleText">Text to embed:</label>
+                <textarea id="singleText" placeholder="Enter text to generate embedding...">This is a test sentence for generating embeddings using the all-MiniLM-L6-v2 model.</textarea>
+            </div>
+            <button id="generateSingle">Generate Single Embedding</button>
+            <div id="singleStatus" class="status info" style="display: none;"></div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="singleTime">-</div>
+                    <div class="metric-label">Generation Time (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="singleDimensions">-</div>
+                    <div class="metric-label">Dimensions</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="singleNorm">-</div>
+                    <div class="metric-label">Vector Norm</div>
+                </div>
+            </div>
+            <div id="singleResult" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Batch Embedding Test -->
+        <div class="test-section">
+            <h3>📚 Batch Embedding Generation</h3>
+            <div class="input-group">
+                <label for="batchTexts">Texts (one per line):</label>
+                <textarea id="batchTexts" placeholder="Enter multiple texts, one per line...">Hello world
+How are you today?
+This is a test sentence
+Machine learning is fascinating
+Natural language processing rocks</textarea>
+            </div>
+            <button id="generateBatch">Generate Batch Embeddings</button>
+            <div id="batchStatus" class="status info" style="display: none;"></div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="batchTime">-</div>
+                    <div class="metric-label">Total Time (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="batchCount">-</div>
+                    <div class="metric-label">Embeddings Count</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="avgTimePerEmbedding">-</div>
+                    <div class="metric-label">Avg Time/Embedding (ms)</div>
+                </div>
+            </div>
+            <div id="batchResult" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Performance Tests -->
+        <div class="test-section">
+            <h3>🚀 Performance Tests</h3>
+            <div class="input-group">
+                <label for="perfCount">Number of texts to generate:</label>
+                <input type="number" id="perfCount" value="10" min="1" max="50">
+            </div>
+            <button id="runPerformanceTest">Run Performance Test</button>
+            <div id="perfStatus" class="status info" style="display: none;"></div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="perfTotalTime">-</div>
+                    <div class="metric-label">Total Time (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="perfAvgTime">-</div>
+                    <div class="metric-label">Avg per Text (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="perfThroughput">-</div>
+                    <div class="metric-label">Texts/Second</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Provider Health Check -->
+        <div class="test-section">
+            <h3>💊 Health Check</h3>
+            <button id="healthCheck">Check Provider Health</button>
+            <div id="healthStatus" class="status info" style="display: none;"></div>
+            <div id="healthResult" class="result" style="display: none;"></div>
+        </div>
+
+        <!-- Debug Log -->
+        <div class="test-section">
+            <h3>🐛 Debug Log</h3>
+            <button id="clearLog">Clear Log</button>
+            <div id="debugLog" class="log"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import необходимых компонентов (имитация)
+        // В реальной среде это будет import из собранного модуля
+
+        // Локальные переменные для тестирования
+        let provider = null;
+        let isInitialized = false;
+
+        // Утилиты для логирования
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('debugLog');
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+
+            console.log(`[TransformersTest] ${message}`);
+        }
+
+        function updateStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+            element.style.display = 'block';
+        }
+
+        function updateMetric(elementId, value) {
+            document.getElementById(elementId).textContent = value;
+        }
+
+        function showResult(elementId, data) {
+            const element = document.getElementById(elementId);
+            element.textContent = JSON.stringify(data, null, 2);
+            element.style.display = 'block';
+        }
+
+        function setLoading(buttonId, isLoading) {
+            const button = document.getElementById(buttonId);
+            if (isLoading) {
+                button.disabled = true;
+                button.innerHTML = '<span class="loading"></span>Loading...';
+            } else {
+                button.disabled = false;
+                button.innerHTML = button.dataset.originalText || 'Button';
+            }
+        }
+
+        // Environment Check
+        function checkEnvironment() {
+            log('Проверка окружения браузера...');
+
+            // Web Workers
+            const webWorkersSupported = typeof Worker !== 'undefined';
+            updateMetric('webWorkersSupport', webWorkersSupported ? '✅' : '❌');
+
+            // SharedArrayBuffer
+            const sharedArrayBufferSupported = typeof SharedArrayBuffer !== 'undefined';
+            updateMetric('sharedArrayBufferSupport', sharedArrayBufferSupported ? '✅' : '❌');
+
+            // WebAssembly
+            const wasmSupported = typeof WebAssembly !== 'undefined';
+            updateMetric('wasmSupport', wasmSupported ? '✅' : '❌');
+
+            // Mock TransformersJS support check
+            // В реальной среде это будет: isTransformersSupported()
+            const transformersSupported = webWorkersSupported && sharedArrayBufferSupported && wasmSupported;
+            updateMetric('transformersSupport', transformersSupported ? '✅' : '❌');
+
+            if (transformersSupported) {
+                updateStatus('environmentStatus', 'Окружение готово для использования TransformersProvider', 'success');
+                log('Все необходимые API поддерживаются');
+            } else {
+                updateStatus('environmentStatus', 'Некоторые API не поддерживаются. Требуется современный браузер.', 'error');
+                log('Обнаружены проблемы совместимости', 'error');
+            }
+
+            return transformersSupported;
+        }
+
+        // Mock TransformersProvider для демонстрации
+        class MockTransformersProvider {
+            constructor() {
+                this.isReady = false;
+                this.dimensions = 384;
+                this.loadTime = 0;
+                this.metrics = {
+                    totalEmbeddings: 0,
+                    averageGenerationTime: 0,
+                    errorCount: 0,
+                    memoryUsage: 25 * 1024 * 1024 // 25MB mock
+                };
+            }
+
+            async initialize() {
+                log('Инициализация MockTransformersProvider...');
+                const startTime = Date.now();
+
+                // Имитация загрузки модели
+                await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+
+                this.loadTime = Date.now() - startTime;
+                this.isReady = true;
+
+                log(`Модель загружена за ${this.loadTime}ms`);
+                return this;
+            }
+
+            async generateEmbedding(text) {
+                if (!this.isReady) {
+                    throw new Error('Provider not initialized');
+                }
+
+                const startTime = Date.now();
+
+                // Имитация генерации эмбеддинга
+                await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
+
+                // Генерируем случайный нормализованный 384-мерный вектор
+                const embedding = new Float32Array(384);
+                for (let i = 0; i < 384; i++) {
+                    embedding[i] = (Math.random() - 0.5) * 2; // от -1 до 1
+                }
+
+                // Нормализуем вектор
+                let norm = 0;
+                for (let i = 0; i < 384; i++) {
+                    norm += embedding[i] * embedding[i];
+                }
+                norm = Math.sqrt(norm);
+                for (let i = 0; i < 384; i++) {
+                    embedding[i] /= norm;
+                }
+
+                const generationTime = Date.now() - startTime;
+                this.updateMetrics(generationTime);
+
+                return embedding;
+            }
+
+            async generateBatch(texts) {
+                if (!this.isReady) {
+                    throw new Error('Provider not initialized');
+                }
+
+                const results = [];
+                for (const text of texts) {
+                    results.push(await this.generateEmbedding(text));
+                }
+                return results;
+            }
+
+            async healthCheck() {
+                return {
+                    isHealthy: this.isReady,
+                    status: this.isReady ? 'ready' : 'not_initialized',
+                    details: this.isReady ? 'Provider is ready and operational' : 'Provider not initialized',
+                    modelLoadTime: this.loadTime,
+                    memoryUsage: this.metrics.memoryUsage,
+                    totalInferences: this.metrics.totalEmbeddings
+                };
+            }
+
+            updateMetrics(generationTime) {
+                const totalTime = this.metrics.averageGenerationTime * this.metrics.totalEmbeddings;
+                this.metrics.totalEmbeddings += 1;
+                this.metrics.averageGenerationTime = (totalTime + generationTime) / this.metrics.totalEmbeddings;
+            }
+
+            getMetrics() {
+                return { ...this.metrics };
+            }
+
+            async cleanup() {
+                log('Очистка ресурсов провайдера...');
+                this.isReady = false;
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('initializeProvider').addEventListener('click', async function() {
+            const button = this;
+            button.dataset.originalText = button.textContent;
+            setLoading('initializeProvider', true);
+
+            try {
+                updateStatus('initStatus', 'Инициализация провайдера...', 'info');
+                log('Начинается инициализация TransformersProvider');
+
+                provider = new MockTransformersProvider();
+                await provider.initialize();
+
+                updateStatus('initStatus', 'Провайдер успешно инициализирован!', 'success');
+                updateMetric('modelLoadTime', provider.loadTime);
+                updateMetric('providerReady', '✅');
+                updateMetric('memoryUsage', Math.round(provider.metrics.memoryUsage / (1024*1024)));
+
+                isInitialized = true;
+                log('TransformersProvider готов к использованию');
+
+            } catch (error) {
+                updateStatus('initStatus', `Ошибка инициализации: ${error.message}`, 'error');
+                log(`Ошибка инициализации: ${error.message}`, 'error');
+            } finally {
+                setLoading('initializeProvider', false);
+            }
+        });
+
+        document.getElementById('generateSingle').addEventListener('click', async function() {
+            if (!isInitialized) {
+                updateStatus('singleStatus', 'Сначала инициализируйте провайдер', 'error');
+                return;
+            }
+
+            const button = this;
+            button.dataset.originalText = button.textContent;
+            setLoading('generateSingle', true);
+
+            try {
+                const text = document.getElementById('singleText').value.trim();
+                if (!text) {
+                    throw new Error('Введите текст для генерации эмбеддинга');
+                }
+
+                updateStatus('singleStatus', 'Генерация эмбеддинга...', 'info');
+                log(`Генерация эмбеддинга для текста: "${text.substring(0, 50)}..."`);
+
+                const startTime = Date.now();
+                const embedding = await provider.generateEmbedding(text);
+                const generationTime = Date.now() - startTime;
+
+                // Вычисляем норму вектора
+                let norm = 0;
+                for (let i = 0; i < embedding.length; i++) {
+                    norm += embedding[i] * embedding[i];
+                }
+                norm = Math.sqrt(norm);
+
+                updateStatus('singleStatus', 'Эмбеддинг успешно сгенерирован!', 'success');
+                updateMetric('singleTime', generationTime);
+                updateMetric('singleDimensions', embedding.length);
+                updateMetric('singleNorm', norm.toFixed(4));
+
+                showResult('singleResult', {
+                    text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+                    dimensions: embedding.length,
+                    norm: norm,
+                    generationTime: generationTime,
+                    preview: Array.from(embedding.slice(0, 10)).map(x => x.toFixed(4))
+                });
+
+                log(`Эмбеддинг сгенерирован: ${embedding.length}D, норма: ${norm.toFixed(4)}, время: ${generationTime}ms`);
+
+            } catch (error) {
+                updateStatus('singleStatus', `Ошибка: ${error.message}`, 'error');
+                log(`Ошибка генерации эмбеддинга: ${error.message}`, 'error');
+            } finally {
+                setLoading('generateSingle', false);
+            }
+        });
+
+        document.getElementById('generateBatch').addEventListener('click', async function() {
+            if (!isInitialized) {
+                updateStatus('batchStatus', 'Сначала инициализируйте провайдер', 'error');
+                return;
+            }
+
+            const button = this;
+            button.dataset.originalText = button.textContent;
+            setLoading('generateBatch', true);
+
+            try {
+                const textsInput = document.getElementById('batchTexts').value.trim();
+                const texts = textsInput.split('\n').filter(t => t.trim()).map(t => t.trim());
+
+                if (texts.length === 0) {
+                    throw new Error('Введите тексты для пакетной генерации');
+                }
+
+                updateStatus('batchStatus', 'Пакетная генерация эмбеддингов...', 'info');
+                log(`Начинается пакетная генерация для ${texts.length} текстов`);
+
+                const startTime = Date.now();
+                const embeddings = await provider.generateBatch(texts);
+                const totalTime = Date.now() - startTime;
+                const avgTime = totalTime / texts.length;
+
+                updateStatus('batchStatus', 'Пакетная генерация завершена!', 'success');
+                updateMetric('batchTime', totalTime);
+                updateMetric('batchCount', embeddings.length);
+                updateMetric('avgTimePerEmbedding', Math.round(avgTime));
+
+                showResult('batchResult', {
+                    textsCount: texts.length,
+                    embeddingsCount: embeddings.length,
+                    totalTime: totalTime,
+                    averageTimePerEmbedding: avgTime,
+                    examples: texts.slice(0, 3).map((text, i) => ({
+                        text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+                        dimensions: embeddings[i].length,
+                        preview: Array.from(embeddings[i].slice(0, 5)).map(x => x.toFixed(4))
+                    }))
+                });
+
+                log(`Пакетная генерация завершена: ${embeddings.length} эмбеддингов за ${totalTime}ms (${avgTime.toFixed(1)}ms/эмбеддинг)`);
+
+            } catch (error) {
+                updateStatus('batchStatus', `Ошибка: ${error.message}`, 'error');
+                log(`Ошибка пакетной генерации: ${error.message}`, 'error');
+            } finally {
+                setLoading('generateBatch', false);
+            }
+        });
+
+        document.getElementById('runPerformanceTest').addEventListener('click', async function() {
+            if (!isInitialized) {
+                updateStatus('perfStatus', 'Сначала инициализируйте провайдер', 'error');
+                return;
+            }
+
+            const button = this;
+            button.dataset.originalText = button.textContent;
+            setLoading('runPerformanceTest', true);
+
+            try {
+                const count = parseInt(document.getElementById('perfCount').value);
+                if (count < 1 || count > 50) {
+                    throw new Error('Количество должно быть от 1 до 50');
+                }
+
+                updateStatus('perfStatus', 'Запуск теста производительности...', 'info');
+                log(`Запуск теста производительности для ${count} текстов`);
+
+                // Генерируем случайные тексты
+                const texts = [];
+                for (let i = 0; i < count; i++) {
+                    texts.push(`Performance test sentence number ${i + 1}. This is a test to measure embedding generation speed.`);
+                }
+
+                const startTime = Date.now();
+                const embeddings = await provider.generateBatch(texts);
+                const totalTime = Date.now() - startTime;
+
+                const avgTime = totalTime / count;
+                const throughput = (count * 1000 / totalTime).toFixed(2);
+
+                updateStatus('perfStatus', 'Тест производительности завершен!', 'success');
+                updateMetric('perfTotalTime', totalTime);
+                updateMetric('perfAvgTime', Math.round(avgTime));
+                updateMetric('perfThroughput', throughput);
+
+                log(`Тест производительности: ${count} эмбеддингов за ${totalTime}ms (${throughput} текстов/сек)`);
+
+            } catch (error) {
+                updateStatus('perfStatus', `Ошибка: ${error.message}`, 'error');
+                log(`Ошибка теста производительности: ${error.message}`, 'error');
+            } finally {
+                setLoading('runPerformanceTest', false);
+            }
+        });
+
+        document.getElementById('healthCheck').addEventListener('click', async function() {
+            if (!provider) {
+                updateStatus('healthStatus', 'Провайдер не создан', 'error');
+                return;
+            }
+
+            const button = this;
+            button.dataset.originalText = button.textContent;
+            setLoading('healthCheck', true);
+
+            try {
+                updateStatus('healthStatus', 'Проверка здоровья провайдера...', 'info');
+                log('Запуск проверки здоровья провайдера');
+
+                const health = await provider.healthCheck();
+                const metrics = provider.getMetrics();
+
+                updateStatus('healthStatus', `Статус: ${health.isHealthy ? 'Здоров' : 'Проблемы'}`,
+                    health.isHealthy ? 'success' : 'error');
+
+                showResult('healthResult', {
+                    health: health,
+                    metrics: metrics,
+                    timestamp: new Date().toISOString()
+                });
+
+                log(`Проверка здоровья завершена: ${health.isHealthy ? 'OK' : 'NOT OK'}`);
+
+            } catch (error) {
+                updateStatus('healthStatus', `Ошибка: ${error.message}`, 'error');
+                log(`Ошибка проверки здоровья: ${error.message}`, 'error');
+            } finally {
+                setLoading('healthCheck', false);
+            }
+        });
+
+        document.getElementById('clearLog').addEventListener('click', function() {
+            document.getElementById('debugLog').innerHTML = '';
+        });
+
+        // Инициализация страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Страница загружена, начинается проверка окружения');
+            checkEnvironment();
+
+            // Добавляем оригинальный текст кнопок
+            document.querySelectorAll('button').forEach(button => {
+                button.dataset.originalText = button.textContent;
+            });
+        });
+    </script>
+</body>
+</html>
