@@ -53,6 +53,9 @@ export interface EmbeddingConfig {
   /** Провайдер по умолчанию для новых коллекций */
   defaultProvider: EmbeddingProviderType;
 
+  /** Провайдер для конкретной операции (используется в BaseProvider) */
+  provider?: EmbeddingProviderType;
+
   /** Модель по умолчанию */
   defaultModel?: string;
 

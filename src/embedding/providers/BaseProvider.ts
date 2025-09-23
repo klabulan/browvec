@@ -206,7 +206,7 @@ export abstract class BaseEmbeddingProvider implements EmbeddingProvider {
     const suggestions: string[] = [];
 
     // Базовая валидация
-    if (!config.provider) {
+    if (!config.provider && !config.defaultProvider) {
       errors.push('Provider type is required');
     }
 

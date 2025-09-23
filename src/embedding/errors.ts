@@ -139,7 +139,7 @@ export class ProviderInitializationError extends ProviderError {
     this.name = 'ProviderInitializationError';
 
     // Инициализация обычно не подлежит автоматическому повтору
-    this.recoveryInfo = {
+    (this as any).recoveryInfo = {
       canRetry: false,
       retryAfter: 0,
       maxRetries: 0,
