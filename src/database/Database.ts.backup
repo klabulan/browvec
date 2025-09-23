@@ -1,0 +1,725 @@
+/**
+ * Database Class - Complete sql.js Compatible Database Wrapper
+ * 
+ * Provides a complete sql.js compatible Database interface that uses the
+ * LocalRetrieve Worker infrastructure for all database operations.
+ * 
+ * Supports both synchronous sql.js API (with limitations) and enhanced async API.
+ */
+
+import { WorkerRPC, createWorkerRPC } from '../utils/rpc.js';
+import { Statement } from './Statement.js';
+import type {
+  DatabaseAPI,
+  StatementAPI,
+  DatabaseConfig,
+  DatabaseState,
+  StatementResult,
+  ExecOptions,
+  SQLParams,
+  SQLValue
+} from '../types/database.js';
+import type { SearchRequest, SearchResponse } from '../types/worker.js';
+import { 
+  DatabaseError, 
+  DEFAULT_DATABASE_CONFIG, 
+  resolveWorkerUrl,
+  validateSQL,
+  validateSQLParams 
+} from '../types/database.js';
+import {
+  SQLDatabase,
+  SQLStatement,
+  QueryExecResult,
+  SQLDatabaseConfig,
+  CompatibilityMode,
+  SQLCompatConfig,
+  DEFAULT_SQL_COMPAT_CONFIG,
+  transformToSQLResult,
+  SQLError,
+  SQLDatabaseError,
+  isSQLParams,
+  validateSQL as validateSQLQuery
+} from '../types/sql.js';
+
+export class Database implements SQLDatabase {
+  private state: DatabaseState;
+  private workerRPC: WorkerRPC | null = null;
+  private isInitialized = false;
+  private compatConfig: SQLCompatConfig;
+  private rowsModified = 0;
+  private activeStatements = new Set<Statement>();
+
+  constructor(config: DatabaseConfig = {}) {
+    const finalConfig = { ...DEFAULT_DATABASE_CONFIG, ...config };
+    
+    this.state = {
+      isOpen: false,
+      filename: config.filename || ':memory:',
+      worker: null,
+      workerRPC: null
+    };
+
+    this.compatConfig = { ...DEFAULT_SQL_COMPAT_CONFIG };
+
+    // Initialize worker if not in static creation mode
+    if (config.filename !== undefined) {
+      this._initializeWorker(finalConfig);
+    }
+  }
+
+  /**
+   * Static factory method for sql.js compatibility
+   */
+  static async create(buffer?: Uint8Array, filename?: string): Promise<Database> {
+    const config: DatabaseConfig = {
+      filename: filename || ':memory:'
+    };
+
+    const db = new Database(config);
+    await db._initialize();
+
+    // If buffer provided, import it
+    if (buffer) {
+      await db._importBuffer(buffer);
+    }
+
+    return db;
+  }
+
+  /**
+   * Execute SQL statement(s) and return results (sql.js compatible)
+   */
+  exec(sql: string): QueryExecResult[] {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    if (!validateSQLQuery(sql)) {
+      throw new SQLDatabaseError('Invalid SQL statement');
+    }
+
+    try {
+      // For sql.js compatibility, use synchronous execution with limitations
+      return this._execSyncCompat(sql);
+    } catch (error) {
+      if (error instanceof SQLError) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`SQL execution failed: ${message}`);
+    }
+  }
+
+  /**
+   * Execute SQL statement(s) asynchronously (enhanced API)
+   */
+  async execAsync(sql: string): Promise<QueryExecResult[]> {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    if (!validateSQLQuery(sql)) {
+      throw new SQLDatabaseError('Invalid SQL statement');
+    }
+
+    if (!this.workerRPC) {
+      throw new SQLDatabaseError('Worker not available');
+    }
+
+    try {
+      const result = await this.workerRPC.select({ sql });
+      return [transformToSQLResult(result.rows || [])];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`SQL execution failed: ${message}`);
+    }
+  }
+
+  /**
+   * Run SQL statement with parameters (sql.js compatible)
+   */
+  run(sql: string, params?: SQLParams): Database {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    if (!validateSQLQuery(sql)) {
+      throw new SQLDatabaseError('Invalid SQL statement');
+    }
+
+    if (params !== undefined && !isSQLParams(params)) {
+      throw new SQLDatabaseError('Invalid SQL parameters');
+    }
+
+    try {
+      this._runSyncCompat(sql, params);
+      return this;
+    } catch (error) {
+      if (error instanceof SQLError) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`SQL execution failed: ${message}`);
+    }
+  }
+
+  /**
+   * Run SQL statement with parameters asynchronously (enhanced API)
+   */
+  async runAsync(sql: string, params?: SQLParams): Promise<Database> {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    if (!validateSQLQuery(sql)) {
+      throw new SQLDatabaseError('Invalid SQL statement');
+    }
+
+    if (params !== undefined && !isSQLParams(params)) {
+      throw new SQLDatabaseError('Invalid SQL parameters');
+    }
+
+    if (!this.workerRPC) {
+      throw new SQLDatabaseError('Worker not available');
+    }
+
+    try {
+      await this.workerRPC.exec({ sql, params });
+      this.rowsModified++; // Track modifications
+      return this;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`SQL execution failed: ${message}`);
+    }
+  }
+
+  /**
+   * Prepare SQL statement (sql.js compatible)
+   */
+  prepare(sql: string): Statement {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    if (!validateSQLQuery(sql)) {
+      throw new SQLDatabaseError('Invalid SQL statement');
+    }
+
+    const statement = new Statement(this as any, sql);
+    this.activeStatements.add(statement);
+    return statement;
+  }
+
+  /**
+   * Prepare SQL statement asynchronously (enhanced API)
+   */
+  async prepareAsync(sql: string): Promise<Statement> {
+    return this.prepare(sql); // Preparation is synchronous, execution is async
+  }
+
+  /**
+   * Export database as binary data (sql.js compatible)
+   */
+  export(): Uint8Array {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    try {
+      return this._exportSyncCompat();
+    } catch (error) {
+      if (error instanceof SQLError) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Database export failed: ${message}`);
+    }
+  }
+
+  /**
+   * Export database as binary data asynchronously (enhanced API)
+   */
+  async exportAsync(): Promise<Uint8Array> {
+    if (!this.state.isOpen) {
+      throw new SQLDatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new SQLDatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.export();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Database export failed: ${message}`);
+    }
+  }
+
+  /**
+   * Close database connection (sql.js compatible)
+   */
+  close(): void {
+    // Finalize all active statements
+    for (const statement of this.activeStatements) {
+      try {
+        statement.free();
+      } catch (error) {
+        console.warn('Error finalizing statement:', error);
+      }
+    }
+    this.activeStatements.clear();
+
+    if (this.workerRPC) {
+      try {
+        this._closeSyncCompat();
+      } catch (error) {
+        // Log error but don't throw on close
+        console.warn('Error during database close:', error);
+      }
+    }
+
+    this.state.isOpen = false;
+    this.isInitialized = false;
+    
+    if (this.state.worker) {
+      this.state.worker.terminate();
+      this.state.worker = null;
+    }
+    
+    this.workerRPC = null;
+    this.state.workerRPC = null;
+  }
+
+  /**
+   * Close database connection asynchronously (enhanced API)
+   */
+  async closeAsync(): Promise<void> {
+    // Finalize all active statements
+    for (const statement of this.activeStatements) {
+      try {
+        statement.free();
+      } catch (error) {
+        console.warn('Error finalizing statement:', error);
+      }
+    }
+    this.activeStatements.clear();
+
+    if (this.workerRPC) {
+      try {
+        await this.workerRPC.close();
+      } catch (error) {
+        console.warn('Error during database close:', error);
+      }
+    }
+
+    this.state.isOpen = false;
+    this.isInitialized = false;
+    
+    if (this.state.worker) {
+      this.state.worker.terminate();
+      this.state.worker = null;
+    }
+    
+    this.workerRPC = null;
+    this.state.workerRPC = null;
+  }
+
+  /**
+   * Get number of rows modified by the last statement (sql.js compatible)
+   */
+  getRowsModified(): number {
+    return this.rowsModified;
+  }
+
+  /**
+   * Create a savepoint (sql.js compatible)
+   */
+  savepoint(name?: string): void {
+    const savepointName = name || `sp_${Date.now()}`;
+    try {
+      this._runSyncCompat(`SAVEPOINT ${savepointName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Savepoint creation failed: ${message}`);
+    }
+  }
+
+  /**
+   * Release a savepoint (sql.js compatible)
+   */
+  savepoint_release(name?: string): void {
+    const savepointName = name || 'sp';
+    try {
+      this._runSyncCompat(`RELEASE SAVEPOINT ${savepointName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Savepoint release failed: ${message}`);
+    }
+  }
+
+  /**
+   * Rollback to a savepoint (sql.js compatible)
+   */
+  savepoint_rollback(name?: string): void {
+    const savepointName = name || 'sp';
+    try {
+      this._runSyncCompat(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Savepoint rollback failed: ${message}`);
+    }
+  }
+
+  /**
+   * Create function (sql.js compatible stub)
+   */
+  create_function(name: string, func: (...args: any[]) => any): void {
+    if (this.compatConfig.enableWarnings) {
+      console.warn('create_function is not supported in LocalRetrieve. Use SQL functions instead.');
+    }
+    if (this.compatConfig.throwOnSyncLimitations) {
+      throw new SQLDatabaseError('create_function is not supported in Worker-based SQLite');
+    }
+  }
+
+  /**
+   * Create aggregate function (sql.js compatible stub)
+   */
+  create_aggregate(name: string, funcs: { step: Function; finalize: Function }): void {
+    if (this.compatConfig.enableWarnings) {
+      console.warn('create_aggregate is not supported in LocalRetrieve. Use SQL aggregate functions instead.');
+    }
+    if (this.compatConfig.throwOnSyncLimitations) {
+      throw new SQLDatabaseError('create_aggregate is not supported in Worker-based SQLite');
+    }
+  }
+
+  /**
+   * Perform hybrid search (LocalRetrieve extension)
+   */
+  async search(request: SearchRequest): Promise<SearchResponse> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.search(request);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Search failed: ${message}`);
+    }
+  }
+
+  /**
+   * Initialize schema (LocalRetrieve extension)
+   */
+  async initializeSchema(): Promise<void> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      await this.workerRPC.initializeSchema();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Schema initialization failed: ${message}`);
+    }
+  }
+
+  /**
+   * Get Worker RPC instance (for Statement class)
+   */
+  _getWorkerRPC(): WorkerRPC | null {
+    return this.workerRPC;
+  }
+
+  /**
+   * Initialize worker and open database connection
+   */
+  private async _initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not initialized');
+    }
+
+    try {
+      // Open database
+      await this.workerRPC.open({
+        filename: this.state.filename,
+        vfs: 'opfs'
+      });
+
+      // Initialize vector extension
+      await this.workerRPC.initVecExtension();
+
+      this.state.isOpen = true;
+      this.isInitialized = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Database initialization failed: ${message}`);
+    }
+  }
+
+  /**
+   * Initialize worker RPC
+   */
+  private _initializeWorker(config: DatabaseConfig): void {
+    try {
+      // Try multiple worker URL strategies
+      let workerUrl: string;
+      
+      if (config.workerUrl) {
+        workerUrl = config.workerUrl;
+      } else {
+        // Use module URL for compiled package structure
+        // This will work both in development (Vite) and production (npm package)
+        workerUrl = new URL('../database/worker.js', import.meta.url).toString();
+      }
+      
+      console.log('[Database._initializeWorker] Attempting to load worker from:', workerUrl);
+      
+      this.workerRPC = createWorkerRPC(workerUrl, config.workerConfig);
+      this.state.worker = (this.workerRPC as any).worker;
+      this.state.workerRPC = this.workerRPC;
+      
+      console.log('[Database._initializeWorker] Worker RPC created successfully');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[Database._initializeWorker] Worker initialization failed:', error);
+      
+      // Provide helpful error message with potential solutions
+      throw new DatabaseError(
+        `Worker initialization failed: ${message}\n\n` +
+        'Possible solutions:\n' +
+        '1. Ensure the database worker file exists at the correct path\n' +
+        '2. Check that your build process includes worker files\n' +
+        '3. Verify COOP/COEP headers are set for SharedArrayBuffer support\n' +
+        '4. Try providing an explicit workerUrl in the config'
+      );
+    }
+  }
+
+  /**
+   * Import buffer data
+   */
+  private async _importBuffer(buffer: Uint8Array): Promise<void> {
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      await this.workerRPC.import({
+        data: buffer,
+        format: 'sqlite',
+        overwrite: true
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Buffer import failed: ${message}`);
+    }
+  }
+
+  /**
+   * Synchronous execution compatibility layer
+   * Uses blocking async call with warnings about limitations
+   */
+  private _execSyncCompat(sql: string): QueryExecResult[] {
+    if (this.compatConfig.enableWarnings) {
+      console.warn('SYNC/ASYNC COMPATIBILITY WARNING: Using synchronous API with async Worker. Consider using execAsync() for better performance.');
+    }
+    
+    if (this.compatConfig.throwOnSyncLimitations) {
+      throw new SQLDatabaseError(
+        'SYNC/ASYNC COMPATIBILITY ISSUE:\n' +
+        'Worker communication is inherently async. SQL executed successfully but cannot return synchronously.\n' +
+        'SOLUTIONS:\n' +
+        '1. Use async API: await database.execAsync(sql) instead of database.exec(sql)\n' +
+        '2. Use database.prepare() for prepared statements\n' +
+        '3. Consider using sql.js directly on main thread for true sync operations\n' +
+        '\nThis is a known limitation of browser worker architecture.'
+      );
+    }
+
+    if (!this.workerRPC) {
+      throw new SQLDatabaseError('Worker not available');
+    }
+
+    // Attempt synchronous execution with timeout
+    let isResolved = false;
+    let result: any = null;
+    let error: any = null;
+
+    const executePromise = this.workerRPC.select({ sql });
+
+    executePromise
+      .then((res: any) => {
+        result = res;
+        isResolved = true;
+      })
+      .catch((err: any) => {
+        error = err;
+        isResolved = true;
+      });
+
+    // Busy wait for result (limited time)
+    const startTime = Date.now();
+    const timeout = this.compatConfig.workerTimeout;
+
+    while (!isResolved && (Date.now() - startTime) < timeout) {
+      // Minimal busy wait to allow event loop processing
+    }
+
+    if (!isResolved) {
+      throw new SQLDatabaseError('Query execution timeout in sync compatibility mode');
+    }
+
+    if (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Query execution failed: ${message}`);
+    }
+
+    return [transformToSQLResult(result?.rows || [])];
+  }
+
+  /**
+   * Synchronous run compatibility layer
+   */
+  private _runSyncCompat(sql: string, params?: SQLParams): void {
+    if (this.compatConfig.enableWarnings) {
+      console.warn('SYNC/ASYNC COMPATIBILITY WARNING: Using synchronous API with async Worker. Consider using runAsync() for better performance.');
+    }
+
+    if (!this.workerRPC) {
+      throw new SQLDatabaseError('Worker not available');
+    }
+
+    let isResolved = false;
+    let error: any = null;
+
+    const executePromise = this.workerRPC.exec({ sql, params });
+
+    executePromise
+      .then(() => {
+        this.rowsModified++;
+        isResolved = true;
+      })
+      .catch((err: any) => {
+        error = err;
+        isResolved = true;
+      });
+
+    // Busy wait for result
+    const startTime = Date.now();
+    const timeout = this.compatConfig.workerTimeout;
+
+    while (!isResolved && (Date.now() - startTime) < timeout) {
+      // Minimal busy wait
+    }
+
+    if (!isResolved) {
+      throw new SQLDatabaseError('Query execution timeout in sync compatibility mode');
+    }
+
+    if (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Query execution failed: ${message}`);
+    }
+  }
+
+  /**
+   * Synchronous export compatibility layer
+   */
+  private _exportSyncCompat(): Uint8Array {
+    if (this.compatConfig.enableWarnings) {
+      console.warn('SYNC/ASYNC COMPATIBILITY WARNING: Using synchronous export with async Worker. Consider using exportAsync() for better performance.');
+    }
+
+    if (!this.workerRPC) {
+      throw new SQLDatabaseError('Worker not available');
+    }
+
+    let isResolved = false;
+    let result: Uint8Array | null = null;
+    let error: any = null;
+
+    const exportPromise = this.workerRPC.export();
+
+    exportPromise
+      .then((res: Uint8Array) => {
+        result = res;
+        isResolved = true;
+      })
+      .catch((err: any) => {
+        error = err;
+        isResolved = true;
+      });
+
+    // Busy wait for result
+    const startTime = Date.now();
+    const timeout = this.compatConfig.workerTimeout;
+
+    while (!isResolved && (Date.now() - startTime) < timeout) {
+      // Minimal busy wait
+    }
+
+    if (!isResolved) {
+      throw new SQLDatabaseError('Export timeout in sync compatibility mode');
+    }
+
+    if (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Export failed: ${message}`);
+    }
+
+    return result || new Uint8Array(0);
+  }
+
+  /**
+   * Synchronous close compatibility layer
+   */
+  private _closeSyncCompat(): void {
+    if (!this.workerRPC) {
+      return;
+    }
+
+    let isResolved = false;
+    let error: any = null;
+
+    const closePromise = this.workerRPC.close();
+
+    closePromise
+      .then(() => {
+        isResolved = true;
+      })
+      .catch((err: any) => {
+        error = err;
+        isResolved = true;
+      });
+
+    // Busy wait for result (shorter timeout for close)
+    const startTime = Date.now();
+    const timeout = 5000; // 5 second timeout for close
+
+    while (!isResolved && (Date.now() - startTime) < timeout) {
+      // Minimal busy wait
+    }
+
+    if (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new SQLDatabaseError(`Close failed: ${message}`);
+    }
+  }
+}

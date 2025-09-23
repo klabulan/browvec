@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SETUP-004: Database Operations Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        
+        .test-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        
+        .status {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .status.pass { background: #27ae60; }
+        .status.fail { background: #e74c3c; }
+        .status.warn { background: #f39c12; }
+        .status.pending { background: #95a5a6; }
+        .status.running { background: #3498db; }
+        
+        .test-description {
+            flex-grow: 1;
+        }
+        
+        .test-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .test-detail {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+        
+        .run-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: background-color 0.2s;
+        }
+        
+        .run-btn:hover { background: #2980b9; }
+        .run-btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+        
+        .logs {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        
+        .summary {
+            text-align: center;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        
+        .summary.pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .summary.fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .data-display {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗄️ SETUP-004: Database Operations Test</h1>
+        
+        <p><strong>Purpose:</strong> Verify that LocalRetrieve database operations work correctly in the SETUP-004 environment with SharedArrayBuffer and OPFS support.</p>
+        
+        <div class="test-section">
+            <h2>📋 Database Integration Tests</h2>
+            
+            <div class="test-item" id="test-worker-load">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Worker Loading</div>
+                    <div class="test-detail">Load database worker with WASM module</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-database-open">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Database Connection</div>
+                    <div class="test-detail">Open OPFS database connection</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-vec-init">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">sqlite-vec Initialization</div>
+                    <div class="test-detail">Manual vector extension initialization</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-schema-creation">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Schema Creation</div>
+                    <div class="test-detail">Create docs, FTS, and vector tables</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-data-insert">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Data Insertion</div>
+                    <div class="test-detail">Insert documents with vectors</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-fts-search">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">FTS Search</div>
+                    <div class="test-detail">Full-text search with BM25 scoring</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-vector-search">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Vector Search</div>
+                    <div class="test-detail">Similarity search with distance calculation</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-hybrid-search">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Hybrid Search</div>
+                    <div class="test-detail">Combined FTS + vector search with RRF</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-persistence">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">OPFS Persistence</div>
+                    <div class="test-detail">Data survives database reconnection</div>
+                </div>
+            </div>
+            
+            <div class="test-item" id="test-export-import">
+                <div class="status pending">?</div>
+                <div class="test-description">
+                    <div class="test-name">Export/Import</div>
+                    <div class="test-detail">Database backup and restore functionality</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <button class="run-btn" onclick="runAllTests()">Run All Database Tests</button>
+            <button class="run-btn" onclick="runBasicTests()">Run Basic Tests Only</button>
+            <button class="run-btn" onclick="clearDatabase()">Clear Database</button>
+        </div>
+        
+        <div id="summary-section"></div>
+        
+        <div class="logs" id="test-logs" style="display: none;">
+            <div id="log-content"></div>
+        </div>
+        
+        <div id="data-section"></div>
+    </div>
+    
+    <script type="module">
+        let logMessages = [];
+        let testResults = {};
+        let worker = null;
+        let dbApi = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            logMessages.push(`[${timestamp}] ${message}`);
+            
+            const logContent = document.getElementById('log-content');
+            if (logContent) {
+                logContent.innerHTML = logMessages.join('<br>');
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+            
+            console.log(`[Database Test] ${message}`);
+        }
+        
+        function updateTestStatus(testId, status, message = '') {
+            testResults[testId] = { status, message };
+            
+            const testElement = document.getElementById(testId);
+            if (!testElement) return;
+            
+            const statusElement = testElement.querySelector('.status');
+            const detailElement = testElement.querySelector('.test-detail');
+            
+            statusElement.className = `status ${status}`;
+            statusElement.textContent = 
+                status === 'pass' ? '✓' : 
+                status === 'fail' ? '✗' : 
+                status === 'warn' ? '⚠' : 
+                status === 'running' ? '⟳' : '?';
+            
+            if (message) {
+                detailElement.textContent = message;
+            }
+        }
+        
+        function showData(title, data) {
+            const dataSection = document.getElementById('data-section');
+            dataSection.innerHTML = `
+                <div class="test-section">
+                    <h3>${title}</h3>
+                    <div class="data-display">${JSON.stringify(data, null, 2)}</div>
+                </div>
+            `;
+        }
+        
+        // Simple RPC client for worker communication
+        class WorkerRPC {
+            constructor(worker) {
+                this.worker = worker;
+                this.pendingCalls = new Map();
+                this.nextId = 1;
+                
+                this.worker.onmessage = (event) => {
+                    const { id, result, error } = event.data;
+                    const pending = this.pendingCalls.get(id);
+                    if (pending) {
+                        this.pendingCalls.delete(id);
+                        if (error) {
+                            pending.reject(new Error(error));
+                        } else {
+                            pending.resolve(result);
+                        }
+                    }
+                };
+            }
+            
+            call(method, params = {}) {
+                return new Promise((resolve, reject) => {
+                    const id = this.nextId++;
+                    this.pendingCalls.set(id, { resolve, reject });
+                    this.worker.postMessage({ id, method, params });
+                });
+            }
+        }
+        
+        async function testWorkerLoading() {
+            updateTestStatus('test-worker-load', 'running', 'Loading worker...');
+            log('Loading database worker...');
+            
+            try {
+                // Load the worker
+                worker = new Worker('/src/database/worker.ts', { type: 'module' });
+                dbApi = new WorkerRPC(worker);
+                
+                // Test worker communication with a simple ping (doesn't require DB initialization)
+                const timeout = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Worker timeout')), 5000)
+                );
+                
+                const pingTest = dbApi.call('ping');
+                
+                const result = await Promise.race([pingTest, timeout]);
+                log(`Worker ping successful: ${JSON.stringify(result)}`);
+                
+                updateTestStatus('test-worker-load', 'pass', 'Worker loaded successfully');
+                log('✓ Database worker loaded and responsive');
+                return true;
+            } catch (error) {
+                updateTestStatus('test-worker-load', 'fail', `Worker load failed: ${error.message}`);
+                log(`✗ Worker loading failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testDatabaseOpen() {
+            updateTestStatus('test-database-open', 'running', 'Opening database...');
+            log('Opening OPFS database connection...');
+            
+            try {
+                await dbApi.call('open', { 
+                    filename: 'opfs:/test/setup004-test.db'
+                });
+                
+                updateTestStatus('test-database-open', 'pass', 'Database opened successfully');
+                log('✓ Database connection established');
+                return true;
+            } catch (error) {
+                updateTestStatus('test-database-open', 'fail', `Database open failed: ${error.message}`);
+                log(`✗ Database open failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testVecInitialization() {
+            updateTestStatus('test-vec-init', 'running', 'Initializing sqlite-vec...');
+            log('Initializing sqlite-vec extension...');
+            
+            try {
+                await dbApi.call('initVecExtension');
+                
+                updateTestStatus('test-vec-init', 'pass', 'sqlite-vec initialized');
+                log('✓ sqlite-vec extension initialized');
+                return true;
+            } catch (error) {
+                updateTestStatus('test-vec-init', 'fail', `Vec init failed: ${error.message}`);
+                log(`✗ sqlite-vec initialization failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testSchemaCreation() {
+            updateTestStatus('test-schema-creation', 'running', 'Creating schema...');
+            log('Creating database schema...');
+            
+            try {
+                await dbApi.call('initializeSchema');
+                
+                updateTestStatus('test-schema-creation', 'pass', 'Schema created successfully');
+                log('✓ Database schema created');
+                return true;
+            } catch (error) {
+                updateTestStatus('test-schema-creation', 'fail', `Schema creation failed: ${error.message}`);
+                log(`✗ Schema creation failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testDataInsertion() {
+            updateTestStatus('test-data-insert', 'running', 'Inserting test data...');
+            log('Inserting test documents...');
+            
+            try {
+                // Insert sample documents
+                const docs = [
+                    { id: 'doc1', title: 'Vector Search Guide', content: 'Vector search uses embeddings for semantic similarity' },
+                    { id: 'doc2', title: 'Full-Text Search', content: 'FTS provides fast keyword-based document retrieval' },
+                    { id: 'doc3', title: 'Hybrid Search', content: 'Combining vector and text search for better results' }
+                ];
+                
+                await dbApi.call('bulkInsert', {
+                    table: 'docs_default',
+                    rows: docs
+                });
+                
+                // Insert into FTS
+                for (const doc of docs) {
+                    await dbApi.call('exec', {
+                        sql: 'INSERT INTO fts_default (rowid, id, title, content) VALUES ((SELECT rowid FROM docs_default WHERE id = ?), ?, ?, ?)',
+                        params: [doc.id, doc.id, doc.title, doc.content]
+                    });
+                }
+                
+                // Insert sample vectors
+                for (let i = 0; i < docs.length; i++) {
+                    const vector = new Array(384).fill(0).map(() => Math.random() * 0.1 + i * 0.3);
+                    await dbApi.call('exec', {
+                        sql: 'INSERT INTO vec_default_dense (rowid, embedding) VALUES ((SELECT rowid FROM docs_default WHERE id = ?), vec_f32(?))',
+                        params: [docs[i].id, JSON.stringify(vector)]
+                    });
+                }
+                
+                updateTestStatus('test-data-insert', 'pass', `${docs.length} documents inserted`);
+                log(`✓ ${docs.length} documents with vectors inserted`);
+                return true;
+            } catch (error) {
+                updateTestStatus('test-data-insert', 'fail', `Data insertion failed: ${error.message}`);
+                log(`✗ Data insertion failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testFTSSearch() {
+            updateTestStatus('test-fts-search', 'running', 'Testing FTS...');
+            log('Testing full-text search...');
+            
+            try {
+                const result = await dbApi.call('select', {
+                    sql: 'SELECT id, title, bm25(fts_default) as score FROM fts_default WHERE fts_default MATCH ? ORDER BY bm25(fts_default) LIMIT 5',
+                    params: ['vector']
+                });
+                
+                updateTestStatus('test-fts-search', 'pass', `Found ${result.rows.length} results`);
+                log(`✓ FTS search returned ${result.rows.length} results`);
+                showData('FTS Search Results', result.rows);
+                return true;
+            } catch (error) {
+                updateTestStatus('test-fts-search', 'fail', `FTS search failed: ${error.message}`);
+                log(`✗ FTS search failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testVectorSearch() {
+            updateTestStatus('test-vector-search', 'running', 'Testing vector search...');
+            log('Testing vector similarity search...');
+            
+            try {
+                const queryVector = new Array(384).fill(0).map(() => Math.random() * 0.1);
+                const result = await dbApi.call('select', {
+                    sql: 'SELECT d.id, d.title, v.distance FROM vec_default_dense v JOIN docs_default d ON d.rowid = v.rowid WHERE v.embedding MATCH vec_f32(?) AND k = 3 ORDER BY v.distance',
+                    params: [JSON.stringify(queryVector)]
+                });
+                
+                updateTestStatus('test-vector-search', 'pass', `Found ${result.rows.length} results`);
+                log(`✓ Vector search returned ${result.rows.length} results`);
+                showData('Vector Search Results', result.rows);
+                return true;
+            } catch (error) {
+                updateTestStatus('test-vector-search', 'fail', `Vector search failed: ${error.message}`);
+                log(`✗ Vector search failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testHybridSearch() {
+            updateTestStatus('test-hybrid-search', 'running', 'Testing hybrid search...');
+            log('Testing hybrid search with RRF...');
+            
+            try {
+                const queryVector = new Array(384).fill(0).map(() => Math.random() * 0.1);
+                const result = await dbApi.call('search', {
+                    query: {
+                        text: 'vector',
+                        vector: new Float32Array(queryVector)
+                    },
+                    limit: 5,
+                    fusionMethod: 'rrf'
+                });
+                
+                updateTestStatus('test-hybrid-search', 'pass', `Found ${result.results.length} results`);
+                log(`✓ Hybrid search returned ${result.results.length} results`);
+                showData('Hybrid Search Results', result.results);
+                return true;
+            } catch (error) {
+                updateTestStatus('test-hybrid-search', 'fail', `Hybrid search failed: ${error.message}`);
+                log(`✗ Hybrid search failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testPersistence() {
+            updateTestStatus('test-persistence', 'running', 'Testing persistence...');
+            log('Testing OPFS persistence...');
+            
+            try {
+                // Close and reopen database
+                await dbApi.call('close');
+                await dbApi.call('open', { 
+                    filename: 'opfs:/test/setup004-test.db'
+                });
+                await dbApi.call('initVecExtension');
+                
+                // Verify data is still there
+                const result = await dbApi.call('select', {
+                    sql: 'SELECT COUNT(*) as count FROM docs_default'
+                });
+                
+                const count = result.rows[0].count;
+                updateTestStatus('test-persistence', 'pass', `${count} documents persisted`);
+                log(`✓ Data persistence verified: ${count} documents found`);
+                return true;
+            } catch (error) {
+                updateTestStatus('test-persistence', 'fail', `Persistence test failed: ${error.message}`);
+                log(`✗ Persistence test failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testExportImport() {
+            updateTestStatus('test-export-import', 'running', 'Testing export/import...');
+            log('Testing database export/import...');
+            
+            try {
+                // Export database
+                const exported = await dbApi.call('export');
+                log(`Database exported: ${exported.byteLength} bytes`);
+                
+                // Clear and import
+                await dbApi.call('close');
+                await dbApi.call('open', { 
+                    filename: 'opfs:/test/setup004-test-import.db'
+                });
+                await dbApi.call('initVecExtension');
+                await dbApi.call('import', { data: exported });
+                
+                // Verify import
+                const result = await dbApi.call('select', {
+                    sql: 'SELECT COUNT(*) as count FROM docs_default'
+                });
+                
+                const count = result.rows[0].count;
+                updateTestStatus('test-export-import', 'pass', `Import verified: ${count} docs`);
+                log(`✓ Export/import successful: ${count} documents restored`);
+                return true;
+            } catch (error) {
+                updateTestStatus('test-export-import', 'fail', `Export/import failed: ${error.message}`);
+                log(`✗ Export/import failed: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function runBasicTests() {
+            document.getElementById('test-logs').style.display = 'block';
+            logMessages = [];
+            
+            log('Starting basic database tests...');
+            
+            const tests = [
+                testWorkerLoading,
+                testDatabaseOpen,
+                testVecInitialization,
+                testSchemaCreation
+            ];
+            
+            let passed = 0;
+            for (const test of tests) {
+                const success = await test();
+                if (success) passed++;
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            generateSummary(passed, tests.length);
+        }
+        
+        async function runAllTests() {
+            document.getElementById('test-logs').style.display = 'block';
+            logMessages = [];
+            
+            log('Starting comprehensive database tests...');
+            
+            const tests = [
+                testWorkerLoading,
+                testDatabaseOpen,
+                testVecInitialization,
+                testSchemaCreation,
+                testDataInsertion,
+                testFTSSearch,
+                testVectorSearch,
+                testHybridSearch,
+                testPersistence,
+                testExportImport
+            ];
+            
+            let passed = 0;
+            for (const test of tests) {
+                const success = await test();
+                if (success) passed++;
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
+            
+            generateSummary(passed, tests.length);
+        }
+        
+        async function clearDatabase() {
+            if (!dbApi) {
+                log('No database connection to clear');
+                return;
+            }
+            
+            try {
+                await dbApi.call('exec', { sql: 'DROP TABLE IF EXISTS docs_default' });
+                await dbApi.call('exec', { sql: 'DROP TABLE IF EXISTS fts_default' });
+                await dbApi.call('exec', { sql: 'DROP TABLE IF EXISTS vec_default_dense' });
+                log('Database cleared successfully');
+            } catch (error) {
+                log(`Clear failed: ${error.message}`);
+            }
+        }
+        
+        function generateSummary(passed, total) {
+            const summarySection = document.getElementById('summary-section');
+            const isSuccess = passed === total;
+            
+            summarySection.innerHTML = `
+                <div class="summary ${isSuccess ? 'pass' : 'fail'}">
+                    <h2>${isSuccess ? '✅ All Database Tests Passed!' : '❌ Some Tests Failed'}</h2>
+                    <p>Passed: ${passed}/${total} tests</p>
+                    <p>${isSuccess ? 'LocalRetrieve database operations work perfectly in SETUP-004 environment!' : 'Review failed tests and check implementation.'}</p>
+                </div>
+            `;
+            
+            log(`Test summary: ${passed}/${total} tests passed`);
+        }
+        
+        // Make functions globally available
+        window.runAllTests = runAllTests;
+        window.runBasicTests = runBasicTests;
+        window.clearDatabase = clearDatabase;
+        
+        // Auto-run basic tests on load
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(runBasicTests, 1000);
+        });
+    </script>
+</body>
+</html>

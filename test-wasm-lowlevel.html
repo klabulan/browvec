@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQLite WASM + sqlite-vec Test (Low Level API)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>SQLite WASM + sqlite-vec Test (Low Level API)</h1>
+    
+    <div class="info test-result">
+        <strong>Testing SQLite WASM with sqlite-vec integration using low-level C API</strong><br>
+        This page verifies that the WASM build includes sqlite-vec functionality.
+    </div>
+
+    <button id="runTests" onclick="runTests()">Run Tests</button>
+    <button id="clearResults" onclick="clearResults()">Clear Results</button>
+
+    <div id="results"></div>
+
+    <script type="module">
+        let sqlite3Module;
+        let dbPointer = 0;
+
+        async function initSQLite() {
+            try {
+                logResult("Loading SQLite WASM module...", "info");
+                
+                // Import the sqlite3 module
+                const sqlite3InitModule = (await import('./dist/sqlite3.mjs')).default;
+                sqlite3Module = await sqlite3InitModule();
+                
+                logResult("✓ SQLite WASM module loaded successfully", "success");
+                
+                // Check available functions
+                logResult("Available functions in module:", "info");
+                const funcs = Object.keys(sqlite3Module).filter(key => key.startsWith('_sqlite3'));
+                logResult(`<pre>${funcs.slice(0, 10).join('\n')}${funcs.length > 10 ? '\n...' : ''}</pre>`, "info");
+                
+                return true;
+            } catch (error) {
+                logResult(`✗ Failed to load SQLite WASM module: ${error.message}`, "error");
+                console.error(error);
+                return false;
+            }
+        }
+
+        async function testBasicSQLite() {
+            try {
+                logResult("Testing basic SQLite functionality using C API...", "info");
+                
+                // Open database using sqlite3_open
+                const dbPtrPtr = sqlite3Module._malloc(4); // pointer to db pointer
+                const result = sqlite3Module.ccall('sqlite3_open', 'number', ['string', 'number'], [':memory:', dbPtrPtr]);
+                
+                if (result !== 0) {
+                    throw new Error(`sqlite3_open failed with code ${result}`);
+                }
+                
+                dbPointer = sqlite3Module.getValue(dbPtrPtr, 'i32');
+                sqlite3Module._free(dbPtrPtr);
+                
+                logResult("✓ In-memory database opened successfully", "success");
+                
+                // Manually initialize sqlite-vec extension
+                if (sqlite3Module._sqlite3_vec_init_manual) {
+                    const vecInitResult = sqlite3Module._sqlite3_vec_init_manual(dbPointer);
+                    if (vecInitResult === 0) {
+                        logResult("✓ sqlite-vec extension initialized manually", "success");
+                    } else {
+                        logResult(`⚠ Manual vec initialization returned code ${vecInitResult}`, "info");
+                    }
+                } else {
+                    logResult("⚠ Manual vec initialization function not found", "info");
+                }
+                
+                // Test basic SQL using sqlite3_exec
+                const createTable = "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)";
+                const execResult = sqlite3Module.ccall('sqlite3_exec', 'number', 
+                    ['number', 'string', 'number', 'number', 'number'], 
+                    [dbPointer, createTable, 0, 0, 0]);
+                
+                if (execResult !== 0) {
+                    throw new Error(`CREATE TABLE failed with code ${execResult}`);
+                }
+                
+                logResult("✓ CREATE TABLE executed successfully", "success");
+                
+                // Insert test data
+                const insertData = "INSERT INTO test (name) VALUES ('Hello'), ('World')";
+                const insertResult = sqlite3Module.ccall('sqlite3_exec', 'number', 
+                    ['number', 'string', 'number', 'number', 'number'], 
+                    [dbPointer, insertData, 0, 0, 0]);
+                
+                if (insertResult !== 0) {
+                    throw new Error(`INSERT failed with code ${insertResult}`);
+                }
+                
+                logResult("✓ INSERT executed successfully", "success");
+                
+                return true;
+            } catch (error) {
+                logResult(`✗ Basic SQLite test failed: ${error.message}`, "error");
+                console.error(error);
+                return false;
+            }
+        }
+
+        async function testSqliteVecExtension() {
+            try {
+                logResult("Testing sqlite-vec extension...", "info");
+                
+                // Test if vec_version function is available
+                try {
+                    const versionQuery = "SELECT vec_version() as version";
+                    const result = sqlite3Module.ccall('sqlite3_exec', 'number', 
+                        ['number', 'string', 'number', 'number', 'number'], 
+                        [dbPointer, versionQuery, 0, 0, 0]);
+                    
+                    if (result === 0) {
+                        logResult("✓ sqlite-vec extension is available! vec_version() function found", "success");
+                    } else {
+                        throw new Error(`vec_version query failed with code ${result}`);
+                    }
+                } catch (error) {
+                    logResult(`✗ vec_version function not found: ${error.message}`, "error");
+                    return false;
+                }
+                
+                // Test vector operations
+                logResult("Testing vector operations...", "info");
+                
+                // Create a table with vector column
+                const createVecTable = `
+                    CREATE TABLE documents (
+                        id INTEGER PRIMARY KEY,
+                        title TEXT,
+                        embedding BLOB
+                    )
+                `;
+                
+                const createResult = sqlite3Module.ccall('sqlite3_exec', 'number', 
+                    ['number', 'string', 'number', 'number', 'number'], 
+                    [dbPointer, createVecTable, 0, 0, 0]);
+                
+                if (createResult !== 0) {
+                    throw new Error(`CREATE vector table failed with code ${createResult}`);
+                }
+                
+                logResult("✓ Vector table created successfully", "success");
+                
+                // Insert vector data
+                const insertVectors = `
+                    INSERT INTO documents (title, embedding) VALUES 
+                    ('Document 1', vec_f32('[1.0, 2.0, 3.0]')),
+                    ('Document 2', vec_f32('[2.0, 3.0, 4.0]')),
+                    ('Document 3', vec_f32('[1.0, 1.0, 1.0]'))
+                `;
+                
+                const insertVecResult = sqlite3Module.ccall('sqlite3_exec', 'number', 
+                    ['number', 'string', 'number', 'number', 'number'], 
+                    [dbPointer, insertVectors, 0, 0, 0]);
+                
+                if (insertVecResult !== 0) {
+                    throw new Error(`INSERT vectors failed with code ${insertVecResult}`);
+                }
+                
+                logResult("✓ Vector data inserted successfully", "success");
+                
+                // Test vector similarity search
+                const similarityQuery = `
+                    SELECT 
+                        title,
+                        vec_distance_cosine(embedding, vec_f32('[1.5, 2.5, 3.5]')) as distance
+                    FROM documents 
+                    ORDER BY distance ASC
+                `;
+                
+                const similarityResult = sqlite3Module.ccall('sqlite3_exec', 'number', 
+                    ['number', 'string', 'number', 'number', 'number'], 
+                    [dbPointer, similarityQuery, 0, 0, 0]);
+                
+                if (similarityResult !== 0) {
+                    throw new Error(`Similarity search failed with code ${similarityResult}`);
+                }
+                
+                logResult("✓ Vector similarity search executed successfully", "success");
+                
+                return true;
+            } catch (error) {
+                logResult(`✗ sqlite-vec test failed: ${error.message}`, "error");
+                console.error(error);
+                return false;
+            }
+        }
+
+        function cleanup() {
+            if (dbPointer !== 0) {
+                try {
+                    sqlite3Module.ccall('sqlite3_close', 'number', ['number'], [dbPointer]);
+                    logResult("✓ Database closed", "info");
+                } catch (error) {
+                    logResult(`Warning: Database cleanup failed: ${error.message}`, "error");
+                }
+                dbPointer = 0;
+            }
+        }
+
+        function logResult(message, type) {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${type}`;
+            resultDiv.innerHTML = message;
+            resultsDiv.appendChild(resultDiv);
+            
+            // Scroll to bottom
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        window.runTests = async function() {
+            const runButton = document.getElementById('runTests');
+            runButton.disabled = true;
+            runButton.textContent = 'Running Tests...';
+            
+            clearResults();
+            cleanup(); // Clean up any previous state
+            
+            try {
+                logResult("=== Starting SQLite WASM + sqlite-vec Tests (Low Level API) ===", "info");
+                
+                // Step 1: Initialize SQLite
+                const sqliteLoaded = await initSQLite();
+                if (!sqliteLoaded) return;
+                
+                // Step 2: Test basic SQLite functionality
+                const basicWorking = await testBasicSQLite();
+                if (!basicWorking) return;
+                
+                // Step 3: Test sqlite-vec extension
+                const vecWorking = await testSqliteVecExtension();
+                
+                if (vecWorking) {
+                    logResult("=== ✅ ALL TESTS PASSED! SQLite WASM with sqlite-vec is working correctly ===", "success");
+                } else {
+                    logResult("=== ❌ VECTOR TESTS FAILED ===", "error");
+                }
+                
+            } catch (error) {
+                logResult(`=== ❌ UNEXPECTED ERROR: ${error.message} ===`, "error");
+                console.error(error);
+            } finally {
+                cleanup();
+                runButton.disabled = false;
+                runButton.textContent = 'Run Tests';
+            }
+        };
+
+        // Auto-run tests on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            logResult("Page loaded. Click 'Run Tests' to start testing...", "info");
+        });
+    </script>
+</body>
+</html>

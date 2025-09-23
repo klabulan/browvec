@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SETUP-004: Development Environment Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        
+        .test-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        
+        .test-item:hover {
+            background: #f0f0f0;
+        }
+        
+        .status {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .status.pass {
+            background: #27ae60;
+        }
+        
+        .status.fail {
+            background: #e74c3c;
+        }
+        
+        .status.warn {
+            background: #f39c12;
+        }
+        
+        .status.pending {
+            background: #95a5a6;
+        }
+        
+        .test-description {
+            flex-grow: 1;
+        }
+        
+        .test-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .test-detail {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+        
+        .recommendations {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .recommendations h3 {
+            color: #856404;
+            margin-top: 0;
+        }
+        
+        .recommendation-item {
+            background: white;
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 4px;
+            border-left: 4px solid #f39c12;
+        }
+        
+        .summary {
+            text-align: center;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        
+        .summary.pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .summary.fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .summary.warn {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .run-all-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 20px 0;
+            transition: background-color 0.2s;
+        }
+        
+        .run-all-btn:hover {
+            background: #2980b9;
+        }
+        
+        .run-all-btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .logs {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        
+        .config-example {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            margin: 20px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 12px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .tab-button.active {
+            border-bottom-color: #3498db;
+            color: #3498db;
+            font-weight: 600;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 SETUP-004: Development Environment Test</h1>
+        
+        <p><strong>Purpose:</strong> Verify that your development environment supports LocalRetrieve requirements including SharedArrayBuffer, OPFS, and WASM loading.</p>
+        
+        <div class="tab-buttons">
+            <button class="tab-button active" onclick="showTab('tests')">🧪 Tests</button>
+            <button class="tab-button" onclick="showTab('config')">⚙️ Configuration</button>
+            <button class="tab-button" onclick="showTab('troubleshooting')">🔧 Troubleshooting</button>
+        </div>
+        
+        <div id="tests-tab" class="tab-content active">
+            <button class="run-all-btn" onclick="runAllTests()">Run All Tests</button>
+            
+            <div id="summary-section"></div>
+            
+            <div class="test-section">
+                <h2>📋 Core Web Platform Features</h2>
+                
+                <div class="test-item" id="test-wasm">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">WebAssembly Support</div>
+                        <div class="test-detail">Required for SQLite WASM module</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-workers">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">Web Workers Support</div>
+                        <div class="test-detail">Required for non-blocking database operations</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-es-modules">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">ES Modules Support</div>
+                        <div class="test-detail">Required for modern worker loading</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-indexeddb">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">IndexedDB Support</div>
+                        <div class="test-detail">Fallback storage when OPFS unavailable</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <h2>🔒 Cross-Origin Isolation</h2>
+                
+                <div class="test-item" id="test-secure-context">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">Secure Context (HTTPS)</div>
+                        <div class="test-detail">Required for advanced features</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-cross-origin-isolated">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">Cross-Origin Isolation</div>
+                        <div class="test-detail">Enables SharedArrayBuffer for better performance</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-shared-array-buffer">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">SharedArrayBuffer Availability</div>
+                        <div class="test-detail">Improves worker communication performance</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-atomics">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">Atomics Support</div>
+                        <div class="test-detail">Required for SharedArrayBuffer synchronization</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <h2>💾 Storage Features</h2>
+                
+                <div class="test-item" id="test-opfs">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">Origin Private File System (OPFS)</div>
+                        <div class="test-detail">Persistent storage for database files</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-opfs-sync">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">OPFS Synchronous Access</div>
+                        <div class="test-detail">High-performance file operations</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-storage-quota">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">Storage Quota API</div>
+                        <div class="test-detail">Monitor available storage space</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="test-section">
+                <h2>🌐 Development Server</h2>
+                
+                <div class="test-item" id="test-coop-header">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">COOP Header</div>
+                        <div class="test-detail">Cross-Origin-Opener-Policy: same-origin</div>
+                    </div>
+                </div>
+                
+                <div class="test-item" id="test-coep-header">
+                    <div class="status pending">?</div>
+                    <div class="test-description">
+                        <div class="test-name">COEP Header</div>
+                        <div class="test-detail">Cross-Origin-Embedder-Policy: require-corp</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="recommendations-section"></div>
+            
+            <div class="logs" id="test-logs" style="display: none;">
+                <div id="log-content"></div>
+            </div>
+        </div>
+        
+        <div id="config-tab" class="tab-content">
+            <h2>⚙️ Configuration Examples</h2>
+            
+            <h3>Vite Configuration</h3>
+            <p>For users installing LocalRetrieve via NPM, add this to your <code>vite.config.js</code>:</p>
+            
+            <div class="config-example">
+import { defineConfig } from 'vite';
+import { localRetrieveVitePlugin } from 'localretrieve/vite-plugin';
+
+export default defineConfig({
+  plugins: [
+    localRetrieveVitePlugin({
+      enableCrossOriginIsolation: true,
+      enableHttps: true
+    })
+  ]
+});
+            </div>
+            
+            <h3>Manual Vite Configuration</h3>
+            <p>If you prefer manual configuration:</p>
+            
+            <div class="config-example">
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  server: {
+    https: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    }
+  },
+  worker: {
+    format: 'es'
+  },
+  assetsInclude: ['**/*.wasm'],
+  optimizeDeps: {
+    exclude: ['sqlite3.wasm']
+  }
+});
+            </div>
+            
+            <h3>Next.js Configuration</h3>
+            <p>For Next.js projects, add headers to <code>next.config.js</code>:</p>
+            
+            <div class="config-example">
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+        ],
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;
+            </div>
+            
+            <h3>Express.js Configuration</h3>
+            <p>For Express.js servers:</p>
+            
+            <div class="config-example">
+const express = require('express');
+const app = express();
+
+// Add COOP/COEP headers
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
+// Serve static files
+app.use(express.static('public'));
+
+app.listen(3000, () => {
+  console.log('Server running on https://localhost:3000');
+});
+            </div>
+        </div>
+        
+        <div id="troubleshooting-tab" class="tab-content">
+            <h2>🔧 Troubleshooting</h2>
+            
+            <h3>Common Issues</h3>
+            
+            <div class="test-section">
+                <h4>❌ SharedArrayBuffer is not defined</h4>
+                <p><strong>Cause:</strong> Missing COOP/COEP headers or not served over HTTPS.</p>
+                <p><strong>Solution:</strong></p>
+                <ul>
+                    <li>Ensure your development server serves HTTPS</li>
+                    <li>Add the required headers shown in the Configuration tab</li>
+                    <li>Test with <code>npx vite --https</code> if using Vite</li>
+                </ul>
+            </div>
+            
+            <div class="test-section">
+                <h4>❌ OPFS not available</h4>
+                <p><strong>Cause:</strong> Browser doesn't support OPFS or not in secure context.</p>
+                <p><strong>Solution:</strong></p>
+                <ul>
+                    <li>Use Chrome 86+, Firefox 111+, or Safari 15.2+</li>
+                    <li>Ensure HTTPS is enabled</li>
+                    <li>LocalRetrieve will fall back to IndexedDB automatically</li>
+                </ul>
+            </div>
+            
+            <div class="test-section">
+                <h4>❌ Cross-origin isolation failed</h4>
+                <p><strong>Cause:</strong> Headers not properly configured or conflicting policies.</p>
+                <p><strong>Solution:</strong></p>
+                <ul>
+                    <li>Verify headers in browser DevTools Network tab</li>
+                    <li>Check for conflicting CSP policies</li>
+                    <li>Ensure all resources support CORP if needed</li>
+                </ul>
+            </div>
+            
+            <div class="test-section">
+                <h4>❌ WASM loading failed</h4>
+                <p><strong>Cause:</strong> Incorrect MIME type or CORS issues.</p>
+                <p><strong>Solution:</strong></p>
+                <ul>
+                    <li>Configure server to serve .wasm files with correct MIME type</li>
+                    <li>Add .wasm files to Vite assetsInclude configuration</li>
+                    <li>Check browser console for specific error messages</li>
+                </ul>
+            </div>
+            
+            <h3>Browser Compatibility</h3>
+            
+            <div class="test-section">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="padding: 8px; border: 1px solid #ddd;">Feature</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Chrome</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Firefox</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Safari</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;">SharedArrayBuffer</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 68+</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 79+</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 15.2+</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;">OPFS</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 86+</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 111+</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">⚠️ 15.2+*</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;">WebAssembly</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 57+</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 52+</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 11+</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;">Web Workers</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ All</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ All</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ All</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="font-size: 0.9em; color: #666;">* Safari OPFS support is limited</p>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module">
+        let testResults = {};
+        let logMessages = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            logMessages.push(`[${timestamp}] ${message}`);
+            
+            const logContent = document.getElementById('log-content');
+            if (logContent) {
+                logContent.innerHTML = logMessages.join('<br>');
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+            
+            console.log(`[LocalRetrieve Test] ${message}`);
+        }
+        
+        function updateTestStatus(testId, status, message = '') {
+            testResults[testId] = { status, message };
+            
+            const testElement = document.getElementById(testId);
+            if (!testElement) return;
+            
+            const statusElement = testElement.querySelector('.status');
+            const detailElement = testElement.querySelector('.test-detail');
+            
+            statusElement.className = `status ${status}`;
+            statusElement.textContent = status === 'pass' ? '✓' : status === 'fail' ? '✗' : status === 'warn' ? '⚠' : '?';
+            
+            if (message) {
+                detailElement.textContent = message;
+            }
+        }
+        
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            // Make button active
+            event.target.classList.add('active');
+        }
+        
+        async function testBasicFeatures() {
+            log('Testing basic web platform features...');
+            
+            // WebAssembly
+            try {
+                if (typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function') {
+                    updateTestStatus('test-wasm', 'pass', 'WebAssembly fully supported');
+                    log('✓ WebAssembly supported');
+                } else {
+                    updateTestStatus('test-wasm', 'fail', 'WebAssembly not available');
+                    log('✗ WebAssembly not supported');
+                }
+            } catch (e) {
+                updateTestStatus('test-wasm', 'fail', `WebAssembly error: ${e.message}`);
+                log(`✗ WebAssembly error: ${e.message}`);
+            }
+            
+            // Web Workers
+            try {
+                if (typeof Worker === 'function') {
+                    updateTestStatus('test-workers', 'pass', 'Web Workers supported');
+                    log('✓ Web Workers supported');
+                } else {
+                    updateTestStatus('test-workers', 'fail', 'Web Workers not available');
+                    log('✗ Web Workers not supported');
+                }
+            } catch (e) {
+                updateTestStatus('test-workers', 'fail', `Worker error: ${e.message}`);
+                log(`✗ Worker error: ${e.message}`);
+            }
+            
+            // ES Modules
+            try {
+                if (typeof import.meta === 'object' && typeof import.meta.url === 'string') {
+                    updateTestStatus('test-es-modules', 'pass', 'ES modules supported');
+                    log('✓ ES modules supported');
+                } else {
+                    updateTestStatus('test-es-modules', 'warn', 'Limited ES module support');
+                    log('⚠ Limited ES module support');
+                }
+            } catch (e) {
+                updateTestStatus('test-es-modules', 'fail', `ES modules error: ${e.message}`);
+                log(`✗ ES modules error: ${e.message}`);
+            }
+            
+            // IndexedDB
+            try {
+                if (typeof indexedDB === 'object' && typeof indexedDB.open === 'function') {
+                    updateTestStatus('test-indexeddb', 'pass', 'IndexedDB available');
+                    log('✓ IndexedDB supported');
+                } else {
+                    updateTestStatus('test-indexeddb', 'fail', 'IndexedDB not available');
+                    log('✗ IndexedDB not supported');
+                }
+            } catch (e) {
+                updateTestStatus('test-indexeddb', 'fail', `IndexedDB error: ${e.message}`);
+                log(`✗ IndexedDB error: ${e.message}`);
+            }
+        }
+        
+        async function testCrossOriginIsolation() {
+            log('Testing cross-origin isolation features...');
+            
+            // Secure context
+            const isSecure = window.isSecureContext;
+            if (isSecure) {
+                updateTestStatus('test-secure-context', 'pass', 'HTTPS/localhost detected');
+                log('✓ Secure context (HTTPS)');
+            } else {
+                updateTestStatus('test-secure-context', 'fail', 'Requires HTTPS or localhost');
+                log('✗ Not in secure context');
+            }
+            
+            // Cross-origin isolation
+            const isCrossOriginIsolated = typeof crossOriginIsolated !== 'undefined' ? crossOriginIsolated : false;
+            if (isCrossOriginIsolated) {
+                updateTestStatus('test-cross-origin-isolated', 'pass', 'COOP/COEP headers detected');
+                log('✓ Cross-origin isolated');
+            } else {
+                updateTestStatus('test-cross-origin-isolated', 'fail', 'Missing COOP/COEP headers');
+                log('✗ Not cross-origin isolated');
+            }
+            
+            // SharedArrayBuffer
+            const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
+            if (hasSharedArrayBuffer) {
+                updateTestStatus('test-shared-array-buffer', 'pass', 'SharedArrayBuffer available');
+                log('✓ SharedArrayBuffer supported');
+            } else {
+                updateTestStatus('test-shared-array-buffer', 'fail', 'SharedArrayBuffer not available');
+                log('✗ SharedArrayBuffer not supported');
+            }
+            
+            // Atomics
+            if (hasSharedArrayBuffer) {
+                try {
+                    if (typeof Atomics === 'object' && typeof Atomics.wait === 'function') {
+                        updateTestStatus('test-atomics', 'pass', 'Atomics API available');
+                        log('✓ Atomics supported');
+                    } else {
+                        updateTestStatus('test-atomics', 'warn', 'Limited Atomics support');
+                        log('⚠ Limited Atomics support');
+                    }
+                } catch (e) {
+                    updateTestStatus('test-atomics', 'fail', `Atomics error: ${e.message}`);
+                    log(`✗ Atomics error: ${e.message}`);
+                }
+            } else {
+                updateTestStatus('test-atomics', 'fail', 'Requires SharedArrayBuffer');
+                log('✗ Atomics not available (needs SharedArrayBuffer)');
+            }
+        }
+        
+        async function testStorageFeatures() {
+            log('Testing storage features...');
+            
+            // OPFS
+            try {
+                const hasOPFS = 'storage' in navigator && 'getDirectory' in navigator.storage;
+                if (hasOPFS) {
+                    // Test if we can actually access OPFS
+                    try {
+                        const opfsRoot = await navigator.storage.getDirectory();
+                        updateTestStatus('test-opfs', 'pass', 'OPFS available and accessible');
+                        log('✓ OPFS supported and accessible');
+                        
+                        // Test sync access
+                        try {
+                            if ('createSyncAccessHandle' in FileSystemFileHandle.prototype) {
+                                updateTestStatus('test-opfs-sync', 'pass', 'OPFS sync access available');
+                                log('✓ OPFS sync access supported');
+                            } else {
+                                updateTestStatus('test-opfs-sync', 'warn', 'OPFS available, sync access limited');
+                                log('⚠ OPFS sync access not supported');
+                            }
+                        } catch (e) {
+                            updateTestStatus('test-opfs-sync', 'fail', 'OPFS sync access not available');
+                            log('✗ OPFS sync access error');
+                        }
+                    } catch (e) {
+                        updateTestStatus('test-opfs', 'warn', 'OPFS API present but access failed');
+                        log(`⚠ OPFS access failed: ${e.message}`);
+                        updateTestStatus('test-opfs-sync', 'fail', 'Cannot test without OPFS access');
+                    }
+                } else {
+                    updateTestStatus('test-opfs', 'fail', 'OPFS not supported by browser');
+                    updateTestStatus('test-opfs-sync', 'fail', 'OPFS not available');
+                    log('✗ OPFS not supported');
+                }
+            } catch (e) {
+                updateTestStatus('test-opfs', 'fail', `OPFS error: ${e.message}`);
+                updateTestStatus('test-opfs-sync', 'fail', 'Cannot test due to OPFS error');
+                log(`✗ OPFS error: ${e.message}`);
+            }
+            
+            // Storage quota
+            try {
+                if ('storage' in navigator && 'estimate' in navigator.storage) {
+                    const estimate = await navigator.storage.estimate();
+                    const usedMB = Math.round(estimate.usage / 1024 / 1024);
+                    const quotaMB = Math.round(estimate.quota / 1024 / 1024);
+                    updateTestStatus('test-storage-quota', 'pass', `Used: ${usedMB}MB, Quota: ${quotaMB}MB`);
+                    log(`✓ Storage quota API: ${usedMB}MB used of ${quotaMB}MB`);
+                } else {
+                    updateTestStatus('test-storage-quota', 'warn', 'Storage quota API not available');
+                    log('⚠ Storage quota API not supported');
+                }
+            } catch (e) {
+                updateTestStatus('test-storage-quota', 'fail', `Storage quota error: ${e.message}`);
+                log(`✗ Storage quota error: ${e.message}`);
+            }
+        }
+        
+        async function testHeaders() {
+            log('Testing development server headers...');
+            
+            // Check headers via a self-request
+            try {
+                const response = await fetch(window.location.href, { method: 'HEAD' });
+                
+                // COOP header
+                const coopHeader = response.headers.get('cross-origin-opener-policy');
+                if (coopHeader && coopHeader.includes('same-origin')) {
+                    updateTestStatus('test-coop-header', 'pass', `COOP: ${coopHeader}`);
+                    log(`✓ COOP header: ${coopHeader}`);
+                } else {
+                    updateTestStatus('test-coop-header', 'fail', coopHeader ? `Wrong value: ${coopHeader}` : 'Header missing');
+                    log(`✗ COOP header missing or incorrect: ${coopHeader}`);
+                }
+                
+                // COEP header
+                const coepHeader = response.headers.get('cross-origin-embedder-policy');
+                if (coepHeader && coepHeader.includes('require-corp')) {
+                    updateTestStatus('test-coep-header', 'pass', `COEP: ${coepHeader}`);
+                    log(`✓ COEP header: ${coepHeader}`);
+                } else {
+                    updateTestStatus('test-coep-header', 'fail', coepHeader ? `Wrong value: ${coepHeader}` : 'Header missing');
+                    log(`✗ COEP header missing or incorrect: ${coepHeader}`);
+                }
+            } catch (e) {
+                updateTestStatus('test-coop-header', 'warn', 'Cannot check headers');
+                updateTestStatus('test-coep-header', 'warn', 'Cannot check headers');
+                log(`⚠ Cannot check headers: ${e.message}`);
+            }
+        }
+        
+        function generateRecommendations() {
+            const recommendations = [];
+            
+            // Check test results and generate recommendations
+            Object.entries(testResults).forEach(([testId, result]) => {
+                if (result.status === 'fail') {
+                    switch (testId) {
+                        case 'test-secure-context':
+                            recommendations.push('Enable HTTPS for your development server');
+                            break;
+                        case 'test-cross-origin-isolated':
+                        case 'test-coop-header':
+                        case 'test-coep-header':
+                            recommendations.push('Add COOP/COEP headers: Cross-Origin-Opener-Policy: same-origin, Cross-Origin-Embedder-Policy: require-corp');
+                            break;
+                        case 'test-shared-array-buffer':
+                            recommendations.push('SharedArrayBuffer requires HTTPS + COOP/COEP headers');
+                            break;
+                        case 'test-opfs':
+                            recommendations.push('OPFS not available - data will not persist across sessions. Consider upgrading browser.');
+                            break;
+                        case 'test-wasm':
+                            recommendations.push('WebAssembly not supported - LocalRetrieve cannot function');
+                            break;
+                        case 'test-workers':
+                            recommendations.push('Web Workers not supported - LocalRetrieve cannot function');
+                            break;
+                    }
+                }
+            });
+            
+            // Remove duplicates
+            const uniqueRecommendations = [...new Set(recommendations)];
+            
+            if (uniqueRecommendations.length > 0) {
+                const recommendationsSection = document.getElementById('recommendations-section');
+                recommendationsSection.innerHTML = `
+                    <div class="recommendations">
+                        <h3>📋 Recommendations</h3>
+                        ${uniqueRecommendations.map(rec => `<div class="recommendation-item">${rec}</div>`).join('')}
+                    </div>
+                `;
+            }
+        }
+        
+        function generateSummary() {
+            const totalTests = Object.keys(testResults).length;
+            const passedTests = Object.values(testResults).filter(r => r.status === 'pass').length;
+            const failedTests = Object.values(testResults).filter(r => r.status === 'fail').length;
+            const warningTests = Object.values(testResults).filter(r => r.status === 'warn').length;
+            
+            let summaryClass = 'pass';
+            let summaryMessage = '';
+            
+            if (failedTests > 0) {
+                summaryClass = 'fail';
+                summaryMessage = `❌ ${failedTests} critical issues found. LocalRetrieve may not work properly.`;
+            } else if (warningTests > 0) {
+                summaryClass = 'warn';
+                summaryMessage = `⚠️ ${warningTests} warnings found. LocalRetrieve should work with limitations.`;
+            } else {
+                summaryMessage = `✅ All tests passed! Your environment fully supports LocalRetrieve.`;
+            }
+            
+            const summarySection = document.getElementById('summary-section');
+            summarySection.innerHTML = `
+                <div class="summary ${summaryClass}">
+                    <h2>${summaryMessage}</h2>
+                    <p>Passed: ${passedTests}/${totalTests} tests</p>
+                </div>
+            `;
+        }
+        
+        async function runAllTests() {
+            const button = document.querySelector('.run-all-btn');
+            button.disabled = true;
+            button.textContent = 'Running Tests...';
+            
+            // Show logs
+            document.getElementById('test-logs').style.display = 'block';
+            logMessages = [];
+            
+            log('Starting LocalRetrieve environment tests...');
+            
+            try {
+                await testBasicFeatures();
+                await testCrossOriginIsolation();
+                await testStorageFeatures();
+                await testHeaders();
+                
+                log('All tests completed.');
+                
+                generateRecommendations();
+                generateSummary();
+                
+            } catch (e) {
+                log(`Test error: ${e.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Run All Tests';
+            }
+        }
+        
+        // Make functions available globally
+        window.runAllTests = runAllTests;
+        window.showTab = showTab;
+        
+        // Auto-run tests on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(runAllTests, 500);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1757 @@
+/**
+ * Database Worker Implementation
+ * 
+ * This worker handles all database operations including SQLite WASM loading,
+ * sqlite-vec extension initialization, OPFS persistence, and hybrid search.
+ */
+
+import { WorkerRPCHandler } from '../utils/rpc.js';
+import type {
+  OpenDatabaseParams,
+  ExecParams,
+  SelectParams,
+  BulkInsertParams,
+  SearchRequest,
+  SearchResponse,
+  SearchResult,
+  CollectionInfo,
+  QueryResult,
+  ExportParams,
+  ImportParams,
+  SQLValue,
+  SQLParams
+} from '../types/worker.js';
+import { DatabaseError, VectorError, OPFSError } from '../types/worker.js';
+
+// SQLite WASM module interface (C API)
+interface SQLite3Module {
+  // Memory management
+  _malloc(size: number): number;
+  _free(ptr: number): void;
+  
+  // String utilities
+  stringToUTF8(str: string, outPtr: number, maxBytesToWrite: number): void;
+  UTF8ToString(ptr: number): string;
+  
+  // Value getters/setters
+  getValue(ptr: number, type: string): number;
+  setValue(ptr: number, value: number, type: string): void;
+
+  // Bulk memory operations
+  writeArrayToMemory?(data: Uint8Array, ptr: number): void;
+  
+  // SQLite C API functions
+  _sqlite3_open(filename: number, ppDb: number): number;
+  _sqlite3_close(db: number): number;
+  _sqlite3_exec(db: number, sql: number, callback: number, arg: number, errmsg: number): number;
+  _sqlite3_prepare_v2(db: number, sql: number, nByte: number, ppStmt: number, pzTail: number): number;
+  _sqlite3_step(stmt: number): number;
+  _sqlite3_finalize(stmt: number): number;
+  _sqlite3_column_count(stmt: number): number;
+  _sqlite3_column_name(stmt: number, iCol: number): number;
+  _sqlite3_column_type(stmt: number, iCol: number): number;
+  _sqlite3_column_int(stmt: number, iCol: number): number;
+  _sqlite3_column_double(stmt: number, iCol: number): number;
+  _sqlite3_column_text(stmt: number, iCol: number): number;
+  _sqlite3_column_blob(stmt: number, iCol: number): number;
+  _sqlite3_column_bytes(stmt: number, iCol: number): number;
+  _sqlite3_bind_int(stmt: number, index: number, value: number): number;
+  _sqlite3_bind_double(stmt: number, index: number, value: number): number;
+  _sqlite3_bind_text(stmt: number, index: number, value: number, length: number, destructor: number): number;
+  _sqlite3_bind_blob(stmt: number, index: number, value: number, length: number, destructor: number): number;
+  _sqlite3_bind_null(stmt: number, index: number): number;
+  _sqlite3_errmsg(db: number): number;
+  _sqlite3_libversion(): number;
+  
+  // sqlite-vec extension functions
+  _sqlite3_vec_init_manual(db: number): number;
+
+  // Serialize/deserialize functions
+  _sqlite3_serialize(db: number, schema: number, size: number, flags: number): number;
+  _sqlite3_deserialize(db: number, schema: number, data: number, szDb: bigint, szBuf: bigint, flags: number): number;
+  
+  // Version info
+  version?: string;
+}
+
+/**
+ * Database Worker Implementation
+ */
+class DatabaseWorker {
+  private sqlite3: SQLite3Module | null = null;
+  private dbPtr: number = 0; // Pointer to SQLite database
+  private rpcHandler: WorkerRPCHandler;
+  private isInitialized = false;
+  private operationCount = 0;
+  private startTime = Date.now();
+
+  // OPFS persistence
+  private opfsPath: string | null = null;
+  private tempDbName: string | null = null;
+  private lastSyncTime = 0;
+  private syncInterval = 5000; // Sync every 5 seconds
+  private pendingDatabaseData: Uint8Array | null = null;
+  private syncTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.rpcHandler = new WorkerRPCHandler({
+      logLevel: 'debug',
+      operationTimeout: 30000
+    });
+
+    this.setupRPCHandlers();
+  }
+
+  /**
+   * Initialize OPFS database with persistence support
+   * This creates a temporary file that is periodically synced to OPFS
+   */
+  private async initializeOPFSDatabase(opfsPath: string): Promise<string> {
+    try {
+      // Extract the actual file path from opfs:// URL
+      const dbPath = opfsPath.replace(/^opfs:\/\/?/, '');
+
+      // Check if OPFS is supported
+      if (!navigator.storage?.getDirectory) {
+        this.log('warn', 'OPFS not supported, falling back to memory database');
+        return ':memory:';
+      }
+
+      // Create a unique in-memory filename that we'll track for OPFS syncing
+      const tempDbName = `:opfs-${Date.now()}-${Math.random().toString(36).substr(2, 9)}:`;
+
+      // Store the OPFS path for later syncing
+      this.opfsPath = dbPath;
+      this.tempDbName = tempDbName;
+
+      // Try to load existing data from OPFS
+      try {
+        await this.loadDatabaseFromOPFS(dbPath);
+        this.log('info', `Loaded existing database from OPFS: ${dbPath}`);
+      } catch (error) {
+        this.log('info', `Creating new database for OPFS path: ${dbPath}`);
+      }
+
+      return tempDbName;
+    } catch (error) {
+      this.log('warn', `OPFS initialization failed: ${error instanceof Error ? error.message : String(error)}, using memory database`);
+      return ':memory:';
+    }
+  }
+
+  /**
+   * Load database from OPFS storage
+   */
+  private async loadDatabaseFromOPFS(dbPath: string): Promise<void> {
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      const pathParts = dbPath.split('/').filter(part => part.length > 0);
+
+      // Navigate to the file
+      let currentDir = opfsRoot;
+      for (let i = 0; i < pathParts.length - 1; i++) {
+        currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: false });
+      }
+
+      const fileName = pathParts[pathParts.length - 1];
+      const fileHandle = await currentDir.getFileHandle(fileName, { create: false });
+      const file = await fileHandle.getFile();
+      const data = new Uint8Array(await file.arrayBuffer());
+
+      if (data.length === 0) {
+        throw new Error('Empty database file');
+      }
+
+      // Use SQLite deserialize function to load data into our temporary database
+      // For now, we'll store the data and apply it after the database is created
+      this.pendingDatabaseData = data;
+
+      this.log('info', `Loaded ${data.length} bytes from OPFS: ${dbPath}`);
+    } catch (error) {
+      const opfsError = new OPFSError(`Failed to load from OPFS: ${error instanceof Error ? error.message : String(error)}`);
+      this.handleOPFSError(opfsError, 'load');
+      throw opfsError;
+    }
+  }
+
+  /**
+   * Save database to OPFS storage
+   */
+  private async saveDatabaseToOPFS(): Promise<void> {
+    if (!this.opfsPath || !this.dbPtr || !this.sqlite3) {
+      return;
+    }
+
+    try {
+      // Serialize the current database
+      const data = await this.serializeDatabase();
+
+      // Check if we have enough space
+      await this.ensureSufficientSpace(data.length * 2); // Conservative estimate with buffer
+
+      // Get OPFS root directory
+      const opfsRoot = await navigator.storage.getDirectory();
+      const pathParts = this.opfsPath.split('/').filter(part => part.length > 0);
+
+      // Create directories as needed
+      let currentDir = opfsRoot;
+      for (let i = 0; i < pathParts.length - 1; i++) {
+        currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: true });
+      }
+
+      // Create/update the file
+      const fileName = pathParts[pathParts.length - 1];
+      const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+
+      // Convert Uint8Array to ArrayBuffer for OPFS write
+      const buffer = new ArrayBuffer(data.length);
+      const view = new Uint8Array(buffer);
+      view.set(data);
+      await writable.write(buffer);
+      await writable.close();
+
+      this.lastSyncTime = Date.now();
+      this.log('debug', `Saved ${data.length} bytes to OPFS: ${this.opfsPath}`);
+    } catch (error) {
+      // Handle OPFS errors gracefully - background sync failures shouldn't crash the app
+      this.handleOPFSError(error instanceof Error ? error : new Error(String(error)), 'save');
+    }
+  }
+
+  /**
+   * Clear OPFS database file
+   */
+  private async clearOPFSDatabase(): Promise<void> {
+    if (!this.opfsPath) {
+      return;
+    }
+
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      const pathParts = this.opfsPath.split('/').filter(part => part.length > 0);
+
+      // Navigate to parent directory
+      let currentDir = opfsRoot;
+      for (let i = 0; i < pathParts.length - 1; i++) {
+        currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: false });
+      }
+
+      // Remove the file
+      const fileName = pathParts[pathParts.length - 1];
+      await currentDir.removeEntry(fileName);
+      this.log('info', `Cleared OPFS file: ${this.opfsPath}`);
+    } catch (error) {
+      // File might not exist, which is fine
+      this.log('debug', `Could not clear OPFS file (may not exist): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Serialize the current database to SQLite binary format
+   */
+  private async serializeDatabase(): Promise<Uint8Array> {
+    if (!this.sqlite3 || !this.dbPtr) {
+      throw new DatabaseError('Database not initialized');
+    }
+
+    try {
+      // Get the main schema name as a C string
+      const mainSchemaPtr = this.sqlite3!._malloc(5);
+      this.sqlite3!.stringToUTF8('main', mainSchemaPtr, 5);
+
+      // Serialize the database to a buffer
+      const sizePtr = this.sqlite3!._malloc(8); // Pointer to receive 64-bit size
+
+      // Check if the function exists
+      if (typeof this.sqlite3!._sqlite3_serialize !== 'function') {
+        throw new DatabaseError('sqlite3_serialize function not available');
+      }
+
+      const dataPtr = this.sqlite3!._sqlite3_serialize(this.dbPtr!, mainSchemaPtr, sizePtr, 0);
+
+      if (!dataPtr) {
+        throw new DatabaseError('Failed to serialize database');
+      }
+
+      // Read the size from the pointer (SQLite uses 64-bit integers for size)
+      const size = Number(this.sqlite3!.getValue(sizePtr, 'i64'));
+
+      // Copy the data from WASM memory to a Uint8Array
+      const result = new Uint8Array(size);
+      for (let i = 0; i < size; i++) {
+        result[i] = this.sqlite3!.getValue(dataPtr + i, 'i8');
+      }
+
+      // Free the allocated memory (but NOT the dataPtr - SQLite owns that)
+      this.sqlite3!._free(mainSchemaPtr);
+      this.sqlite3!._free(sizePtr);
+      // Note: Do NOT free dataPtr - SQLite manages this memory
+
+      this.log('info', `Serialized database to ${size} bytes`);
+      return result;
+    } catch (error) {
+      throw new DatabaseError(`Database serialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Deserialize and restore database from SQLite binary data
+   */
+  private async deserializeDatabase(data: Uint8Array): Promise<void> {
+    if (!this.sqlite3 || !this.dbPtr) {
+      throw new DatabaseError('Database not initialized');
+    }
+
+    try {
+      // Allocate memory for the database data
+      const dataPtr = this.sqlite3!._malloc(data.length);
+      if (!dataPtr) {
+        throw new DatabaseError('Failed to allocate memory for database data');
+      }
+
+      // Copy data to WASM memory efficiently
+      if (this.sqlite3!.writeArrayToMemory) {
+        this.sqlite3!.writeArrayToMemory(data, dataPtr);
+      } else {
+        // Fallback to byte-by-byte copy
+        for (let i = 0; i < data.length; i++) {
+          this.sqlite3!.setValue(dataPtr + i, data[i], 'i8');
+        }
+      }
+
+      // Get the main schema name as a C string
+      const mainSchemaPtr = this.sqlite3!._malloc(5);
+      this.sqlite3!.stringToUTF8('main', mainSchemaPtr, 5);
+
+      const dataSize = data.length;
+      this.log('info', `Deserializing ${dataSize} bytes of SQLite database`);
+
+      // Check if the function exists
+      if (typeof this.sqlite3!._sqlite3_deserialize !== 'function') {
+        throw new DatabaseError('sqlite3_deserialize function not available');
+      }
+
+      const result = this.sqlite3!._sqlite3_deserialize(this.dbPtr!, mainSchemaPtr, dataPtr, BigInt(dataSize), BigInt(dataSize), 0);
+
+      if (result !== 0) {
+        throw new DatabaseError(`Failed to deserialize database (SQLite error code: ${result})`);
+      }
+
+      // Free dataPtr since we're not using FREEONCLOSE flag
+      this.sqlite3!._free(dataPtr);
+      this.sqlite3!._free(mainSchemaPtr);
+
+      this.log('info', `Successfully restored database from ${data.length} bytes of SQLite data`);
+    } catch (error) {
+      throw new DatabaseError(`Database deserialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Start periodic OPFS syncing
+   */
+  private startOPFSSync(): void {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+    }
+
+    this.syncTimer = setInterval(async () => {
+      if (this.opfsPath && Date.now() - this.lastSyncTime > this.syncInterval) {
+        await this.saveDatabaseToOPFS();
+      }
+    }, this.syncInterval);
+
+    this.log('info', `Started OPFS sync (interval: ${this.syncInterval}ms)`);
+  }
+
+  /**
+   * Stop OPFS syncing
+   */
+  private stopOPFSSync(): void {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
+  }
+
+  /**
+   * Force immediate OPFS sync
+   */
+  private async forceOPFSSync(): Promise<void> {
+    if (this.opfsPath) {
+      await this.saveDatabaseToOPFS();
+    }
+  }
+
+  /**
+   * Monitor OPFS storage quota
+   */
+  private async checkOPFSQuota(): Promise<{ available: number; used: number; total: number }> {
+    try {
+      if (!navigator.storage?.estimate) {
+        throw new Error('Storage estimation not supported');
+      }
+
+      const estimate = await navigator.storage.estimate();
+      const quota = estimate.quota || 0;
+      const usage = estimate.usage || 0;
+      const available = quota - usage;
+
+      return {
+        available,
+        used: usage,
+        total: quota
+      };
+    } catch (error) {
+      throw new OPFSError(`Failed to check storage quota: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Check if there's enough space for an operation
+   */
+  private async ensureSufficientSpace(requiredBytes: number): Promise<void> {
+    try {
+      const { available } = await this.checkOPFSQuota();
+
+      if (available < requiredBytes) {
+        throw new OPFSError(`Insufficient storage space. Required: ${requiredBytes} bytes, Available: ${available} bytes`);
+      }
+
+      // Warn if we're getting close to quota (90% used)
+      const { used, total } = await this.checkOPFSQuota();
+      if (total > 0 && (used / total) > 0.9) {
+        this.log('warn', `Storage quota nearly full: ${Math.round((used / total) * 100)}% used (${used}/${total} bytes)`);
+      }
+    } catch (error) {
+      if (error instanceof OPFSError) {
+        throw error;
+      }
+      this.log('warn', `Failed to check storage space: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Handle OPFS errors with appropriate fallback strategies
+   */
+  private handleOPFSError(error: Error, operation: string): void {
+    this.log('error', `OPFS ${operation} failed: ${error.message}`);
+
+    if (error.message.includes('quota') || error.message.includes('storage')) {
+      this.log('warn', 'Storage quota exceeded. Consider clearing data or using export functionality.');
+    } else if (error.message.includes('permission') || error.message.includes('access')) {
+      this.log('warn', 'OPFS access denied. Browser may not support OPFS or permissions are restricted.');
+    } else if (error.message.includes('corrupt') || error.message.includes('invalid')) {
+      this.log('warn', 'Database file may be corrupted. Consider recreating the database.');
+    } else {
+      this.log('warn', 'Unexpected OPFS error. Data may not persist between sessions.');
+    }
+
+    // Suggest mitigation strategies
+    this.log('info', 'Mitigation strategies:');
+    this.log('info', '1. Use database.export() to backup your data');
+    this.log('info', '2. Clear browser storage to free up space');
+    this.log('info', '3. Use an in-memory database if persistence is not required');
+  }
+
+  private setupRPCHandlers(): void {
+    // Core database operations
+    this.rpcHandler.register('open', this.handleOpen.bind(this));
+    this.rpcHandler.register('close', this.handleClose.bind(this));
+    this.rpcHandler.register('exec', this.handleExec.bind(this));
+    this.rpcHandler.register('select', this.handleSelect.bind(this));
+    this.rpcHandler.register('bulkInsert', this.handleBulkInsert.bind(this));
+    
+    // WASM-specific operations
+    this.rpcHandler.register('initVecExtension', this.handleInitVecExtension.bind(this));
+    
+    // Schema management
+    this.rpcHandler.register('initializeSchema', this.handleInitializeSchema.bind(this));
+    this.rpcHandler.register('getCollectionInfo', this.handleGetCollectionInfo.bind(this));
+    
+    // Search operations
+    this.rpcHandler.register('search', this.handleSearch.bind(this));
+    
+    // Data export/import
+    this.rpcHandler.register('export', this.handleExport.bind(this));
+    this.rpcHandler.register('import', this.handleImport.bind(this));
+    this.rpcHandler.register('clear', this.handleClear.bind(this));
+
+    // Utility operations
+    this.rpcHandler.register('ping', this.handlePing.bind(this));
+    this.rpcHandler.register('getVersion', this.handleGetVersion.bind(this));
+    this.rpcHandler.register('getStats', this.handleGetStats.bind(this));
+  }
+
+  private async loadSQLiteWASM(): Promise<void> {
+    if (this.sqlite3) {
+      return; // Already loaded
+    }
+
+    try {
+      // Import SQLite WASM module from the built files
+      // This assumes the WASM files are built and available in the dist directory
+      const wasmModuleUrl = new URL('/sqlite3.mjs', location.origin);
+      const sqlite3Module = await import(/* @vite-ignore */ wasmModuleUrl.href);
+      
+      this.sqlite3 = await sqlite3Module.default({
+        locateFile: (path: string) => {
+          // Return the correct path for WASM files
+          if (path.endsWith('.wasm')) {
+            return `/${path}`;
+          }
+          return path;
+        }
+      });
+      
+      this.log('info', 'SQLite WASM module loaded successfully');
+    } catch (error) {
+      throw new DatabaseError(`Failed to load SQLite WASM: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleOpen(params: OpenDatabaseParams): Promise<void> {
+    await this.loadSQLiteWASM();
+
+    if (!this.sqlite3) {
+      throw new DatabaseError('SQLite WASM module not loaded');
+    }
+
+    try {
+      const { filename, vfs = 'opfs', pragmas = {} } = params;
+
+      // Handle OPFS persistence properly
+      let actualFilename: string;
+      if (filename.startsWith('opfs:/')) {
+        actualFilename = await this.initializeOPFSDatabase(filename);
+      } else {
+        actualFilename = filename;
+      }
+      
+      // Create database connection using C API
+      const filenamePtr = this.sqlite3._malloc(actualFilename.length + 1);
+      this.sqlite3.stringToUTF8(actualFilename, filenamePtr, actualFilename.length + 1);
+      
+      const dbPtrPtr = this.sqlite3._malloc(4); // Pointer to pointer
+      const result = this.sqlite3._sqlite3_open(filenamePtr, dbPtrPtr);
+      
+      this.sqlite3._free(filenamePtr);
+      
+      if (result !== 0) {
+        this.sqlite3._free(dbPtrPtr);
+        const errorPtr = this.sqlite3._sqlite3_errmsg ? this.sqlite3._sqlite3_errmsg(0) : 0;
+        const errorMsg = errorPtr ? this.sqlite3.UTF8ToString(errorPtr) : `SQLite error code ${result}`;
+        throw new DatabaseError(`Failed to open database: ${errorMsg}`);
+      }
+      
+      // Get the database pointer
+      this.dbPtr = this.sqlite3.getValue(dbPtrPtr, 'i32');
+      this.sqlite3._free(dbPtrPtr);
+      
+      if (!this.dbPtr) {
+        throw new DatabaseError('Failed to get database pointer');
+      }
+
+      // Apply PRAGMAs for optimization
+      const defaultPragmas = {
+        synchronous: 'NORMAL',
+        cache_size: '-64000', // 64MB cache
+        temp_store: 'MEMORY',
+        journal_mode: 'WAL',
+        foreign_keys: 'ON'
+      };
+
+      const allPragmas = { ...defaultPragmas, ...pragmas };
+      
+      for (const [key, value] of Object.entries(allPragmas)) {
+        try {
+          this.execSQL(`PRAGMA ${key} = ${value}`);
+        } catch (error) {
+          this.log('warn', `Failed to set PRAGMA ${key}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      // Skip OPFS restoration due to deserialize compatibility issues
+      // This prevents database corruption from _sqlite3_deserialize
+      if (this.pendingDatabaseData) {
+        this.log('info', `Skipping OPFS restoration (${this.pendingDatabaseData.length} bytes) to avoid corruption - starting fresh`);
+        this.pendingDatabaseData = null;
+
+        // Clear the incompatible OPFS data
+        if (this.opfsPath) {
+          try {
+            await this.clearOPFSDatabase();
+            this.log('info', 'Cleared incompatible OPFS database');
+          } catch (clearError) {
+            this.log('warn', `Failed to clear OPFS: ${clearError instanceof Error ? clearError.message : String(clearError)}`);
+          }
+        }
+      }
+
+      // Set up periodic OPFS syncing for OPFS databases
+      if (this.opfsPath) {
+        this.startOPFSSync();
+      }
+
+      this.isInitialized = true;
+      this.log('info', `Database opened: ${filename}`);
+
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('quota')) {
+        throw new OPFSError('Storage quota exceeded. Please clear some data or use export/import for backup.');
+      }
+      throw new DatabaseError(`Failed to open database: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Helper method to execute SQL using C API
+  private execSQL(sql: string): void {
+    if (!this.sqlite3 || !this.dbPtr) {
+      throw new DatabaseError('Database not open');
+    }
+
+    // Log SQL execution for debugging
+    this.log('debug', `Executing SQL: ${sql}`);
+
+    const sqlPtr = this.sqlite3._malloc(sql.length + 1);
+    this.sqlite3.stringToUTF8(sql, sqlPtr, sql.length + 1);
+
+    const result = this.sqlite3._sqlite3_exec(this.dbPtr, sqlPtr, 0, 0, 0);
+    this.sqlite3._free(sqlPtr);
+
+    if (result !== 0) {
+      const errorPtr = this.sqlite3._sqlite3_errmsg(this.dbPtr);
+      const errorMsg = this.sqlite3.UTF8ToString(errorPtr);
+      this.log('error', `SQL execution failed: ${sql} - Error: ${errorMsg}`);
+      throw new DatabaseError(`SQL execution failed: ${errorMsg}`);
+    } else {
+      this.log('debug', `SQL executed successfully: ${sql}`);
+    }
+  }
+
+  // Helper method to prepare and execute SELECT statements on a specific database
+  private selectSQLFromDB(dbPtr: number, sql: string, params?: any[]): Record<string, any>[] {
+    if (!this.sqlite3) {
+      throw new DatabaseError('SQLite not initialized');
+    }
+
+    const sqlPtr = this.sqlite3._malloc(sql.length + 1);
+    this.sqlite3.stringToUTF8(sql, sqlPtr, sql.length + 1);
+
+    const stmtPtrPtr = this.sqlite3._malloc(4);
+    const result = this.sqlite3._sqlite3_prepare_v2(dbPtr, sqlPtr, -1, stmtPtrPtr, 0);
+
+    this.sqlite3._free(sqlPtr);
+
+    if (result !== 0) {
+      this.sqlite3._free(stmtPtrPtr);
+      const errorPtr = this.sqlite3._sqlite3_errmsg(dbPtr);
+      const errorMsg = this.sqlite3.UTF8ToString(errorPtr);
+      throw new DatabaseError(`Failed to prepare statement: ${errorMsg}`);
+    }
+
+    const stmtPtr = this.sqlite3.getValue(stmtPtrPtr, 'i32');
+    this.sqlite3._free(stmtPtrPtr);
+
+    if (!stmtPtr) {
+      throw new DatabaseError('Failed to get statement pointer');
+    }
+
+    // Bind parameters if provided
+    if (params && params.length > 0) {
+      for (let i = 0; i < params.length; i++) {
+        const param = params[i];
+        if (param === null || param === undefined) {
+          this.sqlite3._sqlite3_bind_null(stmtPtr, i + 1);
+        } else if (typeof param === 'number') {
+          if (Number.isInteger(param)) {
+            this.sqlite3._sqlite3_bind_int(stmtPtr, i + 1, param);
+          } else {
+            this.sqlite3._sqlite3_bind_double(stmtPtr, i + 1, param);
+          }
+        } else if (typeof param === 'string') {
+          const paramPtr = this.sqlite3._malloc(param.length + 1);
+          this.sqlite3.stringToUTF8(param, paramPtr, param.length + 1);
+          this.sqlite3._sqlite3_bind_text(stmtPtr, i + 1, paramPtr, -1, 0);
+          this.sqlite3._free(paramPtr);
+        } else if (param instanceof Uint8Array) {
+          const paramPtr = this.sqlite3._malloc(param.length);
+          for (let j = 0; j < param.length; j++) {
+            this.sqlite3.setValue!(paramPtr + j, param[j], 'i8');
+          }
+          this.sqlite3._sqlite3_bind_blob(stmtPtr, i + 1, paramPtr, param.length, 0);
+          this.sqlite3._free(paramPtr);
+        }
+      }
+    }
+
+    const rows: Record<string, any>[] = [];
+
+    try {
+      while (this.sqlite3._sqlite3_step(stmtPtr) === 100) { // SQLITE_ROW
+        const colCount = this.sqlite3._sqlite3_column_count(stmtPtr);
+        const row: Record<string, any> = {};
+
+        for (let i = 0; i < colCount; i++) {
+          const colName = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(stmtPtr, i));
+          const colType = this.sqlite3._sqlite3_column_type(stmtPtr, i);
+
+          let value: any;
+          switch (colType) {
+            case 1: // SQLITE_INTEGER
+              value = this.sqlite3._sqlite3_column_int(stmtPtr, i);
+              break;
+            case 2: // SQLITE_FLOAT
+              value = this.sqlite3._sqlite3_column_double(stmtPtr, i);
+              break;
+            case 3: // SQLITE_TEXT
+              value = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_text(stmtPtr, i));
+              break;
+            case 4: // SQLITE_BLOB
+              const blobPtr = this.sqlite3._sqlite3_column_blob(stmtPtr, i);
+              const blobSize = this.sqlite3._sqlite3_column_bytes(stmtPtr, i);
+              value = new Uint8Array(blobSize);
+              for (let j = 0; j < blobSize; j++) {
+                value[j] = this.sqlite3.getValue!(blobPtr + j, 'i8');
+              }
+              break;
+            case 5: // SQLITE_NULL
+            default:
+              value = null;
+              break;
+          }
+
+          row[colName] = value;
+        }
+
+        rows.push(row);
+      }
+    } finally {
+      this.sqlite3._sqlite3_finalize(stmtPtr);
+    }
+
+    return rows;
+  }
+
+  // Helper method to prepare and execute SELECT statements
+  private selectSQL(sql: string, params?: any[]): Record<string, any>[] {
+    if (!this.sqlite3 || !this.dbPtr) {
+      throw new DatabaseError('Database not open');
+    }
+
+    // Force log to worker console
+    console.warn(`[WORKER selectSQL] Executing: ${sql}`);
+    if (params) {
+      console.warn(`[WORKER selectSQL] Params:`, params);
+    }
+
+    // Log SQL execution for debugging
+    this.log('debug', `Executing SELECT: ${sql}${params ? ` with params: [${params.join(', ')}]` : ''}`);
+
+    const sqlPtr = this.sqlite3._malloc(sql.length + 1);
+    this.sqlite3.stringToUTF8(sql, sqlPtr, sql.length + 1);
+    
+    const stmtPtrPtr = this.sqlite3._malloc(4);
+    const result = this.sqlite3._sqlite3_prepare_v2(this.dbPtr, sqlPtr, -1, stmtPtrPtr, 0);
+    
+    this.sqlite3._free(sqlPtr);
+    
+    if (result !== 0) {
+      this.sqlite3._free(stmtPtrPtr);
+      const errorPtr = this.sqlite3._sqlite3_errmsg(this.dbPtr);
+      const errorMsg = this.sqlite3.UTF8ToString(errorPtr);
+      console.error(`[WORKER selectSQL] SQL prepare failed: ${errorMsg} - SQL: ${sql}`);
+      throw new DatabaseError(`Failed to prepare statement: ${errorMsg}`);
+    }
+    
+    const stmtPtr = this.sqlite3.getValue(stmtPtrPtr, 'i32');
+    this.sqlite3._free(stmtPtrPtr);
+    
+    if (!stmtPtr) {
+      throw new DatabaseError('Failed to get statement pointer');
+    }
+
+    // Bind parameters if provided
+    if (params && params.length > 0) {
+      for (let i = 0; i < params.length; i++) {
+        const param = params[i];
+        const index = i + 1; // SQLite uses 1-based indexing
+        
+        if (param === null || param === undefined) {
+          this.sqlite3._sqlite3_bind_null(stmtPtr, index);
+        } else if (typeof param === 'number') {
+          if (Number.isInteger(param)) {
+            this.sqlite3._sqlite3_bind_int(stmtPtr, index, param);
+          } else {
+            this.sqlite3._sqlite3_bind_double(stmtPtr, index, param);
+          }
+        } else if (typeof param === 'string') {
+          const textPtr = this.sqlite3._malloc(param.length + 1);
+          this.sqlite3.stringToUTF8(param, textPtr, param.length + 1);
+          this.sqlite3._sqlite3_bind_text(stmtPtr, index, textPtr, param.length, -1);
+          this.sqlite3._free(textPtr);
+        }
+      }
+    }
+
+    const rows: Record<string, any>[] = [];
+    
+    // Execute and fetch results
+    while (this.sqlite3._sqlite3_step(stmtPtr) === 100) { // SQLITE_ROW = 100
+      const row: Record<string, any> = {};
+      const columnCount = this.sqlite3._sqlite3_column_count(stmtPtr);
+      
+      for (let i = 0; i < columnCount; i++) {
+        const namePtr = this.sqlite3._sqlite3_column_name(stmtPtr, i);
+        const columnName = this.sqlite3.UTF8ToString(namePtr);
+        const columnType = this.sqlite3._sqlite3_column_type(stmtPtr, i);
+        
+        let value: any;
+        switch (columnType) {
+          case 1: // SQLITE_INTEGER
+            value = this.sqlite3._sqlite3_column_int(stmtPtr, i);
+            break;
+          case 2: // SQLITE_FLOAT
+            value = this.sqlite3._sqlite3_column_double(stmtPtr, i);
+            break;
+          case 3: // SQLITE_TEXT
+            const textPtr = this.sqlite3._sqlite3_column_text(stmtPtr, i);
+            value = this.sqlite3.UTF8ToString(textPtr);
+            break;
+          case 4: // SQLITE_BLOB
+            const blobPtr = this.sqlite3._sqlite3_column_blob(stmtPtr, i);
+            const blobSize = this.sqlite3._sqlite3_column_bytes(stmtPtr, i);
+            // For now, convert blob to string representation
+            value = `[BLOB ${blobSize} bytes]`;
+            break;
+          case 5: // SQLITE_NULL
+          default:
+            value = null;
+            break;
+        }
+        
+        row[columnName] = value;
+      }
+      
+      rows.push(row);
+    }
+    
+    this.sqlite3._sqlite3_finalize(stmtPtr);
+
+    console.warn(`[WORKER selectSQL] Returned ${rows.length} rows`);
+    if (rows.length > 0) {
+      console.warn(`[WORKER selectSQL] First row:`, rows[0]);
+    }
+
+    this.log('debug', `SELECT returned ${rows.length} rows`);
+    return rows;
+  }
+
+  private async handleClose(): Promise<void> {
+    if (this.dbPtr && this.sqlite3) {
+      try {
+        // Force final sync to OPFS before closing
+        await this.forceOPFSSync();
+
+        // Stop syncing
+        this.stopOPFSSync();
+
+        // Close the database
+        this.sqlite3._sqlite3_close(this.dbPtr);
+        this.dbPtr = 0;
+        this.isInitialized = false;
+
+        // Reset OPFS state
+        this.opfsPath = null;
+        this.tempDbName = null;
+        this.pendingDatabaseData = null;
+
+        this.log('info', 'Database closed');
+      } catch (error) {
+        throw new DatabaseError(`Failed to close database: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  private async handleExec(params: ExecParams): Promise<QueryResult | void> {
+    this.ensureInitialized();
+    
+    try {
+      const { sql, params: sqlParams } = params;
+      this.operationCount++;
+      
+      if (sqlParams && (Array.isArray(sqlParams) || Object.keys(sqlParams).length > 0)) {
+        // For parameterized queries, use our selectSQL helper (which handles parameters)
+        const paramArray = Array.isArray(sqlParams) ? sqlParams : Object.values(sqlParams);
+        const results = this.selectSQL(sql, paramArray);
+        return { rows: results, rowsAffected: results.length };
+      } else {
+        this.execSQL(sql);
+        // For non-SELECT statements, return empty result but indicate success
+        return { rows: [], rowsAffected: 0 };
+      }
+    } catch (error) {
+      this.log('error', `SQL execution failed: ${params?.sql || 'unknown SQL'}`, error);
+      throw new DatabaseError(`SQL execution failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleSelect(params: SelectParams): Promise<QueryResult> {
+    this.ensureInitialized();
+
+    try {
+      const { sql, params: sqlParams } = params;
+      this.operationCount++;
+
+      // Force log to main thread AND console
+      console.warn(`[WORKER SELECT] SQL: ${sql}`);
+      console.warn(`[WORKER SELECT] Params:`, sqlParams);
+
+      const paramArray = sqlParams ? (Array.isArray(sqlParams) ? sqlParams : Object.values(sqlParams)) : undefined;
+      const rows = this.selectSQL(sql, paramArray);
+
+      console.warn(`[WORKER SELECT] Result: ${rows.length} rows`);
+      this.log('debug', `Selected ${rows.length} rows from: ${sql}`);
+
+      return {
+        rows,
+        rowsAffected: rows.length
+      };
+    } catch (error) {
+      console.error(`[WORKER SELECT] Error:`, error);
+      throw new DatabaseError(`Select query failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleBulkInsert(params: BulkInsertParams): Promise<void> {
+    this.ensureInitialized();
+    
+    try {
+      const { table, rows, batchSize = 1000 } = params;
+      
+      if (rows.length === 0) {
+        return;
+      }
+      
+      // Get column names from first row
+      const columns = Object.keys(rows[0]);
+      const placeholders = columns.map(() => '?').join(', ');
+      const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+      
+      this.execSQL('BEGIN TRANSACTION');
+      
+      try {
+        for (let i = 0; i < rows.length; i += batchSize) {
+          const batch = rows.slice(i, i + batchSize);
+          
+          for (const row of batch) {
+            const values = columns.map(col => row[col]);
+            this.selectSQL(sql, values); // Use selectSQL for parameterized insert
+          }
+        }
+        
+        this.execSQL('COMMIT');
+        
+        this.operationCount += rows.length;
+        this.log('info', `Bulk inserted ${rows.length} rows into ${table}`);
+        
+      } catch (error) {
+        this.execSQL('ROLLBACK');
+        throw error;
+      }
+      
+    } catch (error) {
+      throw new DatabaseError(`Bulk insert failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleInitVecExtension(): Promise<void> {
+    this.ensureInitialized();
+
+    if (!this.sqlite3 || !this.dbPtr) {
+      throw new VectorError('SQLite WASM module not loaded or database not open');
+    }
+
+    try {
+      this.log('info', 'Initializing sqlite-vec extension...');
+
+      // Manual initialization of sqlite-vec extension (required for WASM)
+      const result = this.sqlite3._sqlite3_vec_init_manual(this.dbPtr);
+
+      if (result !== 0) {
+        this.log('error', `sqlite-vec initialization failed with code: ${result}`);
+        throw new VectorError(`Failed to initialize sqlite-vec extension (code: ${result})`);
+      }
+
+      this.log('info', 'sqlite-vec extension initialized successfully');
+
+      // Verify vec extension is working
+      try {
+        const testResult = await this.handleSelect({
+          sql: "SELECT vec_version() as version"
+        });
+
+        this.log('info', `sqlite-vec extension verified, version: ${testResult.rows[0]?.version}`);
+
+        // Test vec_f32 function
+        const testVecResult = await this.handleSelect({
+          sql: "SELECT vec_f32('[1.0, 2.0, 3.0]') as test_vector"
+        });
+
+        this.log('info', `vec_f32 function test result: ${JSON.stringify(testVecResult.rows[0])}`);
+
+      } catch (testError) {
+        this.log('error', `sqlite-vec extension test failed: ${testError instanceof Error ? testError.message : String(testError)}`);
+        throw testError;
+      }
+
+    } catch (error) {
+      this.log('error', `Vector extension initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new VectorError(`Vector extension initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleInitializeSchema(): Promise<void> {
+    this.ensureInitialized();
+
+    try {
+      // If this database was restored from OPFS and has data, it likely has a valid schema
+      // Check for data in expected tables as an indicator of successful restoration
+      let hasData = false;
+      try {
+        const docCount = this.selectSQL('SELECT COUNT(*) as count FROM docs_default');
+        hasData = docCount.length > 0 && docCount[0][0] > 0;
+        if (hasData) {
+          this.log('info', 'Database contains data, assuming schema is complete');
+          return;
+        }
+      } catch (error) {
+        // docs_default doesn't exist or isn't accessible, continue with schema check
+      }
+
+      // Check if schema already exists (from restored database)
+      // Check for all required tables (both regular and virtual)
+      const allTables = this.selectSQL(`
+        SELECT name FROM sqlite_master
+        WHERE name IN ('docs_default', 'collections', 'fts_default', 'vec_default_dense')
+        ORDER BY name
+      `);
+
+      // Debug: Log the raw table query results
+      this.log('info', `Raw table query results:`, allTables);
+
+      const foundTableNames = allTables.map(row => {
+        // Handle both array and object row formats
+        if (Array.isArray(row)) {
+          return row[0];
+        } else if (typeof row === 'object' && row !== null) {
+          return row.name || row[0];
+        }
+        return String(row);
+      }).filter(name => name && name.length > 0);
+
+      this.log('info', `Found existing tables: ${foundTableNames.join(', ')}`);
+
+      // Only skip initialization if ALL required tables exist (4 total)
+      if (foundTableNames.length >= 4) {
+        this.log('info', 'Complete schema already exists, skipping initialization');
+        return;
+      }
+
+      // If some tables exist but not all, log warning and recreate schema
+      if (foundTableNames.length > 0) {
+        this.log('warn', `Partial schema detected (${foundTableNames.length}/4 tables), reinitializing schema...`);
+        // Drop existing tables to ensure clean recreation
+        const tableNames = foundTableNames;
+
+        // Special handling for virtual tables - they create shadow tables that need proper cleanup
+        const virtualTablesToClean = ['fts_default', 'vec_default_dense'];
+
+        for (const virtualTable of virtualTablesToClean) {
+          if (tableNames.includes(virtualTable)) {
+            try {
+              this.execSQL(`DROP TABLE IF EXISTS ${virtualTable}`);
+              this.log('info', `Dropped virtual table: ${virtualTable}`);
+            } catch (error) {
+              this.log('warn', `Failed to drop virtual table ${virtualTable}: ${error}`);
+            }
+          }
+        }
+
+        // Drop remaining regular tables
+        const regularTablesToClean = ['docs_default', 'collections'];
+        for (const regularTable of regularTablesToClean) {
+          if (tableNames.includes(regularTable)) {
+            try {
+              this.execSQL(`DROP TABLE IF EXISTS ${regularTable}`);
+              this.log('info', `Dropped regular table: ${regularTable}`);
+            } catch (error) {
+              this.log('warn', `Failed to drop regular table ${regularTable}: ${error}`);
+            }
+          }
+        }
+      }
+
+      // Create default collection schema
+      await this.handleExec({
+        sql: `
+          -- Base documents table
+          CREATE TABLE IF NOT EXISTS docs_default (
+            rowid INTEGER PRIMARY KEY,
+            id TEXT UNIQUE,
+            title TEXT,
+            content TEXT,
+            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            metadata JSON
+          );
+          
+          -- Full-text search table
+          CREATE VIRTUAL TABLE IF NOT EXISTS fts_default USING fts5(
+            id UNINDEXED,
+            title,
+            content,
+            tokenize = "unicode61 remove_diacritics 2"
+          );
+          
+          -- Vector search table (384-dimensional embeddings)
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_default_dense USING vec0(
+            rowid INTEGER PRIMARY KEY,
+            embedding float[384]
+          );
+          
+          -- Collections metadata
+          CREATE TABLE IF NOT EXISTS collections (
+            name TEXT PRIMARY KEY,
+            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            schema_version INTEGER DEFAULT 1,
+            config JSON
+          );
+          
+          -- Insert default collection info
+          INSERT OR IGNORE INTO collections (name, config) 
+          VALUES ('default', '{"vectorDim": 384, "metric": "cosine"}');
+        `
+      });
+      
+      this.log('info', 'Default schema initialized');
+      
+    } catch (error) {
+      throw new DatabaseError(`Schema initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleGetCollectionInfo(name: string): Promise<CollectionInfo> {
+    this.ensureInitialized();
+    
+    try {
+      const collectionResult = await this.handleSelect({
+        sql: 'SELECT * FROM collections WHERE name = ?',
+        params: [name]
+      });
+      
+      if (collectionResult.rows.length === 0) {
+        throw new DatabaseError(`Collection '${name}' not found`);
+      }
+      
+      const collection = collectionResult.rows[0];
+      
+      // Get document count
+      const countResult = await this.handleSelect({
+        sql: `SELECT COUNT(*) as count FROM docs_${name}`
+      });
+      
+      const config = JSON.parse(collection.config || '{}');
+      
+      return {
+        name: collection.name,
+        createdAt: collection.created_at,
+        schemaVersion: collection.schema_version,
+        vectorDimensions: config.vectorDim || 384,
+        documentCount: countResult.rows[0]?.count || 0
+      };
+      
+    } catch (error) {
+      throw new DatabaseError(`Failed to get collection info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleSearch(params: SearchRequest): Promise<SearchResponse> {
+    this.ensureInitialized();
+    
+    const startTime = Date.now();
+    
+    try {
+      const {
+        query,
+        collection = 'default',
+        limit = 10,
+        fusionMethod = 'rrf',
+        fusionWeights = { fts: 0.6, vec: 0.4 }
+      } = params;
+
+      this.log('info', `Starting search - text: "${query.text || 'none'}", vector: ${query.vector ? 'provided' : 'none'}, collection: ${collection}`);
+
+      // Handle different search scenarios
+      let searchSQL: string;
+      let searchParams: any[];
+
+      if (query.text && query.vector) {
+        // Hybrid search combining FTS and vector search
+        this.log('info', 'Performing hybrid text + vector search');
+
+        searchSQL = `
+          WITH fts_results AS (
+            SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                   bm25(fts_${collection}) as fts_score,
+                   rank() OVER (ORDER BY bm25(fts_${collection})) as fts_rank
+            FROM docs_${collection} d
+            JOIN fts_${collection} f ON d.rowid = f.rowid
+            WHERE fts_${collection} MATCH ?
+            LIMIT ?
+          ),
+          vec_results AS (
+            SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                   v.distance as vec_score,
+                   rank() OVER (ORDER BY v.distance) as vec_rank
+            FROM docs_${collection} d
+            JOIN (
+              SELECT rowid, distance
+              FROM vec_${collection}_dense
+              WHERE embedding MATCH ?
+              ORDER BY distance
+              LIMIT ?
+            ) v ON d.rowid = v.rowid
+          )
+          SELECT DISTINCT
+            COALESCE(f.id, v.id) as id,
+            COALESCE(f.title, v.title) as title,
+            COALESCE(f.content, v.content) as content,
+            COALESCE(f.metadata, v.metadata) as metadata,
+            COALESCE(f.fts_score, 0) as fts_score,
+            COALESCE(v.vec_score, 1) as vec_score,
+            CASE
+              WHEN ? = 'rrf' THEN
+                (COALESCE(1.0/(60 + f.fts_rank), 0) + COALESCE(1.0/(60 + v.vec_rank), 0))
+              ELSE
+                (? * COALESCE(-f.fts_score, 0) + ? * COALESCE(1.0/(1.0 + v.vec_score), 0))
+            END as score
+          FROM fts_results f
+          FULL OUTER JOIN vec_results v ON f.rowid = v.rowid
+          ORDER BY score DESC
+          LIMIT ?
+        `;
+
+        const vectorJson = JSON.stringify(Array.from(query.vector));
+        searchParams = [
+          query.text, limit,
+          vectorJson, limit,
+          fusionMethod,
+          fusionWeights.fts, fusionWeights.vec,
+          limit
+        ];
+      } else if (query.text) {
+        // Text-only search
+        this.log('info', 'Performing text-only FTS search');
+
+        searchSQL = `
+          SELECT d.id, d.title, d.content, d.metadata,
+                 bm25(fts_${collection}) as fts_score,
+                 0 as vec_score,
+                 -bm25(fts_${collection}) as score
+          FROM docs_${collection} d
+          JOIN fts_${collection} f ON d.rowid = f.rowid
+          WHERE fts_${collection} MATCH ?
+          ORDER BY score DESC
+          LIMIT ?
+        `;
+
+        searchParams = [query.text, limit];
+      } else if (query.vector) {
+        // Vector-only search
+        this.log('info', 'Performing vector-only search');
+
+        const vectorJson = JSON.stringify(Array.from(query.vector));
+        searchSQL = `
+          SELECT d.id, d.title, d.content, d.metadata,
+                 0 as fts_score,
+                 v.distance as vec_score,
+                 1.0/(1.0 + v.distance) as score
+          FROM docs_${collection} d
+          JOIN (
+            SELECT rowid, distance
+            FROM vec_${collection}_dense
+            WHERE embedding MATCH ?
+            ORDER BY distance
+            LIMIT ?
+          ) v ON d.rowid = v.rowid
+          ORDER BY v.distance
+        `;
+
+        searchParams = [vectorJson, limit];
+      } else {
+        throw new DatabaseError('Search requires either text or vector query');
+      }
+
+      this.log('info', `Executing search SQL with ${searchParams.length} parameters`);
+
+      const searchResult = await this.handleSelect({
+        sql: searchSQL,
+        params: searchParams
+      });
+
+      const results: SearchResult[] = searchResult.rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+        score: row.score,
+        ftsScore: row.fts_score,
+        vecScore: row.vec_score
+      }));
+
+      const searchTime = Date.now() - startTime;
+      this.operationCount++;
+
+      this.log('debug', `Search completed in ${searchTime}ms, found ${results.length} results`);
+
+      return {
+        results,
+        totalResults: results.length,
+        searchTime
+      };
+
+    } catch (error) {
+      throw new DatabaseError(`Search failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleExport(params?: ExportParams): Promise<Uint8Array> {
+    this.ensureInitialized();
+
+    try {
+      // Use SQLite serialize function for proper binary export
+      this.log('info', 'Exporting database using SQLite serialize...');
+
+      const startTime = Date.now();
+
+      // Allocate space for 64-bit size output parameter
+      const sizePtr = this.sqlite3!._malloc(8);
+
+      try {
+        // Serialize the main database (schema name = "main", flags = 0)
+        const schemaName = "main";
+        const mainSchemaPtr = this.sqlite3!._malloc(schemaName.length + 1);
+        this.sqlite3!.stringToUTF8(schemaName, mainSchemaPtr, schemaName.length + 1);
+        const dataPtr = this.sqlite3!._sqlite3_serialize(this.dbPtr!, mainSchemaPtr, sizePtr, 0);
+
+        if (!dataPtr) {
+          throw new DatabaseError('Failed to serialize database - no data returned');
+        }
+
+        // Get the size of the serialized data (SQLite uses 64-bit integers for size)
+        const size = Number(this.sqlite3!.getValue!(sizePtr, 'i64'));
+
+        if (size <= 0) {
+          throw new DatabaseError(`Invalid serialized data size: ${size}`);
+        }
+
+        // Copy the data to a JavaScript Uint8Array
+        const result = new Uint8Array(size);
+        for (let i = 0; i < size; i++) {
+          result[i] = this.sqlite3!.getValue!(dataPtr + i, 'i8');
+        }
+
+        // Free the serialized data (SQLite allocated this)
+        this.sqlite3!._free(dataPtr);
+        this.sqlite3!._free(mainSchemaPtr);
+
+        const exportTime = Date.now() - startTime;
+        this.log('info', `Database exported: ${size} bytes in ${exportTime}ms`);
+
+        // Call progress callback if provided
+        if (params?.onProgress) {
+          params.onProgress({
+            phase: 'complete',
+            bytesProcessed: size,
+            totalBytes: size,
+            timeElapsed: exportTime
+          });
+        }
+
+        return result;
+      } finally {
+        // Always free the size pointer
+        this.sqlite3!._free(sizePtr);
+      }
+    } catch (error) {
+      this.log('error', `Export failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new DatabaseError(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleImport(params: ImportParams): Promise<void> {
+    this.ensureInitialized();
+
+    try {
+      const { data, overwrite = false, onProgress } = params;
+
+      this.log('info', `Importing database: ${data.length} bytes`);
+      const startTime = Date.now();
+
+      if (onProgress) {
+        onProgress({
+          phase: 'validating',
+          bytesProcessed: 0,
+          totalBytes: data.length,
+          timeElapsed: 0
+        });
+      }
+
+      // Validate the data first
+      if (!data || data.length === 0) {
+        throw new DatabaseError('Import data is empty or invalid');
+      }
+
+      // Basic SQLite header validation (SQLite files start with "SQLite format 3\0")
+      const expectedHeader = new Uint8Array([83, 81, 76, 105, 116, 101, 32, 102, 111, 114, 109, 97, 116, 32, 51, 0]);
+      if (data.length < expectedHeader.length) {
+        throw new DatabaseError('Import data is too small to be a valid SQLite database');
+      }
+
+      // Debug logging for header validation
+      const actualHeader = new Uint8Array(data.buffer, data.byteOffset, expectedHeader.length);
+      this.log('debug', `Expected header: [${Array.from(expectedHeader).join(', ')}]`);
+      this.log('debug', `Actual header: [${Array.from(actualHeader).join(', ')}]`);
+
+      for (let i = 0; i < expectedHeader.length; i++) {
+        if (data[i] !== expectedHeader[i]) {
+          throw new DatabaseError(`Import data does not appear to be a valid SQLite database file. Header mismatch at byte ${i}: expected ${expectedHeader[i]}, got ${data[i]}`);
+        }
+      }
+
+      if (onProgress) {
+        onProgress({
+          phase: 'preparing',
+          bytesProcessed: data.length * 0.1,
+          totalBytes: data.length,
+          timeElapsed: Date.now() - startTime
+        });
+      }
+
+      if (overwrite) {
+        // For overwrite, we need to use a different approach since _sqlite3_deserialize
+        // requires a fresh database connection. We'll create a temporary database,
+        // deserialize there, then copy the data.
+        this.log('info', 'Overwriting existing database...');
+
+        // We'll handle the overwrite after deserialization
+      }
+
+      if (onProgress) {
+        onProgress({
+          phase: 'importing',
+          bytesProcessed: data.length * 0.3,
+          totalBytes: data.length,
+          timeElapsed: Date.now() - startTime
+        });
+      }
+
+      if (overwrite) {
+        // Close the current database and reopen with a fresh connection
+        this.log('info', 'Overwriting existing database...');
+
+        // Stop OPFS sync and close current database
+        this.stopOPFSSync();
+        if (this.dbPtr) {
+          this.sqlite3!._sqlite3_close(this.dbPtr);
+          this.dbPtr = 0;
+        }
+
+        // Reopen database
+        const dbName = this.tempDbName || ':memory:';
+        const filenamePtr = this.sqlite3!._malloc(dbName.length + 1);
+        this.sqlite3!.stringToUTF8(dbName, filenamePtr, dbName.length + 1);
+        const dbPtrPtr = this.sqlite3!._malloc(4);
+
+        try {
+          const result = this.sqlite3!._sqlite3_open(filenamePtr, dbPtrPtr);
+          this.dbPtr = this.sqlite3!.getValue!(dbPtrPtr, 'i32');
+
+          if (result !== 0 || !this.dbPtr) {
+            throw new DatabaseError(`Failed to reopen database for import (code: ${result})`);
+          }
+        } finally {
+          this.sqlite3!._free(filenamePtr);
+          this.sqlite3!._free(dbPtrPtr);
+        }
+      }
+
+      // Close current database if open
+      if (this.dbPtr) {
+        this.sqlite3!._sqlite3_close(this.dbPtr);
+        this.dbPtr = 0;
+      }
+
+      // Allocate memory for the database data
+      const dataPtr = this.sqlite3!._malloc(data.length);
+      if (!dataPtr) {
+        throw new DatabaseError('Failed to allocate memory for database');
+      }
+
+      try {
+        // Copy data to WASM memory
+        if (this.sqlite3!.writeArrayToMemory) {
+          this.sqlite3!.writeArrayToMemory(data, dataPtr);
+        } else {
+          for (let i = 0; i < data.length; i++) {
+            this.sqlite3!.setValue!(dataPtr + i, data[i], 'i8');
+          }
+        }
+
+        // Create new in-memory database
+        const dbPtrPtr = this.sqlite3!._malloc(4);
+
+        try {
+          // Open new in-memory database
+          const memDbName = ":memory:";
+          const filenamePtr = this.sqlite3!._malloc(memDbName.length + 1);
+          this.sqlite3!.stringToUTF8(memDbName, filenamePtr, memDbName.length + 1);
+
+          const result = this.sqlite3!._sqlite3_open(filenamePtr, dbPtrPtr);
+          this.dbPtr = this.sqlite3!.getValue!(dbPtrPtr, 'i32');
+
+          this.sqlite3!._free(filenamePtr);
+
+          if (result !== 0 || !this.dbPtr) {
+            throw new DatabaseError(`Failed to create new database (code: ${result})`);
+          }
+
+          // Deserialize data into the new database
+          const schemaPtr = this.sqlite3!._malloc(5);
+          this.sqlite3!.stringToUTF8("main", schemaPtr, 5);
+
+          const deserializeResult = this.sqlite3!._sqlite3_deserialize(
+            this.dbPtr,
+            schemaPtr,
+            dataPtr,
+            BigInt(data.length),
+            BigInt(data.length),
+            0
+          );
+
+          this.sqlite3!._free(schemaPtr);
+
+          if (deserializeResult !== 0) {
+            throw new DatabaseError(`Deserialization failed (code: ${deserializeResult})`);
+          }
+
+          // Initialize sqlite-vec extension
+          try {
+            const vecResult = this.sqlite3!._sqlite3_vec_init_manual(this.dbPtr);
+            if (vecResult !== 0) {
+              this.log('warn', `Failed to initialize sqlite-vec (code: ${vecResult})`);
+            } else {
+              this.log('debug', 'sqlite-vec extension initialized');
+            }
+          } catch (error) {
+            this.log('warn', `sqlite-vec extension not available: ${error instanceof Error ? error.message : String(error)}`);
+          }
+
+          this.log('info', 'Database imported successfully');
+
+        } finally {
+          this.sqlite3!._free(dbPtrPtr);
+        }
+
+      } finally {
+        this.sqlite3!._free(dataPtr);
+      }
+
+      if (onProgress) {
+        onProgress({
+          phase: 'finalizing',
+          bytesProcessed: data.length * 0.9,
+          totalBytes: data.length,
+          timeElapsed: Date.now() - startTime
+        });
+      }
+
+      // Reinitialize sqlite-vec extension after import
+      try {
+        const vecResult = this.sqlite3!._sqlite3_vec_init_manual(this.dbPtr!);
+        if (vecResult !== 0) {
+          this.log('warn', `Failed to reinitialize sqlite-vec after import (code: ${vecResult})`);
+        }
+      } catch (error) {
+        this.log('warn', `sqlite-vec extension not available after import: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      // Skip database connection test - just proceed with import completion
+
+      // Restart OPFS sync if we were using OPFS
+      if (this.opfsPath) {
+        this.startOPFSSync();
+        // Force an immediate sync after a short delay to avoid corruption
+        setTimeout(async () => {
+          try {
+            await this.saveDatabaseToOPFS();
+            this.log('info', 'Synced imported database to OPFS');
+          } catch (error) {
+            this.log('warn', `Failed to sync imported database to OPFS: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }, 100);
+      }
+
+      const importTime = Date.now() - startTime;
+      this.log('info', `Database imported successfully: ${data.length} bytes in ${importTime}ms`);
+
+      if (onProgress) {
+        onProgress({
+          phase: 'complete',
+          bytesProcessed: data.length,
+          totalBytes: data.length,
+          timeElapsed: importTime
+        });
+      }
+
+    } catch (error) {
+      this.log('error', `Import failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new DatabaseError(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Handle database clear request - drops all data and reinitializes schema
+   */
+  private async handleClear(): Promise<void> {
+    this.ensureInitialized();
+
+    try {
+      const startTime = Date.now();
+
+      // Get all non-system tables
+      const tables = this.selectSQL(`
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name NOT LIKE 'sqlite_%'
+      `);
+
+      // Drop all tables
+      for (const table of tables) {
+        const tableName = table.name;
+        try {
+          this.execSQL(`DROP TABLE IF EXISTS ${tableName}`);
+          this.log('info', `Dropped table: ${tableName}`);
+        } catch (error) {
+          this.log('warn', `Failed to drop table ${tableName}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      // Vacuum the database to reclaim space
+      this.execSQL('VACUUM');
+
+      // Reinitialize the schema
+      await this.handleInitializeSchema();
+
+      const duration = Date.now() - startTime;
+      this.log('info', `Database cleared and reinitialized in ${duration}ms`);
+
+    } catch (error) {
+      throw new DatabaseError(`Database clear failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handlePing(): Promise<{ status: string; timestamp: number }> {
+    // Simple ping method that doesn't require database initialization
+    return {
+      status: 'ready',
+      timestamp: Date.now()
+    };
+  }
+
+  private async handleGetVersion(): Promise<{ sqlite: string; vec: string; sdk: string }> {
+    this.ensureInitialized();
+    
+    try {
+      const sqliteResult = await this.handleSelect({
+        sql: 'SELECT sqlite_version() as version'
+      });
+      
+      let vecVersion = 'unknown';
+      try {
+        const vecResult = await this.handleSelect({
+          sql: 'SELECT vec_version() as version'
+        });
+        vecVersion = vecResult.rows[0]?.version || 'unknown';
+      } catch {
+        // vec extension might not be initialized
+      }
+      
+      return {
+        sqlite: sqliteResult.rows[0]?.version || 'unknown',
+        vec: vecVersion,
+        sdk: '0.1.0'
+      };
+    } catch (error) {
+      throw new DatabaseError(`Failed to get version info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleGetStats(): Promise<{ memory: number; dbSize: number; operations: number }> {
+    this.ensureInitialized();
+    
+    try {
+      // Get database page count and page size
+      const pageSizeResult = await this.handleSelect({
+        sql: 'PRAGMA page_size'
+      });
+      
+      const pageCountResult = await this.handleSelect({
+        sql: 'PRAGMA page_count'
+      });
+      
+      const pageSize = pageSizeResult.rows[0]?.page_size || 4096;
+      const pageCount = pageCountResult.rows[0]?.page_count || 0;
+      const dbSize = pageSize * pageCount;
+      
+      return {
+        memory: 0, // Memory usage not easily available in WASM
+        dbSize,
+        operations: this.operationCount
+      };
+    } catch (error) {
+      throw new DatabaseError(`Failed to get stats: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private ensureInitialized(): void {
+    if (!this.isInitialized || !this.dbPtr) {
+      throw new DatabaseError('Database not initialized. Call open() first.');
+    }
+  }
+
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+    const logMessage = `[DatabaseWorker] ${message}`;
+    console[level](logMessage, ...args);
+
+    // Also send logs to main thread via postMessage so they're visible in browser console
+    try {
+      self.postMessage({
+        type: 'log',
+        level,
+        message: logMessage,
+        args: args.length > 0 ? args.map(arg =>
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ) : []
+      });
+    } catch (error) {
+      // Ignore postMessage errors
+    }
+  }
+}
+
+// Initialize the worker
+const worker = new DatabaseWorker();
+
+// Export for testing purposes
+export { DatabaseWorker };

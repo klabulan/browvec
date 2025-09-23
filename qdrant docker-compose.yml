@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant
+    container_name: qdrant
+    ports:
+      - "6333:6333"  # Expose port 6333 for Qdrant API
+    volumes:
+      - qdrant-storage:/qdrant/storage  # Persist data across container restarts
+    environment:
+      - QDRANT__WEB__ENABLE=True  # Optional: Enable web interface (for management)
+    restart: unless-stopped  # Ensure Qdrant restarts on system reboot
+
+volumes:
+  qdrant-storage:  # Declare a volume to persist Qdrant's storage

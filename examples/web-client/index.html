@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalRetrieve MVP Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <h1>LocalRetrieve MVP Demo</h1>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-label">Database:</span>
+                    <span id="db-status" class="status-value disconnected">Disconnected</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Query Time:</span>
+                    <span id="query-time" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Memory:</span>
+                    <span id="memory-usage" class="status-value">-</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Left Panel: Data Management -->
+        <section class="panel left-panel">
+            <h2>Data Management</h2>
+
+            <!-- Database Info -->
+            <div class="section">
+                <h3>Database Info</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Size:</span>
+                        <span id="db-size" class="info-value">0 KB</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Documents:</span>
+                        <span id="doc-count" class="info-value">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Storage:</span>
+                        <span id="storage-type" class="info-value">Memory</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Import/Export -->
+            <div class="section">
+                <h3>Import/Export</h3>
+                <div class="import-export">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="import-file" accept=".db,.sqlite,.sql" style="display: none;">
+                        <button id="import-btn" class="btn secondary">Import Database</button>
+                    </div>
+                    <button id="export-btn" class="btn secondary">Export Database</button>
+                    <div id="transfer-progress" class="progress-bar" style="display: none;">
+                        <div class="progress-fill"></div>
+                        <span class="progress-text">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Data -->
+            <div class="section">
+                <h3>Test Data</h3>
+                <div class="button-group">
+                    <button id="load-sample-btn" class="btn primary">Load Sample Data</button>
+                    <button id="clear-db-btn" class="btn warning">Clear All Data</button>
+                    <button id="recreate-db-btn" class="btn danger">Recreate Database</button>
+                </div>
+                <div id="sample-status" class="status-message"></div>
+            </div>
+        </section>
+
+        <!-- Center Panel: SQL Operations -->
+        <section class="panel center-panel">
+            <h2>SQL Operations</h2>
+
+            <!-- SQL Editor -->
+            <div class="section">
+                <h3>SQL Query Editor</h3>
+                <div class="sql-editor">
+                    <div class="editor-toolbar">
+                        <select id="query-history" class="query-history">
+                            <option value="">Select from history...</option>
+                        </select>
+                        <button id="clear-sql-btn" class="btn small">Clear</button>
+                    </div>
+                    <textarea id="sql-input" placeholder="Enter SQL query here...
+Example:
+SELECT * FROM docs_default LIMIT 5;
+SELECT COUNT(*) FROM docs_default;
+SELECT * FROM fts_default WHERE fts_default MATCH 'machine learning';">SELECT * FROM docs_default LIMIT 5;</textarea>
+                    <button id="execute-sql-btn" class="btn primary">Execute SQL</button>
+                </div>
+            </div>
+
+            <!-- SQL Results -->
+            <div class="section">
+                <h3>SQL Results</h3>
+                <div id="sql-results" class="results-container">
+                    <div class="results-placeholder">No query executed yet</div>
+                </div>
+                <div id="sql-stats" class="query-stats"></div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Hybrid Search -->
+        <section class="panel right-panel">
+            <h2>Hybrid Search</h2>
+
+            <!-- Search Interface -->
+            <div class="section">
+                <h3>Search Interface</h3>
+                <div class="search-form">
+                    <div class="input-group">
+                        <label for="search-text">Text Query:</label>
+                        <input type="text" id="search-text" placeholder="Enter search terms..." value="machine learning">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="search-vector">Vector (optional):</label>
+                        <textarea id="search-vector" placeholder="[0.1, 0.2, 0.3, ...] or leave empty for text-only search" rows="3"></textarea>
+                    </div>
+
+                    <div class="search-params">
+                        <div class="param-group">
+                            <label for="fusion-method">Fusion Method:</label>
+                            <select id="fusion-method">
+                                <option value="rrf">Reciprocal Rank Fusion (RRF)</option>
+                                <option value="weighted">Weighted Linear</option>
+                            </select>
+                        </div>
+
+                        <div class="param-group">
+                            <label for="fts-weight">FTS Weight:</label>
+                            <input type="range" id="fts-weight" min="0" max="1" step="0.1" value="0.7">
+                            <span id="fts-weight-value">0.7</span>
+                        </div>
+
+                        <div class="param-group">
+                            <label for="vec-weight">Vector Weight:</label>
+                            <input type="range" id="vec-weight" min="0" max="1" step="0.1" value="0.3">
+                            <span id="vec-weight-value">0.3</span>
+                        </div>
+
+                        <div class="param-group">
+                            <label for="search-limit">Result Limit:</label>
+                            <input type="number" id="search-limit" min="1" max="50" value="10">
+                        </div>
+                    </div>
+
+                    <button id="search-btn" class="btn primary">Search</button>
+                </div>
+            </div>
+
+            <!-- Search Results -->
+            <div class="section">
+                <h3>Search Results</h3>
+                <div id="search-results" class="results-container">
+                    <div class="results-placeholder">No search performed yet</div>
+                </div>
+                <div id="search-stats" class="query-stats"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>LocalRetrieve MVP Demo - Hybrid Search with SQLite + sqlite-vec</p>
+            <div class="tech-stack">
+                <span class="tech-item">WASM</span>
+                <span class="tech-item">OPFS</span>
+                <span class="tech-item">Web Workers</span>
+                <span class="tech-item">FTS5</span>
+                <span class="tech-item">Vector Search</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="test-data.js"></script>
+    <script src="demo.js" type="module"></script>
+</body>
+</html>

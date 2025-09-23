@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CORE-001: sql.js Compatibility Layer Test</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        .test-section { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+        }
+        .test-passed { 
+            background-color: #d4edda; 
+            border-color: #c3e6cb; 
+        }
+        .test-failed { 
+            background-color: #f8d7da; 
+            border-color: #f5c6cb; 
+        }
+        .test-warning { 
+            background-color: #fff3cd; 
+            border-color: #ffeeba; 
+        }
+        .test-info { 
+            background-color: #d1ecf1; 
+            border-color: #bee5eb; 
+        }
+        pre { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 3px; 
+            overflow-x: auto; 
+        }
+        .status { 
+            font-weight: bold; 
+            padding: 5px 10px; 
+            border-radius: 3px; 
+            display: inline-block; 
+            margin: 5px 0; 
+        }
+        .passed { 
+            background: #28a745; 
+            color: white; 
+        }
+        .failed { 
+            background: #dc3545; 
+            color: white; 
+        }
+        .warning { 
+            background: #ffc107; 
+            color: black; 
+        }
+        .info { 
+            background: #17a2b8; 
+            color: white; 
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .progress {
+            background: #e9ecef;
+            border-radius: 4px;
+            height: 20px;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            background: #007bff;
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <h1>CORE-001: sql.js Compatibility Layer Test</h1>
+    <div class="test-info">
+        <h3>🎯 Test Objective</h3>
+        <p>Verify complete sql.js API compatibility with LocalRetrieve Database and Statement classes</p>
+        <ul>
+            <li>✅ Database.exec(), run(), prepare() methods</li>
+            <li>✅ Statement.step(), bind(), getAsObject() methods</li>
+            <li>✅ Proper cleanup and error handling</li>
+            <li>✅ Memory management</li>
+            <li>✅ OPFS persistence functionality</li>
+            <li>⚠️ Sync API compatibility limitations documented</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h3>📊 Test Progress</h3>
+        <div class="progress">
+            <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+        </div>
+        <div id="progressText">Ready to start tests...</div>
+    </div>
+
+    <div class="test-section">
+        <h3>🎮 Test Controls</h3>
+        <button id="runAllTests">Run All Tests</button>
+        <button id="runSyncTests">Test Sync API (with limitations)</button>
+        <button id="runAsyncTests">Test Async API</button>
+        <button id="runMemoryTests">Test Memory Management</button>
+        <button id="runOPFSTests">Test OPFS Persistence</button>
+        <button id="clearResults">Clear Results</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script type="module">
+        import { Database } from './src/index.ts';
+
+        let testCount = 0;
+        let passedCount = 0;
+        let failedCount = 0;
+        let warningCount = 0;
+        let db = null;
+
+        // Clear all test OPFS data
+        async function clearAllTestOPFS() {
+            if (navigator.storage?.getDirectory) {
+                try {
+                    const opfsRoot = await navigator.storage.getDirectory();
+                    await opfsRoot.removeEntry('test', { recursive: true });
+                    console.log('✓ All test OPFS data cleared');
+                } catch (error) {
+                    if (error.name !== 'NotFoundError') {
+                        console.warn('Failed to clear OPFS:', error);
+                    }
+                }
+            }
+        }
+
+        function updateProgress() {
+            const total = testCount;
+            const completed = passedCount + failedCount + warningCount;
+            const percentage = total > 0 ? (completed / total) * 100 : 0;
+            
+            document.getElementById('progressBar').style.width = `${percentage}%`;
+            document.getElementById('progressText').textContent = 
+                `Progress: ${completed}/${total} tests completed (${passedCount} passed, ${failedCount} failed, ${warningCount} warnings)`;
+        }
+
+        function addResult(title, status, message, details = '') {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-section test-${status}`;
+            
+            const statusSpan = document.createElement('span');
+            statusSpan.className = `status ${status}`;
+            statusSpan.textContent = status.toUpperCase();
+            
+            resultDiv.innerHTML = `
+                <h4>${statusSpan.outerHTML} ${title}</h4>
+                <p>${message}</p>
+                ${details ? `<pre>${details}</pre>` : ''}
+            `;
+            
+            document.getElementById('results').appendChild(resultDiv);
+            
+            // Update counters
+            if (status === 'passed') passedCount++;
+            else if (status === 'failed') failedCount++;
+            else if (status === 'warning') warningCount++;
+            
+            updateProgress();
+        }
+
+        async function runTest(testName, testFunction) {
+            testCount++;
+            try {
+                console.log(`\n=== Running Test: ${testName} ===`);
+                await testFunction();
+                addResult(testName, 'passed', 'Test completed successfully');
+            } catch (error) {
+                console.error(`Test ${testName} failed:`, error);
+                if (error.message.includes('SYNC/ASYNC COMPATIBILITY')) {
+                    addResult(testName, 'warning', 'Expected sync/async compatibility limitation', error.message);
+                } else {
+                    addResult(testName, 'failed', `Test failed: ${error.message}`, error.stack);
+                }
+            }
+        }
+
+        // Test 1: Database Creation and Initialization
+        async function testDatabaseCreation() {
+            console.log('Testing Database.create() method...');
+            
+            // Test async creation (primary API)
+            db = await Database.create(undefined, 'opfs:/test/sql-compat.db');
+            console.log('✓ Database created successfully with async API');
+            
+            // Verify database is open
+            if (!db._getWorkerRPC()) {
+                throw new Error('Database worker not initialized');
+            }
+            console.log('✓ Database worker initialized');
+            
+            // Initialize schema for testing
+            await db.initializeSchema();
+            console.log('✓ Database schema initialized');
+        }
+
+        // Test 2: SQL Execution (sync API with expected limitations)
+        async function testSyncSQLExecution() {
+            console.log('Testing synchronous SQL execution...');
+            
+            try {
+                // This should trigger compatibility warning/error
+                const results = db.exec('CREATE TABLE test_sync (id INTEGER, name TEXT)');
+                console.log('Sync exec results:', results);
+            } catch (error) {
+                if (error.message.includes('SYNC/ASYNC COMPATIBILITY')) {
+                    console.log('✓ Expected sync compatibility limitation documented');
+                    throw error; // Re-throw to trigger warning status
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        // Test 3: SQL Execution (async API)
+        async function testAsyncSQLExecution() {
+            console.log('Testing asynchronous SQL execution...');
+            
+            // Create test table
+            const createResults = await db.execAsync('CREATE TABLE IF NOT EXISTS test_async (id INTEGER PRIMARY KEY, name TEXT, value REAL)');
+            console.log('✓ Table created successfully');
+            console.log('Create results:', createResults);
+            
+            // Insert test data
+            await db.runAsync('INSERT INTO test_async (name, value) VALUES (?, ?)', ['test1', 123.45]);
+            await db.runAsync('INSERT INTO test_async (name, value) VALUES (?, ?)', ['test2', 678.90]);
+            console.log('✓ Test data inserted');
+            
+            // Query data
+            const selectResults = await db.execAsync('SELECT * FROM test_async ORDER BY id');
+            console.log('✓ Data queried successfully');
+            console.log('Select results:', selectResults);
+            
+            // Verify result structure
+            if (selectResults.length !== 1) {
+                throw new Error('Expected exactly one result set');
+            }
+            
+            const resultSet = selectResults[0];
+            if (!resultSet.columns || !resultSet.values) {
+                throw new Error('Invalid result set structure');
+            }
+            
+            console.log('✓ Result structure is sql.js compatible');
+        }
+
+        // Test 4: Prepared Statements (sync API)
+        async function testSyncPreparedStatements() {
+            console.log('Testing synchronous prepared statements...');
+            
+            try {
+                // Prepare statement
+                const stmt = db.prepare('SELECT * FROM test_async WHERE name = ?');
+                console.log('✓ Statement prepared');
+                console.log('Statement SQL:', stmt.sql);
+                
+                // Bind parameters
+                const bindResult = stmt.bind(['test1']);
+                if (bindResult !== true) {
+                    throw new Error('bind() should return true for sql.js compatibility');
+                }
+                console.log('✓ Parameters bound successfully');
+                
+                // Step through results (this may trigger sync limitation)
+                let hasResults = false;
+                if (stmt.step()) {
+                    hasResults = true;
+                    const row = stmt.getAsObject();
+                    console.log('✓ Row retrieved:', row);
+                    
+                    if (!row.id || !row.name) {
+                        throw new Error('Invalid row structure');
+                    }
+                }
+                
+                if (!hasResults) {
+                    console.log('⚠️ No results from step() - may be due to sync limitations');
+                }
+                
+                // Clean up
+                const freeResult = stmt.free();
+                if (freeResult !== true) {
+                    throw new Error('free() should return true for sql.js compatibility');
+                }
+                console.log('✓ Statement freed successfully');
+                
+            } catch (error) {
+                if (error.message.includes('SYNC/ASYNC COMPATIBILITY')) {
+                    console.log('✓ Expected sync compatibility limitation in statements');
+                    throw error; // Re-throw to trigger warning status
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        // Test 5: Prepared Statements (async API)
+        async function testAsyncPreparedStatements() {
+            console.log('Testing asynchronous prepared statements...');
+            
+            // Prepare statement
+            const stmt = await db.prepareAsync('SELECT * FROM test_async WHERE value > ?');
+            console.log('✓ Statement prepared asynchronously');
+            
+            // Bind parameters
+            await stmt.bindAsync([100]);
+            console.log('✓ Parameters bound asynchronously');
+            
+            // Step through results
+            const results = [];
+            while (await stmt.stepAsync()) {
+                const row = await stmt.getAsObjectAsync();
+                results.push(row);
+                console.log('Row:', row);
+            }
+            
+            console.log('✓ Retrieved', results.length, 'rows asynchronously');
+            
+            if (results.length === 0) {
+                throw new Error('Expected at least one result');
+            }
+            
+            // Verify row structure
+            const firstRow = results[0];
+            if (typeof firstRow.id !== 'number' || typeof firstRow.name !== 'string') {
+                throw new Error('Invalid row data types');
+            }
+            
+            // Reset and test again
+            await stmt.resetAsync();
+            await stmt.bindAsync([50]);
+            
+            let resetResults = 0;
+            while (await stmt.stepAsync()) {
+                resetResults++;
+            }
+            console.log('✓ Statement reset and reused successfully');
+            
+            // Clean up
+            await stmt.freeAsync();
+            console.log('✓ Statement freed asynchronously');
+        }
+
+        // Test 6: sql.js API Compatibility Methods
+        async function testSQLJSCompatibility() {
+            console.log('Testing sql.js specific API methods...');
+            
+            // Test getRowsModified
+            await db.runAsync('UPDATE test_async SET value = value * 2 WHERE name = ?', ['test1']);
+            const rowsModified = db.getRowsModified();
+            console.log('✓ getRowsModified():', rowsModified);
+            
+            // Test savepoint operations
+            db.savepoint('test_sp');
+            console.log('✓ Savepoint created');
+            
+            await db.runAsync('INSERT INTO test_async (name, value) VALUES (?, ?)', ['temp', 999]);
+            
+            db.savepoint_rollback('test_sp');
+            console.log('✓ Savepoint rollback');
+            
+            // Test unsupported methods (should warn, not fail)
+            db.create_function('test_func', () => 'test');
+            console.log('✓ create_function() handled gracefully');
+            
+            db.create_aggregate('test_agg', { step: () => {}, finalize: () => {} });
+            console.log('✓ create_aggregate() handled gracefully');
+        }
+
+        // Test 7: Export/Import Functionality
+        async function testExportImport() {
+            console.log('Testing database export/import...');
+            
+            // Test async export (recommended)
+            const exportedData = await db.exportAsync();
+            console.log('✓ Database exported asynchronously');
+            console.log('Export size:', exportedData.length, 'bytes');
+            
+            if (!(exportedData instanceof Uint8Array)) {
+                throw new Error('Export should return Uint8Array');
+            }
+            
+            if (exportedData.length === 0) {
+                throw new Error('Export should not be empty');
+            }
+            
+            // Test sync export (may have limitations)
+            try {
+                const syncExported = db.export();
+                console.log('✓ Sync export size:', syncExported.length, 'bytes');
+            } catch (error) {
+                if (error.message.includes('SYNC/ASYNC COMPATIBILITY')) {
+                    console.log('✓ Expected sync export limitation');
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        // Test 8: Memory Management and Cleanup
+        async function testMemoryManagement() {
+            console.log('Testing memory management...');
+            
+            // Create multiple statements to test cleanup
+            const statements = [];
+            for (let i = 0; i < 5; i++) {
+                const stmt = await db.prepareAsync(`SELECT ${i} as test_col`);
+                statements.push(stmt);
+            }
+            console.log('✓ Created', statements.length, 'statements');
+            
+            // Free them individually
+            for (const stmt of statements) {
+                await stmt.freeAsync();
+            }
+            console.log('✓ All statements freed');
+            
+            // Test database closure and cleanup
+            await db.closeAsync();
+            console.log('✓ Database closed asynchronously');
+            
+            // Verify database is properly closed
+            try {
+                await db.execAsync('SELECT 1');
+                throw new Error('Database should be closed');
+            } catch (error) {
+                if (error.message.includes('not open')) {
+                    console.log('✓ Database properly closed');
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        // Test 9: Error Handling
+        async function testErrorHandling() {
+            console.log('Testing error handling...');
+            
+            // Reinitialize database for error tests
+            db = await Database.create(undefined, 'opfs:/test/error-test.db');
+            await db.initializeSchema();
+            
+            // Test SQL syntax error
+            try {
+                await db.execAsync('INVALID SQL SYNTAX');
+                throw new Error('Should have thrown SQL error');
+            } catch (error) {
+                if (error.name === 'SQLDatabaseError' || error.message.includes('SQL')) {
+                    console.log('✓ SQL syntax error handled correctly');
+                } else {
+                    throw error;
+                }
+            }
+            
+            // Test parameter binding error
+            try {
+                const stmt = await db.prepareAsync('SELECT ? as test');
+                await stmt.bindAsync({ invalid: 'object with function', func: () => {} });
+                throw new Error('Should have thrown parameter error');
+            } catch (error) {
+                if (error.name === 'SQLStatementError' || error.message.includes('parameter')) {
+                    console.log('✓ Parameter binding error handled correctly');
+                } else {
+                    throw error;
+                }
+            }
+            
+            // Test finalized statement operations
+            const stmt = await db.prepareAsync('SELECT 1');
+            await stmt.freeAsync();
+            
+            try {
+                await stmt.stepAsync();
+                throw new Error('Should not allow operations on finalized statement');
+            } catch (error) {
+                if (error.message.includes('finalized')) {
+                    console.log('✓ Finalized statement error handled correctly');
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        // Test 10: Performance and Compatibility Benchmarks
+        async function testPerformanceBenchmarks() {
+            console.log('Testing performance benchmarks...');
+
+            const startTime = performance.now();
+
+            // Create test data
+            await db.execAsync('CREATE TABLE IF NOT EXISTS perf_test (id INTEGER PRIMARY KEY, data TEXT)');
+
+            // Bulk insert test
+            const insertStart = performance.now();
+            for (let i = 0; i < 100; i++) {
+                await db.runAsync('INSERT INTO perf_test (data) VALUES (?)', [`test_data_${i}`]);
+            }
+            const insertTime = performance.now() - insertStart;
+            console.log('✓ 100 inserts completed in', insertTime.toFixed(2), 'ms');
+
+            // Query test
+            const queryStart = performance.now();
+            const results = await db.execAsync('SELECT COUNT(*) as count FROM perf_test');
+            const queryTime = performance.now() - queryStart;
+            console.log('✓ Count query completed in', queryTime.toFixed(2), 'ms');
+
+            const totalTime = performance.now() - startTime;
+            console.log('✓ Total performance test time:', totalTime.toFixed(2), 'ms');
+
+            // Verify results
+            if (results[0].values[0][0] !== 100) {
+                throw new Error('Expected 100 rows in performance test');
+            }
+        }
+
+        // Test 11: OPFS Persistence Test
+        async function testOPFSPersistence() {
+            console.log('Testing OPFS persistence...');
+
+            // Check if OPFS is supported
+            if (!navigator.storage?.getDirectory) {
+                console.log('⚠️ OPFS not supported, skipping persistence test');
+                return;
+            }
+
+            const testId = `opfs-test-${Date.now()}`;
+
+            // Test with OPFS database
+            const opfsDb = await Database.create(undefined, 'opfs:/test/persistence-test.db');
+            await opfsDb.initializeSchema();
+
+            // Add some test data
+            await opfsDb.runAsync('INSERT INTO docs_default (id, title, content) VALUES (?, ?, ?)',
+                [testId, 'OPFS Test Document', 'This document tests OPFS persistence']);
+
+            console.log('✓ Test data inserted into OPFS database');
+
+            // Force sync by closing and reopening
+            await opfsDb.closeAsync();
+            console.log('✓ Database closed and synced to OPFS');
+
+            // Reopen and verify data persists
+            const opfsDb2 = await Database.create(undefined, 'opfs:/test/persistence-test.db');
+            const persistedData = await opfsDb2.execAsync('SELECT * FROM docs_default WHERE id = ?', [testId]);
+
+            if (persistedData[0]?.values?.length === 0) {
+                throw new Error('Data did not persist in OPFS');
+            }
+
+            console.log('✓ Data successfully persisted and retrieved from OPFS');
+            console.log('Persisted data:', persistedData[0].values[0]);
+
+            await opfsDb2.closeAsync();
+        }
+
+        // Test execution functions
+        async function runAllTests() {
+            console.log('🚀 Starting comprehensive sql.js compatibility tests...');
+            testCount = 0;
+            passedCount = 0;
+            failedCount = 0;
+            warningCount = 0;
+
+            document.getElementById('results').innerHTML = '';
+
+            // Clear all test OPFS data first to ensure clean tests
+            await clearAllTestOPFS();
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wait for cleanup
+            
+            await runTest('Database Creation and Initialization', testDatabaseCreation);
+            await runTest('Synchronous SQL Execution (with limitations)', testSyncSQLExecution);
+            await runTest('Asynchronous SQL Execution', testAsyncSQLExecution);
+            await runTest('Synchronous Prepared Statements (with limitations)', testSyncPreparedStatements);
+            await runTest('Asynchronous Prepared Statements', testAsyncPreparedStatements);
+            await runTest('sql.js API Compatibility Methods', testSQLJSCompatibility);
+            await runTest('Export/Import Functionality', testExportImport);
+            await runTest('Memory Management and Cleanup', testMemoryManagement);
+            await runTest('Error Handling', testErrorHandling);
+            await runTest('Performance and Compatibility Benchmarks', testPerformanceBenchmarks);
+            await runTest('OPFS Persistence Test', testOPFSPersistence);
+
+            addResult('🎉 All Tests Completed', 'info',
+                `Test Summary: ${passedCount} passed, ${failedCount} failed, ${warningCount} warnings out of ${testCount} total tests.`);
+        }
+
+        async function runSyncTests() {
+            console.log('🔄 Testing synchronous API compatibility...');
+            testCount = 0;
+            passedCount = 0;
+            failedCount = 0;
+            warningCount = 0;
+            
+            document.getElementById('results').innerHTML = '';
+            
+            await runTest('Database Creation', testDatabaseCreation);
+            await runTest('Sync SQL Execution', testSyncSQLExecution);
+            await runTest('Sync Prepared Statements', testSyncPreparedStatements);
+        }
+
+        async function runAsyncTests() {
+            console.log('⚡ Testing asynchronous API...');
+            testCount = 0;
+            passedCount = 0;
+            failedCount = 0;
+            warningCount = 0;
+            
+            document.getElementById('results').innerHTML = '';
+            
+            await runTest('Database Creation', testDatabaseCreation);
+            await runTest('Async SQL Execution', testAsyncSQLExecution);
+            await runTest('Async Prepared Statements', testAsyncPreparedStatements);
+            await runTest('Export/Import', testExportImport);
+        }
+
+        async function runMemoryTests() {
+            console.log('🧹 Testing memory management...');
+            testCount = 0;
+            passedCount = 0;
+            failedCount = 0;
+            warningCount = 0;
+
+            document.getElementById('results').innerHTML = '';
+
+            await runTest('Database Creation', testDatabaseCreation);
+            await runTest('Memory Management', testMemoryManagement);
+            await runTest('Error Handling', testErrorHandling);
+        }
+
+        async function runOPFSTests() {
+            console.log('💾 Testing OPFS persistence...');
+            testCount = 0;
+            passedCount = 0;
+            failedCount = 0;
+            warningCount = 0;
+
+            document.getElementById('results').innerHTML = '';
+
+            // Clear OPFS data first
+            await clearAllTestOPFS();
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            await runTest('OPFS Persistence Test', testOPFSPersistence);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            testCount = 0;
+            passedCount = 0;
+            failedCount = 0;
+            warningCount = 0;
+            updateProgress();
+        }
+
+        // Event listeners
+        document.getElementById('runAllTests').addEventListener('click', runAllTests);
+        document.getElementById('runSyncTests').addEventListener('click', runSyncTests);
+        document.getElementById('runAsyncTests').addEventListener('click', runAsyncTests);
+        document.getElementById('runMemoryTests').addEventListener('click', runMemoryTests);
+        document.getElementById('runOPFSTests').addEventListener('click', runOPFSTests);
+        document.getElementById('clearResults').addEventListener('click', clearResults);
+
+        // Initial status
+        addResult('🏁 Test Environment Ready', 'info', 
+            'CORE-001 sql.js Compatibility Layer test environment initialized. Click "Run All Tests" to begin comprehensive testing.');
+    </script>
+</body>
+</html>

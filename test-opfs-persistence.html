@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OPFS Persistence Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-passed {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .test-failed {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        .test-warning {
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+        }
+        .test-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            max-height: 200px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>OPFS Persistence Test</h1>
+
+    <div class="test-info">
+        <h3>🎯 Test Objective</h3>
+        <p>Verify that OPFS (Origin Private File System) persistence is working correctly</p>
+        <ul>
+            <li>✅ Database data persists across page reloads</li>
+            <li>✅ OPFS integration working properly</li>
+            <li>✅ Error handling for storage quota issues</li>
+            <li>✅ Background synchronization</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h3>🎮 Test Controls</h3>
+        <button id="initDatabase">Initialize OPFS Database</button>
+        <button id="addTestData">Add Test Data</button>
+        <button id="readTestData">Read Test Data</button>
+        <button id="forceSync">Force OPFS Sync</button>
+        <button id="clearOPFS">Clear OPFS Data</button>
+        <button id="checkQuota">Check Storage Quota</button>
+        <button id="reloadPage">Reload Page (Test Persistence)</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script type="module">
+        import { Database } from './src/index.ts';
+
+        let db = null;
+        const testDbPath = 'opfs:/test/persistence-test.db';
+
+        function addResult(title, status, message, details = '') {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-section test-${status}`;
+
+            const timestamp = new Date().toLocaleTimeString();
+            resultDiv.innerHTML = `
+                <h4>[${timestamp}] ${title}</h4>
+                <p>${message}</p>
+                ${details ? `<pre>${details}</pre>` : ''}
+            `;
+
+            document.getElementById('results').appendChild(resultDiv);
+            resultDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function initDatabase() {
+            try {
+                addResult('Database Initialization', 'info', 'Creating OPFS database...');
+
+                // Close existing database if any
+                if (db) {
+                    await db.closeAsync();
+                }
+
+                // Create new database with OPFS persistence
+                // Note: Need to fix worker URL in Database.ts or create with config
+                db = await Database.create(undefined, testDbPath);
+                await db.initializeSchema();
+
+                addResult('Database Initialization', 'passed',
+                    `Database initialized successfully at ${testDbPath}`);
+
+            } catch (error) {
+                console.error('Database initialization failed:', error);
+                addResult('Database Initialization', 'failed',
+                    `Failed to initialize database: ${error.message}`, error.stack);
+            }
+        }
+
+        async function addTestData() {
+            if (!db) {
+                addResult('Add Test Data', 'warning', 'Database not initialized. Please initialize first.');
+                return;
+            }
+
+            try {
+                const timestamp = Date.now();
+                const testId = `test-${timestamp}`;
+
+                // Insert test document
+                await db.runAsync(`
+                    INSERT INTO docs_default (id, title, content, metadata)
+                    VALUES (?, ?, ?, ?)
+                `, [
+                    testId,
+                    `Test Document ${timestamp}`,
+                    `This is test content created at ${new Date().toISOString()}`,
+                    JSON.stringify({
+                        testRun: timestamp,
+                        browser: navigator.userAgent,
+                        opfsSupported: !!navigator.storage?.getDirectory
+                    })
+                ]);
+
+                // Insert FTS data
+                await db.runAsync(`
+                    INSERT INTO fts_default (id, title, content)
+                    VALUES (?, ?, ?)
+                `, [testId, `Test Document ${timestamp}`, `This is test content created at ${new Date().toISOString()}`]);
+
+                // Insert vector data (mock 384-dimensional vector)
+                const mockVector = new Float32Array(384).fill(0).map(() => Math.random());
+                await db.runAsync(`
+                    INSERT INTO vec_default_dense (embedding)
+                    VALUES (vec_f32(?))
+                `, [JSON.stringify(Array.from(mockVector))]);
+
+                addResult('Add Test Data', 'passed',
+                    `Test data added successfully. Document ID: ${testId}`);
+
+            } catch (error) {
+                console.error('Failed to add test data:', error);
+                addResult('Add Test Data', 'failed',
+                    `Failed to add test data: ${error.message}`, error.stack);
+            }
+        }
+
+        async function readTestData() {
+            if (!db) {
+                addResult('Read Test Data', 'warning', 'Database not initialized. Please initialize first.');
+                return;
+            }
+
+            try {
+                // Read documents
+                const docs = await db.execAsync('SELECT * FROM docs_default ORDER BY created_at DESC LIMIT 5');
+
+                // Read FTS entries
+                const ftsCount = await db.execAsync('SELECT COUNT(*) as count FROM fts_default');
+
+                // Read vector entries
+                const vecCount = await db.execAsync('SELECT COUNT(*) as count FROM vec_default_dense');
+
+                const results = {
+                    documents: docs[0]?.values || [],
+                    documentCount: docs[0]?.values?.length || 0,
+                    ftsCount: ftsCount[0]?.values?.[0]?.[0] || 0,
+                    vectorCount: vecCount[0]?.values?.[0]?.[0] || 0
+                };
+
+                addResult('Read Test Data', 'passed',
+                    `Data read successfully. Found ${results.documentCount} documents, ${results.ftsCount} FTS entries, ${results.vectorCount} vector entries.`,
+                    JSON.stringify(results, null, 2));
+
+            } catch (error) {
+                console.error('Failed to read test data:', error);
+                addResult('Read Test Data', 'failed',
+                    `Failed to read test data: ${error.message}`, error.stack);
+            }
+        }
+
+        async function forceSync() {
+            if (!db) {
+                addResult('Force Sync', 'warning', 'Database not initialized. Please initialize first.');
+                return;
+            }
+
+            try {
+                // Force sync by calling a method that triggers OPFS save
+                addResult('Force Sync', 'info', 'Forcing OPFS synchronization...');
+
+                // We don't have a direct sync method exposed, but closing and reopening will force sync
+                const tempDb = db;
+                await tempDb.closeAsync();
+
+                // Wait a moment
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Reopen
+                db = await Database.create(undefined, testDbPath);
+
+                addResult('Force Sync', 'passed', 'OPFS sync completed successfully');
+
+            } catch (error) {
+                console.error('Failed to force sync:', error);
+                addResult('Force Sync', 'failed',
+                    `Failed to force sync: ${error.message}`, error.stack);
+            }
+        }
+
+        async function clearOPFS() {
+            try {
+                addResult('Clear OPFS', 'info', 'Clearing OPFS data...');
+
+                // Close database first
+                if (db) {
+                    await db.closeAsync();
+                    db = null;
+                }
+
+                // Try to clear OPFS data
+                if (navigator.storage?.getDirectory) {
+                    const opfsRoot = await navigator.storage.getDirectory();
+                    try {
+                        await opfsRoot.removeEntry('test', { recursive: true });
+                        addResult('Clear OPFS', 'passed', 'OPFS data cleared successfully');
+                    } catch (error) {
+                        if (error.name === 'NotFoundError') {
+                            addResult('Clear OPFS', 'passed', 'No OPFS data to clear');
+                        } else {
+                            throw error;
+                        }
+                    }
+                } else {
+                    addResult('Clear OPFS', 'warning', 'OPFS not supported in this browser');
+                }
+
+            } catch (error) {
+                console.error('Failed to clear OPFS:', error);
+                addResult('Clear OPFS', 'failed',
+                    `Failed to clear OPFS: ${error.message}`, error.stack);
+            }
+        }
+
+        async function checkQuota() {
+            try {
+                if (!navigator.storage?.estimate) {
+                    addResult('Check Quota', 'warning', 'Storage estimation not supported in this browser');
+                    return;
+                }
+
+                const estimate = await navigator.storage.estimate();
+                const quota = estimate.quota || 0;
+                const usage = estimate.usage || 0;
+                const available = quota - usage;
+                const usagePercent = quota > 0 ? Math.round((usage / quota) * 100) : 0;
+
+                const quotaInfo = {
+                    quota: `${Math.round(quota / 1024 / 1024)} MB`,
+                    used: `${Math.round(usage / 1024 / 1024)} MB`,
+                    available: `${Math.round(available / 1024 / 1024)} MB`,
+                    usagePercent: `${usagePercent}%`
+                };
+
+                addResult('Check Quota', 'passed',
+                    `Storage quota information retrieved successfully`,
+                    JSON.stringify(quotaInfo, null, 2));
+
+            } catch (error) {
+                console.error('Failed to check quota:', error);
+                addResult('Check Quota', 'failed',
+                    `Failed to check quota: ${error.message}`, error.stack);
+            }
+        }
+
+        function reloadPage() {
+            addResult('Page Reload', 'info', 'Reloading page to test persistence...');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        }
+
+        // Event listeners
+        document.getElementById('initDatabase').addEventListener('click', initDatabase);
+        document.getElementById('addTestData').addEventListener('click', addTestData);
+        document.getElementById('readTestData').addEventListener('click', readTestData);
+        document.getElementById('forceSync').addEventListener('click', forceSync);
+        document.getElementById('clearOPFS').addEventListener('click', clearOPFS);
+        document.getElementById('checkQuota').addEventListener('click', checkQuota);
+        document.getElementById('reloadPage').addEventListener('click', reloadPage);
+
+        // Initial status
+        addResult('OPFS Test Environment', 'info',
+            'OPFS persistence test environment ready. Use the controls above to test persistence functionality.');
+
+        // Check OPFS support
+        if (navigator.storage?.getDirectory) {
+            addResult('OPFS Support', 'passed', 'OPFS is supported in this browser');
+        } else {
+            addResult('OPFS Support', 'warning', 'OPFS is not supported in this browser. Tests will use memory database.');
+        }
+
+        // Auto-initialize with clean database
+        setTimeout(async () => {
+            try {
+                // First clear any existing OPFS data to ensure clean test
+                await clearOPFS();
+                await new Promise(resolve => setTimeout(resolve, 500)); // Wait for cleanup
+                await initDatabase();
+                await readTestData();
+            } catch (error) {
+                console.log('Auto-initialization skipped:', error.message);
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

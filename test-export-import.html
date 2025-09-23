@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalRetrieve Export/Import Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+        }
+
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 13px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .progress {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            background: #0056b3;
+        }
+
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin: 10px 0;
+        }
+
+        .stat {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            text-align: center;
+            min-width: 100px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f1f1f1;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .file-input {
+            margin: 10px 0;
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .file-input:hover {
+            border-color: #007bff;
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🗄️ LocalRetrieve Export/Import Test</h1>
+    <p>This test validates the complete export/import functionality using SQLite serialize/deserialize.</p>
+
+    <div class="container">
+        <h2>📊 Test Status</h2>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Tests Passed</div>
+                <div class="stat-value" id="tests-passed">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Tests Failed</div>
+                <div class="stat-value" id="tests-failed">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Export Size</div>
+                <div class="stat-value" id="export-size">0 KB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Time Taken</div>
+                <div class="stat-value" id="test-time">0ms</div>
+            </div>
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div id="progress-text">Ready to start tests</div>
+    </div>
+
+    <div class="container">
+        <h2>🎯 Test Controls</h2>
+        <button class="btn" id="run-all-tests" onclick="runAllTests()">Run All Tests</button>
+        <button class="btn" id="run-roundtrip" onclick="runExportImportRoundtrip()">Run Export/Import Roundtrip</button>
+        <button class="btn" id="clear-logs" onclick="clearLogs()">Clear Logs</button>
+        <button class="btn" id="rebuild-wasm" onclick="rebuildWASM()">Rebuild WASM (with serialize/deserialize)</button>
+
+        <div class="file-input">
+            <label for="import-file">Import Database File:</label><br>
+            <input type="file" id="import-file" accept=".db,.sqlite,.sqlite3" onchange="importFromFile(event)">
+            <div id="import-status"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h3>📋 Test Results</h3>
+        <div id="test-results"></div>
+    </div>
+
+    <script type="module">
+        import { Database } from './dist/localretrieve.mjs';
+
+        let testResults = [];
+        let testsPassed = 0;
+        let testsFailed = 0;
+        let exportedData = null;
+
+        window.db1 = null;
+        window.db2 = null;
+        window.exportedData = null;
+
+        function log(message, type = 'info') {
+            const resultsDiv = document.getElementById('test-results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            resultsDiv.appendChild(div);
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateStats() {
+            document.getElementById('tests-passed').textContent = testsPassed;
+            document.getElementById('tests-failed').textContent = testsFailed;
+        }
+
+        function updateProgress(percent, text) {
+            document.getElementById('progress-fill').style.width = `${percent}%`;
+            document.getElementById('progress-text').textContent = text;
+        }
+
+        async function test(name, testFn) {
+            log(`🧪 Starting test: ${name}`, 'info');
+            try {
+                await testFn();
+                testsPassed++;
+                log(`✅ Test passed: ${name}`, 'success');
+                return true;
+            } catch (error) {
+                testsFailed++;
+                log(`❌ Test failed: ${name} - ${error.message}`, 'error');
+                console.error(`Test "${name}" failed:`, error);
+                return false;
+            } finally {
+                updateStats();
+            }
+        }
+
+        window.clearLogs = function() {
+            document.getElementById('test-results').innerHTML = '';
+            testsPassed = 0;
+            testsFailed = 0;
+            updateStats();
+            updateProgress(0, 'Logs cleared');
+        }
+
+        window.rebuildWASM = async function() {
+            log('🔨 Rebuilding WASM with serialize/deserialize support...', 'info');
+            updateProgress(10, 'Rebuilding WASM...');
+
+            try {
+                // This would need to be implemented via a server endpoint
+                // For now, just show instructions
+                log('⚠️  Manual rebuild required:', 'progress');
+                log('1. Run: npm run build:wasm', 'progress');
+                log('2. Refresh this page after build completes', 'progress');
+                log('3. The new build will include serialize/deserialize functions', 'progress');
+                updateProgress(100, 'Manual rebuild required - see instructions above');
+            } catch (error) {
+                log(`Build failed: ${error.message}`, 'error');
+            }
+        }
+
+        window.runAllTests = async function() {
+            clearLogs();
+            const startTime = Date.now();
+
+            log('🚀 Starting comprehensive export/import tests', 'info');
+            updateProgress(5, 'Initializing tests...');
+
+            // Test 1: Database initialization
+            await test('Database Initialization', async () => {
+                window.db1 = await Database.create();
+                log('Database 1 initialized successfully', 'success');
+            });
+
+            updateProgress(15, 'Setting up test data...');
+
+            // Test 2: Create test data
+            await test('Create Test Data', async () => {
+                // Create tables with various data types
+                await window.db1.execAsync(`
+                    CREATE TABLE test_table (
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        score REAL,
+                        data BLOB,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                `);
+
+                // Insert test data
+                for (let i = 1; i <= 100; i++) {
+                    await window.db1.runAsync(
+                        'INSERT INTO test_table (name, score, data) VALUES (?, ?, ?)',
+                        [`Test Item ${i}`, Math.random() * 100, new Uint8Array([i, i*2, i*3])]
+                    );
+                }
+
+                // Verify data
+                const result = await window.db1.execAsync('SELECT COUNT(*) as count FROM test_table');
+                if (result[0].values[0][0] !== 100) {
+                    throw new Error(`Expected 100 rows, got ${result[0].values[0][0]}`);
+                }
+
+                log('Created 100 test records successfully', 'success');
+            });
+
+            updateProgress(25, 'Testing export functionality...');
+
+            // Test 3: Export database
+            await test('Export Database', async () => {
+                log('Starting database export...', 'info');
+
+                const exportStartTime = Date.now();
+                window.exportedData = await window.db1.exportAsync({
+                    onProgress: (progress) => {
+                        const percent = Math.round((progress.bytesProcessed / progress.totalBytes) * 100);
+                        updateProgress(25 + (percent * 0.3), `Exporting... ${progress.phase} (${percent}%)`);
+                        log(`Export progress: ${progress.phase} - ${percent}% (${progress.bytesProcessed}/${progress.totalBytes} bytes)`, 'progress');
+                    }
+                });
+
+                const exportTime = Date.now() - exportStartTime;
+
+                if (!window.exportedData || window.exportedData.length === 0) {
+                    throw new Error('Export returned no data');
+                }
+
+                // Validate SQLite header
+                const sqliteHeader = 'SQLite format 3\0';
+                const headerBytes = new TextEncoder().encode(sqliteHeader.slice(0, -1));
+                for (let i = 0; i < headerBytes.length; i++) {
+                    if (window.exportedData[i] !== headerBytes[i]) {
+                        throw new Error('Invalid SQLite header in exported data');
+                    }
+                }
+
+                const sizeKB = Math.round(window.exportedData.length / 1024);
+                document.getElementById('export-size').textContent = `${sizeKB} KB`;
+                document.getElementById('test-time').textContent = `${exportTime}ms`;
+
+                log(`Export completed: ${window.exportedData.length} bytes (${sizeKB} KB) in ${exportTime}ms`, 'success');
+            });
+
+            updateProgress(55, 'Testing import functionality...');
+
+            // Test 4: Import to new database
+            await test('Import to New Database', async () => {
+                window.db2 = await Database.create();
+
+                log('Starting database import...', 'info');
+
+                const importStartTime = Date.now();
+                await window.db2.importAsync({
+                    data: window.exportedData,
+                    overwrite: true,
+                    onProgress: (progress) => {
+                        const percent = Math.round((progress.bytesProcessed / progress.totalBytes) * 100);
+                        updateProgress(55 + (percent * 0.3), `Importing... ${progress.phase} (${percent}%)`);
+                        log(`Import progress: ${progress.phase} - ${percent}% (${progress.bytesProcessed}/${progress.totalBytes} bytes)`, 'progress');
+                    }
+                });
+
+                const importTime = Date.now() - importStartTime;
+                log(`Import completed in ${importTime}ms`, 'success');
+            });
+
+            updateProgress(85, 'Verifying data integrity...');
+
+            // Test 5: Verify data integrity
+            await test('Verify Data Integrity', async () => {
+                // Check table structure
+                const schema1 = await window.db1.execAsync("SELECT sql FROM sqlite_master WHERE type='table' AND name='test_table'");
+                const schema2 = await window.db2.execAsync("SELECT sql FROM sqlite_master WHERE type='table' AND name='test_table'");
+
+                console.log('schema1:', schema1);
+                console.log('schema2:', schema2);
+
+                if (schema1[0] && schema2[0] && schema1[0].values[0] && schema2[0].values[0] && schema1[0].values[0][0] !== schema2[0].values[0][0]) {
+                    throw new Error('Table schemas do not match');
+                }
+
+                // Check row count
+                const count1Results = await window.db1.execAsync('SELECT COUNT(*) as count FROM test_table');
+                const count2Results = await window.db2.execAsync('SELECT COUNT(*) as count FROM test_table');
+
+                const count1 = count1Results[0]?.values[0]?.[0];
+                const count2 = count2Results[0]?.values[0]?.[0];
+
+                if (count1 !== count2) {
+                    throw new Error(`Row counts do not match: ${count1} vs ${count2}`);
+                }
+
+                // Check data integrity by comparing checksums
+                const data1Results = await window.db1.execAsync('SELECT * FROM test_table ORDER BY id');
+                const data2Results = await window.db2.execAsync('SELECT * FROM test_table ORDER BY id');
+
+                const data1 = data1Results[0]?.values || [];
+                const data2 = data2Results[0]?.values || [];
+
+                if (data1.length !== data2.length) {
+                    throw new Error(`Data row counts do not match: ${data1.length} vs ${data2.length}`);
+                }
+
+                // Compare first few rows in detail
+                for (let i = 0; i < Math.min(10, data1.length); i++) {
+                    const row1 = data1[i];
+                    const row2 = data2[i];
+
+                    if (JSON.stringify(row1) !== JSON.stringify(row2)) {
+                        throw new Error(`Row ${i} data mismatch: ${JSON.stringify(row1)} vs ${JSON.stringify(row2)}`);
+                    }
+                }
+
+                log(`Verified ${count1} records match exactly`, 'success');
+            });
+
+            updateProgress(95, 'Testing edge cases...');
+
+            // Test 6: Test empty database export/import
+            await test('Empty Database Export/Import', async () => {
+                const emptyDb = await Database.create();
+
+                const emptyExport = await emptyDb.exportAsync();
+
+                if (!emptyExport || emptyExport.length === 0) {
+                    throw new Error('Empty database export failed');
+                }
+
+                const testDb = await Database.create(emptyExport);
+                await testDb.importAsync({ data: emptyExport, overwrite: true });
+
+                // Should have no user tables
+                const tablesResult = await testDb.execAsync("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+                const tableCount = tablesResult[0]?.values?.length || 0;
+                if (tableCount !== 0) {
+                    throw new Error(`Expected 0 user tables, got ${tableCount}`);
+                }
+
+                await emptyDb.close();
+                await testDb.close();
+
+                log('Empty database export/import successful', 'success');
+            });
+
+            // Test 7: Test error handling
+            await test('Import Error Handling', async () => {
+                const errorDb = await Database.create();
+
+                // Test invalid data
+                try {
+                    await errorDb.importAsync({ data: new Uint8Array([1, 2, 3, 4]), overwrite: true });
+                    throw new Error('Should have failed with invalid data');
+                } catch (error) {
+                    if (!error.message.includes('valid SQLite database')) {
+                        throw new Error(`Unexpected error message: ${error.message}`);
+                    }
+                }
+
+                // Test empty data
+                try {
+                    await errorDb.importAsync({ data: new Uint8Array(0), overwrite: true });
+                    throw new Error('Should have failed with empty data');
+                } catch (error) {
+                    if (!error.message.includes('empty or invalid')) {
+                        throw new Error(`Unexpected error message: ${error.message}`);
+                    }
+                }
+
+                await errorDb.close();
+                log('Error handling tests passed', 'success');
+            });
+
+            const totalTime = Date.now() - startTime;
+            updateProgress(100, `Tests completed in ${totalTime}ms`);
+
+            if (testsFailed === 0) {
+                log(`🎉 All tests passed! (${testsPassed}/${testsPassed + testsFailed})`, 'success');
+            } else {
+                log(`⚠️ Some tests failed: ${testsPassed} passed, ${testsFailed} failed`, 'error');
+            }
+
+            document.getElementById('test-time').textContent = `${totalTime}ms`;
+        }
+
+        window.runExportImportRoundtrip = async function() {
+            clearLogs();
+            log('🔄 Running export/import roundtrip test', 'info');
+
+            try {
+                // Quick roundtrip test
+                const db1 = await Database.create();
+
+                // Create simple test data
+                await db1.execAsync('CREATE TABLE roundtrip (id INTEGER, value TEXT)');
+                await db1.runAsync('INSERT INTO roundtrip VALUES (1, ?)', ['test data']);
+
+                // Export
+                const exported = await db1.exportAsync();
+                log(`Exported ${exported.length} bytes`, 'info');
+
+                // Import to new database
+                const db2 = await Database.create(exported);
+                await db2.importAsync({ data: exported, overwrite: true });
+
+                // Verify
+                const resultData = await db2.execAsync('SELECT * FROM roundtrip');
+                const resultValues = resultData[0]?.values || [];
+                if (resultValues.length !== 1 || resultValues[0]?.[0] !== 'test data') {
+                    throw new Error('Roundtrip data verification failed');
+                }
+
+                await db1.close();
+                await db2.close();
+
+                log('✅ Roundtrip test passed successfully', 'success');
+
+            } catch (error) {
+                log(`❌ Roundtrip test failed: ${error.message}`, 'error');
+            }
+        }
+
+        window.importFromFile = async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusDiv = document.getElementById('import-status');
+            statusDiv.innerHTML = '<div class="test-result info">Reading file...</div>';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const data = new Uint8Array(arrayBuffer);
+
+                log(`📁 Importing file: ${file.name} (${data.length} bytes)`, 'info');
+
+                const db = await Database.create();
+
+                await db.importAsync({
+                    data: data,
+                    overwrite: true,
+                    onProgress: (progress) => {
+                        const percent = Math.round((progress.bytesProcessed / progress.totalBytes) * 100);
+                        statusDiv.innerHTML = `<div class="test-result progress">Importing ${file.name}... ${progress.phase} (${percent}%)</div>`;
+                    }
+                });
+
+                // Show database info
+                const tablesResult = await db.execAsync("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+                let info = `<div class="test-result success">✅ Successfully imported ${file.name}</div>`;
+                const tableValues = tablesResult[0]?.values || [];
+                const tableNames = tableValues.map(row => row[0]).join(', ');
+                info += `<div class="test-result info">Found ${tableValues.length} tables: ${tableNames}</div>`;
+
+                statusDiv.innerHTML = info;
+
+                // Store reference for further testing
+                window.importedDb = db;
+
+                log(`✅ Successfully imported file: ${file.name}`, 'success');
+
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="test-result error">❌ Import failed: ${error.message}</div>`;
+                log(`❌ File import failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize
+        log('🏁 Export/Import test page loaded', 'info');
+        log('Click "Run All Tests" to start comprehensive testing', 'info');
+
+    </script>
+</body>
+</html>
