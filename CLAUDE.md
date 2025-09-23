@@ -535,10 +535,6 @@ Each task gets its own directory with standardized structure:
 ├── breakdown.md      # Detailed implementation work breakdown
 ├── progress.md       # Implementation progress tracking
 ├── testing.md        # Testing strategy and test cases
-├── docs/            # Task-specific documentation
-│   ├── api-changes.md
-│   ├── examples/
-│   └── diagrams/
 └── COMPLETED.md     # Final summary when task is done
 ```
 
