@@ -82,8 +82,8 @@ body {
     margin: 0 auto;
     padding: 2rem 1rem;
     display: grid;
-    grid-template-columns: 1fr 1.5fr 1fr;
-    gap: 2rem;
+    grid-template-columns: 1fr 1.2fr 1fr 1fr;
+    gap: 1.5rem;
 }
 
 /* Panels */
@@ -328,6 +328,16 @@ body {
     transform: translateY(-1px);
 }
 
+.btn.danger {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn.danger:hover {
+    background: #c0392b;
+    transform: translateY(-1px);
+}
+
 .btn.small {
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
@@ -518,6 +528,176 @@ body {
 }
 
 /* Responsive design */
+/* Embedding Configuration Styles */
+.embedding-provider {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.provider-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border-left: 4px solid #28a745;
+}
+
+.status-indicator {
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.provider-status.openai {
+    border-left-color: #17a2b8;
+}
+
+.provider-status.openai .status-indicator {
+    color: #17a2b8;
+}
+
+.provider-status.error {
+    border-left-color: #dc3545;
+    background: #f8d7da;
+}
+
+.provider-status.error .status-indicator {
+    color: #dc3545;
+}
+
+.openai-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.api-key-wrapper {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.api-key-input {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+}
+
+.input-hint {
+    color: #6c757d;
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    display: block;
+}
+
+.collection-config {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.embedding-test {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.test-controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.test-controls .btn {
+    flex: 1;
+    min-width: 140px;
+}
+
+.embedding-progress {
+    margin-top: 1rem;
+}
+
+.embedding-result {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.embedding-result:last-child {
+    margin-bottom: 0;
+}
+
+.embedding-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.embedding-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.embedding-metric .label {
+    font-weight: 500;
+    color: #555;
+}
+
+.embedding-metric .value {
+    font-family: 'Courier New', monospace;
+    color: #2c3e50;
+    font-weight: bold;
+}
+
+.embedding-vector {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.collection-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.collection-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+}
+
+.collection-name {
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.collection-meta {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
 @media (max-width: 1200px) {
     .main-container {
         grid-template-columns: 1fr;
@@ -526,6 +706,19 @@ body {
 
     .search-params {
         grid-template-columns: 1fr;
+    }
+
+    .embedding-info {
+        grid-template-columns: 1fr;
+    }
+
+    .test-controls {
+        flex-direction: column;
+    }
+
+    .test-controls .btn {
+        flex: none;
+        min-width: unset;
     }
 }
 

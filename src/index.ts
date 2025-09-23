@@ -59,15 +59,88 @@ export {
 // Worker utilities (for advanced usage)
 export { WorkerRPC, createWorkerRPC } from './utils/rpc.js';
 
+// Embedding system exports
+export {
+  // Provider implementations
+  OpenAIProvider,
+  createOpenAIProvider,
+  isValidModelDimensionCombo,
+  getRecommendedConfig,
+  TransformersProvider,
+  createTransformersProvider,
+
+  // Factory and utilities
+  createEmbeddingProvider,
+  validateEmbeddingConfig,
+  getRecommendedEmbeddingConfig,
+  checkConfigCompatibility,
+
+  // Provider Factory (new)
+  EmbeddingProviderFactoryImpl,
+  providerFactory,
+  createProvider,
+  validateProviderConfig,
+  checkProviderSupport,
+  getProviderRecommendations,
+  getAvailableProviders,
+  getAvailableModels,
+
+  // Base classes and interfaces
+  BaseEmbeddingProvider,
+  ExternalProvider,
+  ProviderUtils,
+
+  // Constants
+  EMBEDDING_DEFAULTS,
+  SUPPORTED_PROVIDERS,
+
+  // Errors
+  EmbeddingError,
+  ProviderError,
+  AuthenticationError,
+  ConfigurationError,
+  ValidationError,
+  QuotaExceededError,
+  TimeoutError,
+
+  // Utilities
+  TextProcessor,
+  MemoryCache,
+  EmbeddingUtils,
+  CollectionUtils,
+  EmbeddingConstants
+} from './embedding/index.js';
+
+// Embedding type exports
+export type {
+  EmbeddingProvider,
+  CollectionEmbeddingConfig,
+  EmbeddingConfig,
+  EmbeddingProviderType,
+  EmbeddingResult,
+  BatchEmbeddingResult,
+  SemanticSearchOptions,
+  HybridSearchOptions,
+  SearchResultWithEmbedding,
+
+  // Provider Factory types
+  ProviderSupportInfo,
+  ProviderConfigInfo,
+  ProviderRecommendation,
+  ModelInfo,
+  ProviderConfigValidation
+} from './embedding/index.js';
+
 // Version information
 export const VERSION = '1.0.0-mvp';
 export const FEATURES = [
   'sql.js-compatibility',
-  'opfs-persistence', 
+  'opfs-persistence',
   'hybrid-search',
   'sqlite-vec',
   'fts5',
-  'worker-based'
+  'worker-based',
+  'embedding-generation'
 ] as const;
 
 /**

@@ -81,8 +81,118 @@
             </div>
         </section>
 
-        <!-- Center Panel: SQL Operations -->
+        <!-- Center Panel: Embedding Configuration -->
         <section class="panel center-panel">
+            <h2>Embedding Configuration</h2>
+
+            <!-- Provider Selection -->
+            <div class="section">
+                <h3>Embedding Provider</h3>
+                <div class="embedding-provider">
+                    <div class="input-group">
+                        <label for="embedding-provider">Provider:</label>
+                        <select id="embedding-provider" class="provider-select">
+                            <option value="transformers">Transformers.js (Local)</option>
+                            <option value="openai">OpenAI API</option>
+                        </select>
+                    </div>
+                    <div id="provider-status" class="provider-status">
+                        <span class="status-indicator">●</span>
+                        <span class="status-text">Local processing - No API key required</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OpenAI Configuration -->
+            <div class="section" id="openai-config" style="display: none;">
+                <h3>OpenAI Configuration</h3>
+                <div class="openai-settings">
+                    <div class="input-group">
+                        <label for="openai-api-key">API Key:</label>
+                        <div class="api-key-wrapper">
+                            <input type="password" id="openai-api-key" placeholder="sk-..." class="api-key-input">
+                            <button id="test-api-key" class="btn small" disabled>Test Connection</button>
+                        </div>
+                        <small class="input-hint">Your API key is not stored and is only used for this session</small>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="openai-model">Model:</label>
+                        <select id="openai-model">
+                            <option value="text-embedding-3-small">text-embedding-3-small</option>
+                            <option value="text-embedding-3-large">text-embedding-3-large</option>
+                            <option value="text-embedding-ada-002">text-embedding-ada-002</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="embedding-dimensions">Dimensions:</label>
+                        <select id="embedding-dimensions">
+                            <option value="384">384 (Compact)</option>
+                            <option value="768">768 (Balanced)</option>
+                            <option value="1536">1536 (Full)</option>
+                        </select>
+                        <small class="input-hint">Higher dimensions may provide better accuracy but use more storage</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collection Configuration -->
+            <div class="section">
+                <h3>Collection Configuration</h3>
+                <div class="collection-config">
+                    <div class="input-group">
+                        <label for="collection-name">Collection Name:</label>
+                        <input type="text" id="collection-name" value="default" placeholder="Enter collection name">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="collection-description">Description (optional):</label>
+                        <input type="text" id="collection-description" placeholder="Describe this collection">
+                    </div>
+
+                    <div class="button-group">
+                        <button id="create-collection-btn" class="btn primary">Create Collection</button>
+                        <button id="list-collections-btn" class="btn secondary">List Collections</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Embedding Testing -->
+            <div class="section">
+                <h3>Embedding Testing</h3>
+                <div class="embedding-test">
+                    <div class="input-group">
+                        <label for="test-text">Test Text:</label>
+                        <textarea id="test-text" placeholder="Enter text to generate embeddings..." rows="3">Machine learning is a subset of artificial intelligence that focuses on algorithms.</textarea>
+                    </div>
+
+                    <div class="test-controls">
+                        <button id="generate-embedding-btn" class="btn primary">Generate Embedding</button>
+                        <button id="add-to-collection-btn" class="btn secondary" disabled>Add to Collection</button>
+                    </div>
+
+                    <div id="embedding-progress" class="embedding-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                            <span class="progress-text">Generating...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Embedding Results -->
+            <div class="section">
+                <h3>Embedding Results</h3>
+                <div id="embedding-results" class="results-container">
+                    <div class="results-placeholder">No embedding generated yet</div>
+                </div>
+                <div id="embedding-stats" class="query-stats"></div>
+            </div>
+        </section>
+
+        <!-- Third Panel: SQL Operations -->
+        <section class="panel third-panel">
             <h2>SQL Operations</h2>
 
             <!-- SQL Editor -->
@@ -114,8 +224,8 @@ SELECT * FROM fts_default WHERE fts_default MATCH 'machine learning';">SELECT * 
             </div>
         </section>
 
-        <!-- Right Panel: Hybrid Search -->
-        <section class="panel right-panel">
+        <!-- Fourth Panel: Hybrid Search -->
+        <section class="panel fourth-panel">
             <h2>Hybrid Search</h2>
 
             <!-- Search Interface -->

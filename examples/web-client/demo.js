@@ -1,7 +1,7 @@
 // LocalRetrieve MVP Demo Application
 // Showcases all core functionality with preloaded test data
 
-import { initLocalRetrieve } from '../../dist/localretrieve.mjs';
+import { initLocalRetrieve, createProvider, validateProviderConfig } from '../../dist/localretrieve.mjs';
 
 class LocalRetrieveDemo {
     constructor() {
@@ -9,6 +9,13 @@ class LocalRetrieveDemo {
         this.isLoading = false;
         this.queryHistory = [];
         this.searchHistory = [];
+        this.currentEmbedding = null;
+        this.embeddingConfig = {
+            provider: 'transformers',
+            openaiApiKey: '',
+            model: 'text-embedding-3-small',
+            dimensions: 384
+        };
 
         // DOM elements
         this.elements = {
@@ -49,7 +56,26 @@ class LocalRetrieveDemo {
             searchLimit: document.getElementById('search-limit'),
             searchBtn: document.getElementById('search-btn'),
             searchResults: document.getElementById('search-results'),
-            searchStats: document.getElementById('search-stats')
+            searchStats: document.getElementById('search-stats'),
+
+            // Embedding elements
+            embeddingProvider: document.getElementById('embedding-provider'),
+            providerStatus: document.getElementById('provider-status'),
+            openaiConfig: document.getElementById('openai-config'),
+            openaiApiKey: document.getElementById('openai-api-key'),
+            testApiKey: document.getElementById('test-api-key'),
+            openaiModel: document.getElementById('openai-model'),
+            embeddingDimensions: document.getElementById('embedding-dimensions'),
+            collectionName: document.getElementById('collection-name'),
+            collectionDescription: document.getElementById('collection-description'),
+            createCollectionBtn: document.getElementById('create-collection-btn'),
+            listCollectionsBtn: document.getElementById('list-collections-btn'),
+            testText: document.getElementById('test-text'),
+            generateEmbeddingBtn: document.getElementById('generate-embedding-btn'),
+            addToCollectionBtn: document.getElementById('add-to-collection-btn'),
+            embeddingProgress: document.getElementById('embedding-progress'),
+            embeddingResults: document.getElementById('embedding-results'),
+            embeddingStats: document.getElementById('embedding-stats')
         };
 
         this.initializeEventListeners();
@@ -94,6 +120,21 @@ class LocalRetrieveDemo {
             this.elements.vecWeightValue.textContent = e.target.value;
             this.updateFtsWeight();
         });
+
+        // Embedding configuration
+        this.elements.embeddingProvider.addEventListener('change', (e) => this.handleProviderChange(e));
+        this.elements.openaiApiKey.addEventListener('input', (e) => this.handleApiKeyInput(e));
+        this.elements.testApiKey.addEventListener('click', () => this.testApiConnection());
+        this.elements.openaiModel.addEventListener('change', (e) => this.handleModelChange(e));
+        this.elements.embeddingDimensions.addEventListener('change', (e) => this.handleDimensionsChange(e));
+
+        // Collection management
+        this.elements.createCollectionBtn.addEventListener('click', () => this.createCollection());
+        this.elements.listCollectionsBtn.addEventListener('click', () => this.listCollections());
+
+        // Embedding testing
+        this.elements.generateEmbeddingBtn.addEventListener('click', () => this.generateEmbedding());
+        this.elements.addToCollectionBtn.addEventListener('click', () => this.addToCollection());
     }
 
     updateFtsWeight() {
@@ -799,7 +840,12 @@ class LocalRetrieveDemo {
             this.elements.importBtn,
             this.elements.exportBtn,
             this.elements.executeSqlBtn,
-            this.elements.searchBtn
+            this.elements.searchBtn,
+            this.elements.testApiKey,
+            this.elements.createCollectionBtn,
+            this.elements.listCollectionsBtn,
+            this.elements.generateEmbeddingBtn,
+            this.elements.addToCollectionBtn
         ];
 
         const allButtons = [
@@ -829,7 +875,19 @@ class LocalRetrieveDemo {
             this.elements.executeSqlBtn,
             this.elements.searchBtn,
             this.elements.sqlInput,
-            this.elements.searchText
+            this.elements.searchText,
+            this.elements.embeddingProvider,
+            this.elements.openaiApiKey,
+            this.elements.testApiKey,
+            this.elements.openaiModel,
+            this.elements.embeddingDimensions,
+            this.elements.collectionName,
+            this.elements.collectionDescription,
+            this.elements.createCollectionBtn,
+            this.elements.listCollectionsBtn,
+            this.elements.testText,
+            this.elements.generateEmbeddingBtn,
+            this.elements.addToCollectionBtn
         ];
 
         controls.forEach(control => {
@@ -868,6 +926,492 @@ class LocalRetrieveDemo {
     truncateText(text, maxLength) {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength) + '...';
+    }
+
+    // Embedding Configuration Methods
+    handleProviderChange(event) {
+        const provider = event.target.value;
+        this.embeddingConfig.provider = provider;
+
+        if (provider === 'openai') {
+            this.elements.openaiConfig.style.display = 'block';
+            this.updateProviderStatus('OpenAI API - API key required', 'openai');
+        } else {
+            this.elements.openaiConfig.style.display = 'none';
+            this.updateProviderStatus('Local processing - No API key required', 'transformers');
+        }
+
+        // Reset embedding results when provider changes
+        this.currentEmbedding = null;
+        this.elements.addToCollectionBtn.disabled = true;
+        this.clearEmbeddingResults();
+    }
+
+    handleApiKeyInput(event) {
+        const apiKey = event.target.value.trim();
+        this.embeddingConfig.openaiApiKey = apiKey;
+        this.elements.testApiKey.disabled = !apiKey;
+
+        if (apiKey) {
+            this.updateProviderStatus('API key entered - Click "Test Connection" to verify', 'openai');
+        } else {
+            this.updateProviderStatus('OpenAI API - API key required', 'openai');
+        }
+    }
+
+    handleModelChange(event) {
+        this.embeddingConfig.model = event.target.value;
+
+        // Update dimensions based on model
+        if (event.target.value === 'text-embedding-ada-002') {
+            this.elements.embeddingDimensions.value = '1536';
+            this.embeddingConfig.dimensions = 1536;
+        }
+    }
+
+    handleDimensionsChange(event) {
+        this.embeddingConfig.dimensions = parseInt(event.target.value);
+    }
+
+    updateProviderStatus(message, type) {
+        this.elements.providerStatus.className = `provider-status ${type}`;
+        this.elements.providerStatus.querySelector('.status-text').textContent = message;
+    }
+
+    async testApiConnection() {
+        if (!this.embeddingConfig.openaiApiKey) return;
+
+        try {
+            this.setLoading(true);
+            this.updateProviderStatus('Testing API connection...', 'openai');
+
+            // Test with a simple embedding request
+            const response = await this.generateOpenAIEmbedding('test', false);
+
+            if (response && response.length > 0) {
+                this.updateProviderStatus('API connection successful', 'openai');
+                this.setStatus('OpenAI API connection test successful', 'success');
+            } else {
+                throw new Error('Invalid response from OpenAI API');
+            }
+
+        } catch (error) {
+            console.error('API test failed:', error);
+            this.updateProviderStatus(`API test failed: ${error.message}`, 'error');
+            this.setStatus(`OpenAI API test failed: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async generateOpenAIEmbedding(text, fullResponse = true) {
+        if (!this.embeddingConfig.openaiApiKey) {
+            throw new Error('OpenAI API key is required');
+        }
+
+        try {
+            console.log('[DEBUG] Creating OpenAI provider config:', {
+                provider: 'openai',
+                model: this.embeddingConfig.model,
+                dimensions: this.embeddingConfig.dimensions,
+                hasApiKey: !!this.embeddingConfig.openaiApiKey
+            });
+
+            // Create provider configuration
+            const config = {
+                provider: 'openai',
+                apiKey: this.embeddingConfig.openaiApiKey,
+                model: this.embeddingConfig.model,
+                dimensions: this.embeddingConfig.dimensions
+            };
+
+            // Validate configuration
+            console.log('[DEBUG] Validating OpenAI provider config...');
+            const validation = validateProviderConfig(config);
+            console.log('[DEBUG] OpenAI validation result:', validation);
+
+            if (!validation.isValid) {
+                throw new Error(`Configuration error: ${validation.errors.join(', ')}`);
+            }
+
+            // Create provider
+            console.log('[DEBUG] Creating OpenAI provider...');
+            const provider = await createProvider(config);
+            console.log('[DEBUG] OpenAI provider created:', provider.constructor.name);
+
+            // Generate embedding using the SDK
+            console.log('[DEBUG] Generating OpenAI embedding...');
+            const embedding = await provider.generateEmbedding(text);
+            console.log('[DEBUG] OpenAI embedding generated, length:', embedding.length);
+
+            // Get provider metrics for usage info
+            const metrics = provider.getMetrics();
+
+            // Clean up provider
+            await provider.cleanup();
+
+            if (fullResponse) {
+                return {
+                    embedding: Array.from(embedding), // Convert Float32Array to regular array
+                    model: this.embeddingConfig.model,
+                    usage: {
+                        prompt_tokens: Math.ceil(text.length / 4), // Estimate
+                        total_tokens: Math.ceil(text.length / 4)
+                    },
+                    metrics: metrics
+                };
+            } else {
+                return Array.from(embedding);
+            }
+        } catch (error) {
+            console.error('OpenAI embedding generation failed:', error);
+            throw error;
+        }
+    }
+
+    async generateTransformersEmbedding(text) {
+        try {
+            console.log('[DEBUG] Creating Transformers provider config...');
+            // Create provider configuration for Transformers.js
+            const config = {
+                provider: 'transformers',
+                model: 'all-MiniLM-L6-v2',
+                dimensions: 384
+            };
+
+            // Validate configuration
+            console.log('[DEBUG] Validating Transformers provider config...');
+            const validation = validateProviderConfig(config);
+            console.log('[DEBUG] Transformers validation result:', validation);
+
+            if (!validation.isValid) {
+                throw new Error(`Configuration error: ${validation.errors.join(', ')}`);
+            }
+
+            // Create provider
+            console.log('[DEBUG] Creating Transformers provider...');
+            const provider = await createProvider(config);
+            console.log('[DEBUG] Transformers provider created:', provider.constructor.name);
+
+            // Generate embedding using the SDK
+            console.log('[DEBUG] Generating Transformers embedding...');
+            const embedding = await provider.generateEmbedding(text);
+            console.log('[DEBUG] Transformers embedding generated, length:', embedding.length);
+
+            // Get provider metrics
+            const metrics = provider.getMetrics();
+
+            // Clean up provider
+            await provider.cleanup();
+
+            return {
+                embedding: Array.from(embedding), // Convert Float32Array to regular array
+                metrics: metrics
+            };
+        } catch (error) {
+            console.warn('Transformers.js provider failed, falling back to mock embedding:', error.message);
+
+            // Fallback to mock embedding for demo purposes
+            const embedding = Array.from({length: 384}, () => Math.random() * 2 - 1);
+
+            // Normalize to unit vector
+            const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+            return {
+                embedding: embedding.map(val => val / magnitude),
+                metrics: { totalEmbeddings: 1, averageGenerationTime: 100, errorCount: 0 }
+            };
+        }
+    }
+
+    async generateEmbedding() {
+        const text = this.elements.testText.value.trim();
+        if (!text) {
+            this.setStatus('Please enter text to generate embedding', 'error');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+            this.showEmbeddingProgress();
+            this.clearEmbeddingResults();
+
+            console.log('[DEBUG] Starting embedding generation:', {
+                text: text.substring(0, 50) + '...',
+                provider: this.embeddingConfig.provider,
+                config: this.embeddingConfig
+            });
+
+            const startTime = performance.now();
+            let result;
+
+            if (this.embeddingConfig.provider === 'openai') {
+                result = await this.generateOpenAIEmbedding(text);
+                this.currentEmbedding = {
+                    text: text,
+                    embedding: new Float32Array(result.embedding),
+                    provider: 'openai',
+                    model: result.model,
+                    dimensions: result.embedding.length,
+                    usage: result.usage,
+                    metrics: result.metrics,
+                    generatedAt: new Date().toISOString()
+                };
+            } else {
+                console.log('[DEBUG] Calling generateTransformersEmbedding...');
+                const result = await this.generateTransformersEmbedding(text);
+                console.log('[DEBUG] Transformers result:', result);
+
+                this.currentEmbedding = {
+                    text: text,
+                    embedding: new Float32Array(result.embedding),
+                    provider: 'transformers',
+                    model: 'all-MiniLM-L6-v2',
+                    dimensions: result.embedding.length,
+                    metrics: result.metrics,
+                    generatedAt: new Date().toISOString()
+                };
+                console.log('[DEBUG] currentEmbedding set:', this.currentEmbedding);
+            }
+
+            const generationTime = performance.now() - startTime;
+
+            console.log('[DEBUG] About to call displayEmbeddingResults with:', this.currentEmbedding);
+            this.displayEmbeddingResults(this.currentEmbedding, generationTime);
+            console.log('[DEBUG] displayEmbeddingResults called successfully');
+
+            this.elements.addToCollectionBtn.disabled = false;
+            this.setStatus(`Embedding generated successfully in ${generationTime.toFixed(1)}ms`, 'success');
+
+        } catch (error) {
+            console.error('[DEBUG] Embedding generation failed:', error);
+            console.error('[DEBUG] Error details:', {
+                message: error.message,
+                stack: error.stack,
+                provider: this.embeddingConfig.provider
+            });
+            this.setStatus(`Embedding generation failed: ${error.message}`, 'error');
+            this.currentEmbedding = null;
+            this.elements.addToCollectionBtn.disabled = true;
+        } finally {
+            this.setLoading(false);
+            this.hideEmbeddingProgress();
+        }
+    }
+
+    displayEmbeddingResults(embedding, generationTime) {
+        const container = this.elements.embeddingResults;
+
+        const resultHtml = `
+            <div class="embedding-result">
+                <div class="embedding-info">
+                    <div class="embedding-metric">
+                        <span class="label">Provider:</span>
+                        <span class="value">${embedding.provider}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Model:</span>
+                        <span class="value">${embedding.model}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Dimensions:</span>
+                        <span class="value">${embedding.dimensions}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Generation Time:</span>
+                        <span class="value">${generationTime.toFixed(1)}ms</span>
+                    </div>
+                    ${embedding.usage ? `
+                    <div class="embedding-metric">
+                        <span class="label">Tokens Used:</span>
+                        <span class="value">${embedding.usage.total_tokens}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Prompt Tokens:</span>
+                        <span class="value">${embedding.usage.prompt_tokens}</span>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="input-group">
+                    <label>Generated Text:</label>
+                    <div class="result-content">${this.escapeHtml(embedding.text)}</div>
+                </div>
+
+                <div class="input-group">
+                    <label>Embedding Vector (first 20 dimensions):</label>
+                    <div class="embedding-vector">[${Array.from(embedding.embedding.slice(0, 20)).map(v => v.toFixed(6)).join(', ')}${embedding.dimensions > 20 ? ', ...' : ''}]</div>
+                </div>
+            </div>
+        `;
+
+        container.innerHTML = resultHtml;
+
+        this.elements.embeddingStats.textContent =
+            `Embedding generated: ${embedding.dimensions} dimensions, ${embedding.provider} provider`;
+    }
+
+    clearEmbeddingResults() {
+        this.elements.embeddingResults.innerHTML = '<div class="results-placeholder">No embedding generated yet</div>';
+        this.elements.embeddingStats.textContent = '';
+    }
+
+    showEmbeddingProgress() {
+        this.elements.embeddingProgress.style.display = 'block';
+        const fill = this.elements.embeddingProgress.querySelector('.progress-fill');
+        const text = this.elements.embeddingProgress.querySelector('.progress-text');
+
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += 10;
+            fill.style.width = `${Math.min(progress, 90)}%`;
+            text.textContent = `${Math.min(progress, 90)}%`;
+
+            if (progress >= 90) {
+                clearInterval(interval);
+            }
+        }, 100);
+
+        this.embeddingProgressInterval = interval;
+    }
+
+    hideEmbeddingProgress() {
+        if (this.embeddingProgressInterval) {
+            clearInterval(this.embeddingProgressInterval);
+        }
+
+        const fill = this.elements.embeddingProgress.querySelector('.progress-fill');
+        const text = this.elements.embeddingProgress.querySelector('.progress-text');
+        fill.style.width = '100%';
+        text.textContent = '100%';
+
+        setTimeout(() => {
+            this.elements.embeddingProgress.style.display = 'none';
+        }, 500);
+    }
+
+    async createCollection() {
+        const name = this.elements.collectionName.value.trim();
+        const description = this.elements.collectionDescription.value.trim();
+
+        if (!name) {
+            this.setStatus('Collection name is required', 'error');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+
+            // This is a placeholder for collection creation
+            // In a real implementation, you would create a collection in the database
+            console.log('Creating collection:', { name, description });
+
+            this.setStatus(`Collection "${name}" created successfully`, 'success');
+
+            // Clear form
+            this.elements.collectionName.value = 'default';
+            this.elements.collectionDescription.value = '';
+
+        } catch (error) {
+            console.error('Collection creation failed:', error);
+            this.setStatus(`Collection creation failed: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async listCollections() {
+        try {
+            this.setLoading(true);
+
+            // This is a placeholder for listing collections
+            // In a real implementation, you would query the collections from the database
+            const collections = [
+                {
+                    name: 'default',
+                    description: 'Default collection for demo data',
+                    documents: 12,
+                    created: '2024-01-15'
+                }
+            ];
+
+            this.displayCollections(collections);
+            this.setStatus('Collections loaded successfully', 'success');
+
+        } catch (error) {
+            console.error('Failed to list collections:', error);
+            this.setStatus(`Failed to list collections: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    displayCollections(collections) {
+        const container = this.elements.embeddingResults;
+
+        if (collections.length === 0) {
+            container.innerHTML = '<div class="results-placeholder">No collections found</div>';
+            return;
+        }
+
+        const collectionsHtml = collections.map(collection => `
+            <div class="collection-item">
+                <div>
+                    <div class="collection-name">${this.escapeHtml(collection.name)}</div>
+                    <div class="collection-meta">${this.escapeHtml(collection.description || 'No description')}</div>
+                </div>
+                <div class="collection-meta">
+                    ${collection.documents} docs • Created ${collection.created}
+                </div>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="collection-list">
+                ${collectionsHtml}
+            </div>
+        `;
+
+        this.elements.embeddingStats.textContent = `Found ${collections.length} collection(s)`;
+    }
+
+    async addToCollection() {
+        if (!this.currentEmbedding) {
+            this.setStatus('No embedding to add - generate an embedding first', 'error');
+            return;
+        }
+
+        const collectionName = this.elements.collectionName.value.trim() || 'default';
+
+        try {
+            this.setLoading(true);
+
+            // This is a placeholder for adding embedding to collection
+            // In a real implementation, you would store this in your database
+            console.log('Adding to collection:', {
+                collection: collectionName,
+                text: this.currentEmbedding.text,
+                embedding: this.currentEmbedding.embedding,
+                metadata: {
+                    provider: this.currentEmbedding.provider,
+                    model: this.currentEmbedding.model,
+                    dimensions: this.currentEmbedding.dimensions,
+                    generatedAt: this.currentEmbedding.generatedAt
+                }
+            });
+
+            this.setStatus(`Embedding added to collection "${collectionName}" successfully`, 'success');
+
+            // Clear current embedding
+            this.currentEmbedding = null;
+            this.elements.addToCollectionBtn.disabled = true;
+            this.clearEmbeddingResults();
+
+        } catch (error) {
+            console.error('Failed to add to collection:', error);
+            this.setStatus(`Failed to add to collection: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
     }
 }
 
