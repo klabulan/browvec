@@ -246,6 +246,38 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('getStats');
   }
 
+  // Collection management with embedding support
+  async createCollection(params: Parameters<DBWorkerAPI['createCollection']>[0]): Promise<void> {
+    return this.call('createCollection', params);
+  }
+
+  async getCollectionEmbeddingStatus(collection: string) {
+    return this.call('getCollectionEmbeddingStatus', collection);
+  }
+
+  // Document operations with embedding support
+  async insertDocumentWithEmbedding(params: Parameters<DBWorkerAPI['insertDocumentWithEmbedding']>[0]) {
+    return this.call('insertDocumentWithEmbedding', params);
+  }
+
+  // Search operations
+  async searchSemantic(params: Parameters<DBWorkerAPI['searchSemantic']>[0]) {
+    return this.call('searchSemantic', params);
+  }
+
+  // Embedding generation operations
+  async generateEmbedding(params: Parameters<DBWorkerAPI['generateEmbedding']>[0]) {
+    return this.call('generateEmbedding', params);
+  }
+
+  async batchGenerateEmbeddings(params: Parameters<DBWorkerAPI['batchGenerateEmbeddings']>[0]) {
+    return this.call('batchGenerateEmbeddings', params);
+  }
+
+  async regenerateCollectionEmbeddings(collection: string, options?: Parameters<DBWorkerAPI['regenerateCollectionEmbeddings']>[1]) {
+    return this.call('regenerateCollectionEmbeddings', { collection, options });
+  }
+
   // Utility methods
   getPerformanceMetrics() {
     const avgLatency = this.performanceMetrics.totalCalls > 0 

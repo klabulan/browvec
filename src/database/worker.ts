@@ -19,9 +19,21 @@ import type {
   ExportParams,
   ImportParams,
   SQLValue,
-  SQLParams
+  SQLParams,
+  CreateCollectionParams,
+  InsertDocumentWithEmbeddingParams,
+  SemanticSearchParams,
+  CollectionEmbeddingStatusResult,
+  GenerateEmbeddingRequest,
+  GenerateEmbeddingResult,
+  BatchEmbeddingRequest,
+  BatchEmbeddingResult,
+  EmbeddingProgress
 } from '../types/worker.js';
 import { DatabaseError, VectorError, OPFSError } from '../types/worker.js';
+import type { EmbeddingProvider, CollectionEmbeddingConfig } from '../embedding/types.js';
+import { providerFactory } from '../embedding/ProviderFactory.js';
+import { EmbeddingError } from '../embedding/errors.js';
 
 // SQLite WASM module interface (C API)
 interface SQLite3Module {
@@ -84,6 +96,10 @@ class DatabaseWorker {
   private isInitialized = false;
   private operationCount = 0;
   private startTime = Date.now();
+
+  // Embedding provider management
+  private embeddingProviders = new Map<string, EmbeddingProvider>();
+  private providerInitPromises = new Map<string, Promise<EmbeddingProvider>>();
 
   // OPFS persistence
   private opfsPath: string | null = null;
@@ -469,9 +485,22 @@ class DatabaseWorker {
     // Schema management
     this.rpcHandler.register('initializeSchema', this.handleInitializeSchema.bind(this));
     this.rpcHandler.register('getCollectionInfo', this.handleGetCollectionInfo.bind(this));
-    
+
+    // Collection management with embedding support
+    this.rpcHandler.register('createCollection', this.handleCreateCollection.bind(this));
+    this.rpcHandler.register('getCollectionEmbeddingStatus', this.handleGetCollectionEmbeddingStatus.bind(this));
+
+    // Document operations with embedding support
+    this.rpcHandler.register('insertDocumentWithEmbedding', this.handleInsertDocumentWithEmbedding.bind(this));
+
+    // Embedding generation operations
+    this.rpcHandler.register('generateEmbedding', this.handleGenerateEmbedding.bind(this));
+    this.rpcHandler.register('batchGenerateEmbeddings', this.handleBatchGenerateEmbeddings.bind(this));
+    this.rpcHandler.register('regenerateCollectionEmbeddings', this.handleRegenerateCollectionEmbeddings.bind(this));
+
     // Search operations
     this.rpcHandler.register('search', this.handleSearch.bind(this));
+    this.rpcHandler.register('searchSemantic', this.handleSearchSemantic.bind(this));
     
     // Data export/import
     this.rpcHandler.register('export', this.handleExport.bind(this));
@@ -851,6 +880,9 @@ class DatabaseWorker {
   private async handleClose(): Promise<void> {
     if (this.dbPtr && this.sqlite3) {
       try {
+        // Cleanup embedding providers
+        await this.cleanupEmbeddingProviders();
+
         // Force final sync to OPFS before closing
         await this.forceOPFSSync();
 
@@ -871,6 +903,36 @@ class DatabaseWorker {
       } catch (error) {
         throw new DatabaseError(`Failed to close database: ${error instanceof Error ? error.message : String(error)}`);
       }
+    }
+  }
+
+  /**
+   * Очистка ресурсов провайдеров эмбеддингов
+   */
+  private async cleanupEmbeddingProviders(): Promise<void> {
+    try {
+      this.log('info', `Cleaning up ${this.embeddingProviders.size} embedding providers`);
+
+      // Завершаем все провайдеры
+      const cleanupPromises = Array.from(this.embeddingProviders.values()).map(async (provider) => {
+        try {
+          if (typeof provider.dispose === 'function') {
+            await provider.dispose();
+          }
+        } catch (error) {
+          this.log('warn', 'Failed to dispose embedding provider:', error);
+        }
+      });
+
+      await Promise.all(cleanupPromises);
+
+      // Очищаем кэши
+      this.embeddingProviders.clear();
+      this.providerInitPromises.clear();
+
+      this.log('info', 'Embedding providers cleaned up');
+    } catch (error) {
+      this.log('error', 'Failed to cleanup embedding providers:', error);
     }
   }
 
@@ -1124,6 +1186,7 @@ class DatabaseWorker {
           CREATE TABLE IF NOT EXISTS collections (
             name TEXT PRIMARY KEY,
             created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            updated_at INTEGER DEFAULT (strftime('%s', 'now')),
             schema_version INTEGER DEFAULT 1,
             config JSON
           );
@@ -1173,6 +1236,253 @@ class DatabaseWorker {
       
     } catch (error) {
       throw new DatabaseError(`Failed to get collection info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Создание новой коллекции с конфигурацией эмбеддингов
+   */
+  private async handleCreateCollection(params: CreateCollectionParams): Promise<void> {
+    this.ensureInitialized();
+
+    try {
+      const { name, embeddingConfig, description, metadata } = params;
+
+      this.log('info', `Creating collection '${name}' with embedding config:`, embeddingConfig);
+
+      // Определяем размерность векторов для коллекции
+      const dimensions = embeddingConfig?.dimensions || 384; // По умолчанию 384
+
+      // Создаем запись в таблице коллекций
+      const collectionMetadata = {
+        description: description || `Collection ${name}`,
+        embeddingConfig: embeddingConfig || null,
+        vectorDim: dimensions,
+        ...metadata
+      };
+
+      await this.handleExec({
+        sql: `INSERT INTO collections (name, config, schema_version, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?)`,
+        params: [
+          name,
+          JSON.stringify(collectionMetadata),
+          1, // Версия схемы
+          Math.floor(Date.now() / 1000), // Unix timestamp
+          Math.floor(Date.now() / 1000)  // Unix timestamp
+        ]
+      });
+
+      // Создаем таблицы для коллекции
+      await this.createCollectionTables(name, dimensions);
+
+      this.log('info', `Collection '${name}' created successfully with ${dimensions}-dimensional vectors`);
+
+    } catch (error) {
+      throw new DatabaseError(`Failed to create collection: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Получение статуса эмбеддингов для коллекции
+   */
+  private async handleGetCollectionEmbeddingStatus(collection: string): Promise<CollectionEmbeddingStatusResult> {
+    this.ensureInitialized();
+
+    try {
+      // Получаем информацию о коллекции
+      const collectionResult = await this.handleSelect({
+        sql: 'SELECT * FROM collections WHERE name = ?',
+        params: [collection]
+      });
+
+      if (collectionResult.rows.length === 0) {
+        throw new DatabaseError(`Collection '${collection}' not found`);
+      }
+
+      const collectionData = collectionResult.rows[0];
+      const config = JSON.parse(collectionData.config || '{}');
+      const embeddingConfig = config.embeddingConfig;
+
+      // Подсчитываем документы с эмбеддингами
+      const documentsWithEmbeddingsResult = await this.handleSelect({
+        sql: `SELECT COUNT(*) as count FROM vec_${collection}_dense`
+      });
+
+      // Подсчитываем общее количество документов
+      const totalDocumentsResult = await this.handleSelect({
+        sql: `SELECT COUNT(*) as count FROM docs_${collection}`
+      });
+
+      const documentsWithEmbeddings = documentsWithEmbeddingsResult.rows[0]?.count || 0;
+      const totalDocuments = totalDocumentsResult.rows[0]?.count || 0;
+
+      return {
+        collectionId: collection,
+        provider: embeddingConfig?.provider,
+        model: embeddingConfig?.model,
+        dimensions: embeddingConfig?.dimensions || config.vectorDim || 384,
+        documentsWithEmbeddings,
+        totalDocuments,
+        isReady: documentsWithEmbeddings > 0,
+        generationProgress: totalDocuments > 0 ? Math.round((documentsWithEmbeddings / totalDocuments) * 100) : 0,
+        lastUpdated: collectionData.updated_at ? new Date(collectionData.updated_at) : undefined,
+        configErrors: this.validateEmbeddingConfig(embeddingConfig)
+      };
+
+    } catch (error) {
+      throw new DatabaseError(`Failed to get collection embedding status: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Вставка документа с автоматической генерацией эмбеддинга
+   */
+  private async handleInsertDocumentWithEmbedding(params: InsertDocumentWithEmbeddingParams): Promise<{ id: string; embeddingGenerated: boolean }> {
+    this.ensureInitialized();
+
+    try {
+      const { collection, document, options } = params;
+      const { generateEmbedding = true } = options || {};
+
+      // Генерируем ID для документа если не предоставлен
+      const docId = document.id || `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      this.log('info', `Inserting document '${docId}' into collection '${collection}'`);
+
+      // Вставляем документ в основную таблицу
+      await this.handleExec({
+        sql: `INSERT INTO docs_${collection} (id, title, content, metadata, created_at)
+              VALUES (?, ?, ?, ?, ?)`,
+        params: [
+          docId,
+          document.title || null,
+          document.content,
+          JSON.stringify(document.metadata || {}),
+          Date.now()
+        ]
+      });
+
+      // Вставляем в FTS таблицу
+      await this.handleExec({
+        sql: `INSERT INTO fts_${collection} (rowid, content)
+              SELECT rowid, content FROM docs_${collection} WHERE id = ?`,
+        params: [docId]
+      });
+
+      let embeddingGenerated = false;
+
+      if (generateEmbedding) {
+        try {
+          embeddingGenerated = await this.generateAndStoreEmbedding(collection, docId, document.content, options?.embeddingOptions);
+        } catch (embeddingError) {
+          this.log('warn', `Failed to generate embedding for document '${docId}':`, embeddingError);
+          // Не выбрасываем ошибку - документ уже вставлен, просто эмбеддинг не сгенерировался
+        }
+      }
+
+      return { id: docId, embeddingGenerated };
+
+    } catch (error) {
+      throw new DatabaseError(`Failed to insert document with embedding: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Семантический поиск по коллекции
+   */
+  private async handleSearchSemantic(params: SemanticSearchParams): Promise<SearchResponse> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const {
+        collection,
+        query,
+        options = {}
+      } = params;
+
+      const {
+        limit = 10,
+        similarityThreshold = 0.1,
+        includeEmbeddings = false,
+        filters = {},
+        generateQueryEmbedding = true
+      } = options;
+
+      this.log('info', `Semantic search in collection '${collection}' for query: "${query}"`);
+
+      let queryEmbedding: Float32Array | null = null;
+
+      if (generateQueryEmbedding) {
+        try {
+          queryEmbedding = await this.generateQueryEmbedding(collection, query);
+        } catch (embeddingError) {
+          this.log('warn', `Failed to generate query embedding:`, embeddingError);
+          throw new DatabaseError(`Failed to generate query embedding: ${embeddingError instanceof Error ? embeddingError.message : String(embeddingError)}`);
+        }
+      }
+
+      if (!queryEmbedding) {
+        throw new DatabaseError('Query embedding is required for semantic search');
+      }
+
+      // Выполняем векторный поиск
+      const searchSQL = includeEmbeddings ? `
+        SELECT d.id, d.title, d.content, d.metadata,
+               v.distance as score,
+               v.embedding
+        FROM docs_${collection} d
+        JOIN (
+          SELECT rowid, distance, embedding
+          FROM vec_${collection}_dense
+          WHERE embedding MATCH ?
+          AND distance <= ?
+          ORDER BY distance
+          LIMIT ?
+        ) v ON d.rowid = v.rowid
+        ORDER BY v.distance
+      ` : `
+        SELECT d.id, d.title, d.content, d.metadata,
+               v.distance as score
+        FROM docs_${collection} d
+        JOIN (
+          SELECT rowid, distance
+          FROM vec_${collection}_dense
+          WHERE embedding MATCH ?
+          AND distance <= ?
+          ORDER BY distance
+          LIMIT ?
+        ) v ON d.rowid = v.rowid
+        ORDER BY v.distance
+      `;
+
+      const searchResult = await this.handleSelect({
+        sql: searchSQL,
+        params: [queryEmbedding, similarityThreshold, limit]
+      });
+
+      const results: SearchResult[] = searchResult.rows.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        metadata: JSON.parse(row.metadata || '{}'),
+        score: 1 - row.score, // Конвертируем расстояние в сходство
+        vecScore: 1 - row.score,
+        ...(includeEmbeddings && row.embedding && { embedding: new Float32Array(row.embedding) })
+      }));
+
+      const searchTime = Date.now() - startTime;
+
+      return {
+        results,
+        totalResults: results.length,
+        searchTime
+      };
+
+    } catch (error) {
+      throw new DatabaseError(`Semantic search failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -1727,6 +2037,455 @@ class DatabaseWorker {
   private ensureInitialized(): void {
     if (!this.isInitialized || !this.dbPtr) {
       throw new DatabaseError('Database not initialized. Call open() first.');
+    }
+  }
+
+  /**
+   * Получение или создание провайдера эмбеддингов для коллекции
+   */
+  private async getEmbeddingProvider(collection: string): Promise<EmbeddingProvider | null> {
+    try {
+      // Проверяем кэш провайдеров
+      const cachedProvider = this.embeddingProviders.get(collection);
+      if (cachedProvider) {
+        return cachedProvider;
+      }
+
+      // Проверяем, есть ли уже инициализация в процессе
+      const initPromise = this.providerInitPromises.get(collection);
+      if (initPromise) {
+        return await initPromise;
+      }
+
+      // Начинаем новую инициализацию
+      const promise = this.initializeEmbeddingProvider(collection);
+      this.providerInitPromises.set(collection, promise);
+
+      try {
+        const provider = await promise;
+        this.embeddingProviders.set(collection, provider);
+        this.providerInitPromises.delete(collection);
+        return provider;
+      } catch (error) {
+        this.providerInitPromises.delete(collection);
+        throw error;
+      }
+    } catch (error) {
+      this.log('error', `Failed to get embedding provider for collection '${collection}':`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Инициализация провайдера эмбеддингов для коллекции
+   */
+  private async initializeEmbeddingProvider(collection: string): Promise<EmbeddingProvider> {
+    // Получаем конфигурацию коллекции
+    const collectionResult = await this.handleSelect({
+      sql: 'SELECT config FROM collections WHERE name = ?',
+      params: [collection]
+    });
+
+    if (collectionResult.rows.length === 0) {
+      throw new EmbeddingError(`Collection '${collection}' not found`);
+    }
+
+    const config = JSON.parse(collectionResult.rows[0].config || '{}');
+    const embeddingConfig: CollectionEmbeddingConfig = config.embeddingConfig;
+
+    if (!embeddingConfig) {
+      throw new EmbeddingError(`No embedding configuration found for collection '${collection}'`);
+    }
+
+    this.log('info', `Initializing embedding provider '${embeddingConfig.provider}' for collection '${collection}'`);
+
+    // Создаем провайдер через фабрику
+    const provider = await providerFactory.createProvider(embeddingConfig);
+
+    this.log('info', `Embedding provider '${embeddingConfig.provider}' initialized successfully for collection '${collection}'`);
+    return provider;
+  }
+
+  /**
+   * Отправка прогресса эмбеддинга на главный поток
+   */
+  private sendEmbeddingProgress(progress: EmbeddingProgress): void {
+    try {
+      self.postMessage({
+        type: 'embedding_progress',
+        data: progress
+      });
+    } catch (error) {
+      this.log('warn', 'Failed to send embedding progress:', error);
+    }
+  }
+
+  /**
+   * Обработка запроса генерации эмбеддинга
+   */
+  private async handleGenerateEmbedding(params: GenerateEmbeddingRequest): Promise<GenerateEmbeddingResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const { collection, text, options = {} } = params;
+
+      this.log('info', `Generating embedding for collection '${collection}', text length: ${text.length}`);
+
+      // Получаем провайдер для коллекции
+      const provider = await this.getEmbeddingProvider(collection);
+      if (!provider) {
+        throw new EmbeddingError(`Failed to initialize embedding provider for collection '${collection}'`);
+      }
+
+      // Генерируем эмбеддинг
+      const result = await provider.generateEmbedding(text, {
+        cacheKey: options.cacheKey,
+        timeout: options.timeout
+      });
+
+      const generationTime = Date.now() - startTime;
+
+      this.log('debug', `Embedding generated in ${generationTime}ms, dimensions: ${result.embedding.length}`);
+
+      return {
+        embedding: result.embedding,
+        dimensions: result.embedding.length,
+        generationTime,
+        cached: result.cached || false,
+        provider: result.model || 'unknown'
+      };
+
+    } catch (error) {
+      const generationTime = Date.now() - startTime;
+      this.log('error', `Embedding generation failed after ${generationTime}ms:`, error);
+      throw new DatabaseError(`Embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Обработка пакетной генерации эмбеддингов
+   */
+  private async handleBatchGenerateEmbeddings(params: BatchEmbeddingRequest): Promise<BatchEmbeddingResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+    const { collection, documents, options = {} } = params;
+    const { batchSize = 10 } = options;
+
+    this.log('info', `Starting batch embedding generation for collection '${collection}', ${documents.length} documents`);
+
+    let success = 0;
+    let failed = 0;
+    const errors: Array<{ documentId: string; error: string }> = [];
+
+    try {
+      // Получаем провайдер для коллекции
+      const provider = await this.getEmbeddingProvider(collection);
+      if (!provider) {
+        throw new EmbeddingError(`Failed to initialize embedding provider for collection '${collection}'`);
+      }
+
+      // Отправляем начальный прогресс
+      this.sendEmbeddingProgress({
+        phase: 'initializing',
+        processedCount: 0,
+        totalCount: documents.length,
+        timeElapsed: 0
+      });
+
+      // Обрабатываем документы батчами
+      for (let i = 0; i < documents.length; i += batchSize) {
+        const batch = documents.slice(i, i + batchSize);
+        const currentTime = Date.now();
+
+        this.sendEmbeddingProgress({
+          phase: 'generating',
+          processedCount: i,
+          totalCount: documents.length,
+          currentItem: batch[0]?.id,
+          timeElapsed: currentTime - startTime,
+          estimatedTimeRemaining: documents.length > i ?
+            ((currentTime - startTime) / i) * (documents.length - i) : 0
+        });
+
+        // Обрабатываем текущий батч
+        const batchPromises = batch.map(async (doc) => {
+          try {
+            const result = await provider.generateEmbedding(doc.content);
+
+            // Сохраняем эмбеддинг в базу данных
+            await this.storeDocumentEmbedding(collection, doc.id, result.embedding, doc.metadata);
+            return { success: true, documentId: doc.id };
+          } catch (error) {
+            return {
+              success: false,
+              documentId: doc.id,
+              error: error instanceof Error ? error.message : String(error)
+            };
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        // Подсчитываем результаты
+        for (const result of batchResults) {
+          if (result.success) {
+            success++;
+          } else {
+            failed++;
+            errors.push({ documentId: result.documentId, error: result.error });
+          }
+        }
+      }
+
+      const processingTime = Date.now() - startTime;
+
+      this.sendEmbeddingProgress({
+        phase: 'complete',
+        processedCount: documents.length,
+        totalCount: documents.length,
+        timeElapsed: processingTime,
+        errorCount: failed
+      });
+
+      this.log('info', `Batch embedding completed: ${success} success, ${failed} failed, ${processingTime}ms`);
+
+      return {
+        success,
+        failed,
+        errors,
+        processingTime
+      };
+
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      this.log('error', `Batch embedding failed after ${processingTime}ms:`, error);
+
+      this.sendEmbeddingProgress({
+        phase: 'error',
+        processedCount: success,
+        totalCount: documents.length,
+        timeElapsed: processingTime,
+        errorCount: failed + 1
+      });
+
+      throw new DatabaseError(`Batch embedding failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Обработка регенерации эмбеддингов для всей коллекции
+   */
+  private async handleRegenerateCollectionEmbeddings(params: { collection: string; options?: { batchSize?: number; onProgress?: (progress: EmbeddingProgress) => void } }): Promise<BatchEmbeddingResult> {
+    this.ensureInitialized();
+
+    const { collection, options = {} } = params;
+    const { batchSize = 20 } = options;
+
+    this.log('info', `Starting collection embedding regeneration for '${collection}'`);
+
+    try {
+      // Получаем все документы коллекции
+      const documentsResult = await this.handleSelect({
+        sql: `SELECT id, content, metadata FROM docs_${collection}`
+      });
+
+      if (documentsResult.rows.length === 0) {
+        this.log('info', `No documents found in collection '${collection}'`);
+        return { success: 0, failed: 0, errors: [], processingTime: 0 };
+      }
+
+      // Преобразуем в формат для пакетной обработки
+      const documents = documentsResult.rows.map(row => ({
+        id: row.id,
+        content: row.content,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+      }));
+
+      // Очищаем существующие эмбеддинги
+      await this.handleExec({
+        sql: `DELETE FROM vec_${collection}_dense`
+      });
+
+      this.log('info', `Cleared existing embeddings for collection '${collection}', regenerating ${documents.length} documents`);
+
+      // Выполняем пакетную генерацию
+      return await this.handleBatchGenerateEmbeddings({
+        collection,
+        documents,
+        options: { batchSize }
+      });
+
+    } catch (error) {
+      this.log('error', `Collection embedding regeneration failed for '${collection}':`, error);
+      throw new DatabaseError(`Collection embedding regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Сохранение эмбеддинга документа в векторную таблицу
+   */
+  private async storeDocumentEmbedding(
+    collection: string,
+    documentId: string,
+    embedding: Float32Array,
+    metadata?: Record<string, any>
+  ): Promise<void> {
+    try {
+      // Получаем rowid документа
+      const docResult = await this.handleSelect({
+        sql: `SELECT rowid FROM docs_${collection} WHERE id = ?`,
+        params: [documentId]
+      });
+
+      if (docResult.rows.length === 0) {
+        throw new Error(`Document '${documentId}' not found in collection '${collection}'`);
+      }
+
+      const rowid = docResult.rows[0].rowid;
+
+      // Конвертируем Float32Array в JSON для SQLite
+      const embeddingJson = JSON.stringify(Array.from(embedding));
+
+      // Вставляем эмбеддинг в векторную таблицу
+      await this.handleExec({
+        sql: `INSERT OR REPLACE INTO vec_${collection}_dense (rowid, embedding) VALUES (?, vec_f32(?))`,
+        params: [rowid, embeddingJson]
+      });
+
+      this.log('debug', `Stored embedding for document '${documentId}' in collection '${collection}'`);
+
+    } catch (error) {
+      this.log('error', `Failed to store embedding for document '${documentId}':`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Создание таблиц для новой коллекции
+   */
+  private async createCollectionTables(collectionName: string, dimensions: number): Promise<void> {
+    try {
+      // Создаем основную таблицу документов
+      await this.handleExec({
+        sql: `CREATE TABLE IF NOT EXISTS docs_${collectionName} (
+          rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT UNIQUE NOT NULL,
+          title TEXT,
+          content TEXT NOT NULL,
+          metadata TEXT DEFAULT '{}',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER
+        )`
+      });
+
+      // Создаем FTS таблицу для полнотекстового поиска
+      await this.handleExec({
+        sql: `CREATE VIRTUAL TABLE IF NOT EXISTS fts_${collectionName} USING fts5(
+          content,
+          content='docs_${collectionName}',
+          content_rowid='rowid'
+        )`
+      });
+
+      // Создаем векторную таблицу с заданной размерностью
+      await this.handleExec({
+        sql: `CREATE VIRTUAL TABLE IF NOT EXISTS vec_${collectionName}_dense USING vec0(
+          embedding float[${dimensions}]
+        )`
+      });
+
+      this.log('info', `Created tables for collection '${collectionName}' with ${dimensions}-dimensional vectors`);
+
+    } catch (error) {
+      throw new DatabaseError(`Failed to create collection tables: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Валидация конфигурации эмбеддингов
+   */
+  private validateEmbeddingConfig(embeddingConfig: any): string[] {
+    const errors: string[] = [];
+
+    if (!embeddingConfig) {
+      return errors; // Эмбеддинги не настроены
+    }
+
+    if (!embeddingConfig.provider) {
+      errors.push('Provider not specified');
+    }
+
+    if (!embeddingConfig.dimensions || embeddingConfig.dimensions <= 0) {
+      errors.push('Invalid dimensions');
+    }
+
+    // Валидация провайдера
+    if (embeddingConfig.provider === 'openai' && !embeddingConfig.apiKey) {
+      errors.push('OpenAI API key required');
+    }
+
+    return errors;
+  }
+
+  /**
+   * Генерация и сохранение эмбеддинга для документа
+   */
+  private async generateAndStoreEmbedding(
+    collection: string,
+    documentId: string,
+    content: string,
+    options?: any
+  ): Promise<boolean> {
+    try {
+      this.log('info', `Generating and storing embedding for document '${documentId}' in collection '${collection}'`);
+
+      // Получаем провайдер для коллекции
+      const provider = await this.getEmbeddingProvider(collection);
+      if (!provider) {
+        this.log('warn', `No embedding provider available for collection '${collection}'`);
+        return false;
+      }
+
+      // Генерируем эмбеддинг
+      const result = await provider.generateEmbedding(content, options);
+
+      // Сохраняем эмбеддинг в векторную таблицу
+      await this.storeDocumentEmbedding(collection, documentId, result.embedding);
+
+      this.log('info', `Successfully generated and stored embedding for document '${documentId}'`);
+      return true;
+
+    } catch (error) {
+      this.log('error', `Failed to generate embedding for document '${documentId}':`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Генерация эмбеддинга для поискового запроса
+   */
+  private async generateQueryEmbedding(collection: string, query: string): Promise<Float32Array | null> {
+    try {
+      this.log('info', `Generating query embedding for collection '${collection}', query: "${query.substring(0, 100)}..."`);
+
+      // Получаем провайдер для коллекции
+      const provider = await this.getEmbeddingProvider(collection);
+      if (!provider) {
+        throw new Error(`No embedding provider available for collection '${collection}'`);
+      }
+
+      // Генерируем эмбеддинг для запроса
+      const result = await provider.generateEmbedding(query);
+
+      this.log('debug', `Generated query embedding with ${result.embedding.length} dimensions`);
+      return result.embedding;
+
+    } catch (error) {
+      this.log('error', `Failed to generate query embedding for collection '${collection}':`, error);
+      throw error;
     }
   }
 

@@ -58,6 +58,111 @@ export interface CollectionInfo {
   documentCount: number;
 }
 
+// Collection creation with embedding support
+export interface CreateCollectionParams {
+  name: string;
+  embeddingConfig?: import('../embedding/types.js').CollectionEmbeddingConfig;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
+// Document insertion with automatic embedding generation
+export interface InsertDocumentWithEmbeddingParams {
+  collection: string;
+  document: {
+    id?: string;
+    title?: string;
+    content: string;
+    metadata?: Record<string, any>;
+  };
+  options?: {
+    generateEmbedding?: boolean;
+    embeddingOptions?: import('../embedding/types.js').EmbeddingRequestOptions;
+  };
+}
+
+// Semantic search with optional embedding inclusion
+export interface SemanticSearchParams {
+  collection: string;
+  query: string;
+  options?: {
+    limit?: number;
+    similarityThreshold?: number;
+    includeEmbeddings?: boolean;
+    filters?: Record<string, any>;
+    generateQueryEmbedding?: boolean;
+  };
+}
+
+// Collection embedding status
+export interface CollectionEmbeddingStatusResult {
+  collectionId: string;
+  provider?: string;
+  model?: string;
+  dimensions?: number;
+  documentsWithEmbeddings: number;
+  totalDocuments: number;
+  isReady: boolean;
+  generationProgress: number;
+  lastUpdated?: Date;
+  configErrors: string[];
+}
+
+// Batch embedding operations
+export interface BatchEmbeddingRequest {
+  collection: string;
+  documents: Array<{
+    id: string;
+    content: string;
+    metadata?: Record<string, any>;
+  }>;
+  options?: {
+    batchSize?: number;
+    timeout?: number;
+    onProgress?: (progress: EmbeddingProgress) => void;
+  };
+}
+
+export interface BatchEmbeddingResult {
+  success: number;
+  failed: number;
+  errors: Array<{
+    documentId: string;
+    error: string;
+  }>;
+  processingTime: number;
+}
+
+// Progress reporting for embedding operations
+export interface EmbeddingProgress {
+  phase: 'initializing' | 'generating' | 'storing' | 'complete' | 'error';
+  processedCount: number;
+  totalCount: number;
+  currentItem?: string;
+  timeElapsed: number;
+  estimatedTimeRemaining?: number;
+  errorCount?: number;
+}
+
+// Embedding generation request
+export interface GenerateEmbeddingRequest {
+  collection: string;
+  text: string;
+  options?: {
+    includeInVector?: boolean;
+    cacheKey?: string;
+    timeout?: number;
+  };
+}
+
+export interface GenerateEmbeddingResult {
+  embedding: Float32Array;
+  dimensions: number;
+  generationTime: number;
+  cached: boolean;
+  provider: string;
+}
+
 // Worker RPC message types
 export interface WorkerMessage<T = any> {
   id: string;
@@ -127,17 +232,30 @@ export interface DBWorkerAPI {
   exec(params: ExecParams): Promise<void>;
   select(params: SelectParams): Promise<QueryResult>;
   bulkInsert(params: BulkInsertParams): Promise<void>;
-  
+
   // WASM-specific operations
   initVecExtension(): Promise<void>;
-  
+
   // Schema management
   initializeSchema(): Promise<void>;
   getCollectionInfo(name: string): Promise<CollectionInfo>;
-  
+
+  // Collection management with embedding support
+  createCollection(params: CreateCollectionParams): Promise<void>;
+  getCollectionEmbeddingStatus(collection: string): Promise<CollectionEmbeddingStatusResult>;
+
+  // Document operations with embedding support
+  insertDocumentWithEmbedding(params: InsertDocumentWithEmbeddingParams): Promise<{ id: string; embeddingGenerated: boolean }>;
+
+  // Embedding generation operations
+  generateEmbedding(params: GenerateEmbeddingRequest): Promise<GenerateEmbeddingResult>;
+  batchGenerateEmbeddings(params: BatchEmbeddingRequest): Promise<BatchEmbeddingResult>;
+  regenerateCollectionEmbeddings(collection: string, options?: { batchSize?: number; onProgress?: (progress: EmbeddingProgress) => void }): Promise<BatchEmbeddingResult>;
+
   // Search operations
   search(params: SearchRequest): Promise<SearchResponse>;
-  
+  searchSemantic(params: SemanticSearchParams): Promise<SearchResponse>;
+
   // Data export/import
   export(params?: ExportParams): Promise<Uint8Array>;
   import(params: ImportParams): Promise<void>;
@@ -155,6 +273,14 @@ export type WorkerMethodName = keyof DBWorkerAPI;
 export interface WorkerEvent<T = any> {
   type: string;
   data: T;
+}
+
+export interface EmbeddingProgressEvent extends WorkerEvent<EmbeddingProgress> {
+  type: 'embedding_progress';
+}
+
+export interface EmbeddingCompletedEvent extends WorkerEvent<{ collection: string; documentsProcessed: number; errors: number }> {
+  type: 'embedding_completed';
 }
 
 export interface DatabaseEvent extends WorkerEvent {

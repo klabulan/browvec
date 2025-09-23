@@ -3,9 +3,9 @@
 ## Sprint Overview
 
 **Task ID**: TASK-004-embedding-generation
-**Current Status**: In Progress - Phase 3 External Provider
-**Progress**: 65% Implementation Complete (6.5/10 story points)
-**Last Updated**: 2025-09-23 (Phase 3 Tasks 3.1 & 3.2 Completed)
+**Current Status**: In Progress - Phase 5 Collection Schema
+**Progress**: 85% Implementation Complete (8.5/10 story points)
+**Last Updated**: 2025-09-23 (Phase 4 Task 4.2 Completed)
 **Sprint Start**: 2025-09-23
 **Target Completion**: 2025-10-07 (2 weeks)
 **Total Effort**: 10 story points
@@ -221,24 +221,78 @@ This sprint implements collection-level embedding generation support for LocalRe
 **Dependencies**: Task 3.1 - ✅ COMPLETED
 **Notes**: Comprehensive factory with validation, recommendations, and documentation
 
-### Phase 4: Collection Integration (0/2 story points complete)
+### Phase 4: Collection Integration (2/2 story points complete - ✅ COMPLETED)
 
-#### Task 4.1: Collection-Based Database Extensions
-**Status**: Not Started
-**Assignee**: TBD
-**Progress**: 0%
+#### Task 4.1: Collection-Based Database Extensions ✅
+**Status**: COMPLETED
+**Assignee**: Polyglot-Architect-Developer Agent
+**Progress**: 100%
 **Effort**: 1.5 story points
+**Completion Date**: 2025-09-23
 
-**Dependencies**: Phases 2 and 3 completion
-**Focus**: Collection management and collection-specific vector tables
+**Completed**:
+- [x] Added collection management methods to Database class
+- [x] Implemented collection-specific vector table creation
+- [x] Added collection-aware embedding methods (createCollection, insertDocumentWithEmbedding, searchSemantic)
+- [x] Implemented getCollectionEmbeddingStatus method
+- [x] Added comprehensive TypeScript type definitions
+- [x] Updated worker RPC handlers for collection operations
+- [x] Added proper error handling for embedding failures
+- [x] Maintained sql.js compatibility throughout
+- [x] Created comprehensive test suite
+- [x] Updated SDK exports and documentation
 
-#### Task 4.2: Worker RPC Integration
-**Status**: Not Started
-**Assignee**: TBD
-**Progress**: 0%
+**Implementation Details**:
+- **Files Modified**:
+  - `src/database/Database.ts` - Collection management methods
+  - `src/database/worker.ts` - Worker handlers and utilities
+  - `src/types/worker.ts` - Type definitions
+  - `src/index.ts` - Exports and documentation
+- **Key Features**:
+  - Collection-specific vector tables with configurable dimensions
+  - Document insertion with automatic embedding generation (hooks)
+  - Semantic search with optional embedding inclusion
+  - Collection embedding status monitoring
+  - Comprehensive error handling and validation
+  - Full backward compatibility with existing API
+
+**Dependencies**: Phases 2 and 3 completion - ✅ COMPLETED
+**Notes**: Foundation ready for actual embedding provider integration in Task 4.2
+
+#### Task 4.2: Worker RPC Integration ✅
+**Status**: COMPLETED
+**Assignee**: Polyglot-Architect-Developer Agent
+**Progress**: 100%
 **Effort**: 0.5 story points
+**Completion Date**: 2025-09-23
 
-**Dependencies**: Task 4.1
+**Completed**:
+- [x] Extended RPC command interface for collection-based embedding operations
+- [x] Updated worker to handle collection-specific embedding requests
+- [x] Connected embedding generation stubs to actual providers
+- [x] Implemented progress reporting for batch operations
+- [x] Added proper error propagation through RPC layer
+- [x] Added new Database class methods (generateEmbedding, batchGenerateEmbeddings, regenerateCollectionEmbeddings)
+- [x] Created comprehensive test suite with concurrent operations verification
+- [x] Implemented provider lifecycle management in worker context
+- [x] Enhanced collections table schema with updated_at field
+
+**Implementation Details**:
+- **Files Modified**:
+  - `src/types/worker.ts` - Extended with embedding operation types
+  - `src/utils/rpc.ts` - Added embedding RPC methods
+  - `src/database/worker.ts` - Added provider management and handlers
+  - `src/database/Database.ts` - Added public embedding methods
+- **Key Features**:
+  - Non-blocking embedding operations with concurrent SQL support
+  - Real-time progress reporting for batch operations
+  - Per-collection provider instances with lazy loading
+  - Comprehensive error handling with graceful degradation
+  - Provider factory integration for Transformers.js and OpenAI
+  - RPC performance metrics and operation tracking
+
+**Dependencies**: Task 4.1 - ✅ COMPLETED
+**Notes**: Worker RPC integration complete - foundation ready for Phase 5 collection schema
 
 ### Phase 5: Collection Schema (0/1 story point complete)
 

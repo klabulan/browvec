@@ -34,7 +34,11 @@ export type {
   SearchQuery,
   SearchResult,
   CollectionInfo,
-  WorkerConfig
+  WorkerConfig,
+  CreateCollectionParams,
+  InsertDocumentWithEmbeddingParams,
+  SemanticSearchParams,
+  CollectionEmbeddingStatusResult
 } from './types/worker.js';
 
 // Utility exports
@@ -140,7 +144,10 @@ export const FEATURES = [
   'sqlite-vec',
   'fts5',
   'worker-based',
-  'embedding-generation'
+  'embedding-generation',
+  'collection-based-embeddings',
+  'automatic-embedding-generation',
+  'semantic-search'
 ] as const;
 
 /**
@@ -153,18 +160,44 @@ export const FEATURES = [
  * @example
  * ```typescript
  * import { initLocalRetrieve } from 'localretrieve';
- * 
+ *
  * // Initialize with OPFS persistence
  * const db = await initLocalRetrieve('opfs:/myapp/search.db');
- * 
+ *
  * // Initialize schema for hybrid search
  * await db.initializeSchema();
- * 
- * // Use sql.js compatible API
+ *
+ * // Create a collection with embedding configuration
+ * await db.createCollection({
+ *   name: 'documents',
+ *   embeddingConfig: {
+ *     provider: 'transformers',
+ *     model: 'all-MiniLM-L6-v2',
+ *     dimensions: 384
+ *   }
+ * });
+ *
+ * // Insert document with automatic embedding generation
+ * await db.insertDocumentWithEmbedding({
+ *   collection: 'documents',
+ *   document: {
+ *     title: 'Sample Document',
+ *     content: 'This is a sample document content.'
+ *   }
+ * });
+ *
+ * // Perform semantic search
+ * const results = await db.searchSemantic({
+ *   collection: 'documents',
+ *   query: 'sample content',
+ *   options: { limit: 10 }
+ * });
+ *
+ * // Or use traditional sql.js compatible API
  * db.run('INSERT INTO docs_default (id, content) VALUES (?, ?)', ['doc1', 'hello world']);
- * 
- * // Or use hybrid search
- * const results = await db.search({
+ *
+ * // Or use hybrid search with manual vectors
+ * const hybridResults = await db.search({
  *   query: { text: 'hello', vector: myVector },
  *   limit: 10
  * });

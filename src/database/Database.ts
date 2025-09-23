@@ -19,7 +19,14 @@ import type {
   SQLParams,
   SQLValue
 } from '../types/database.js';
-import type { SearchRequest, SearchResponse } from '../types/worker.js';
+import type {
+  SearchRequest,
+  SearchResponse,
+  CreateCollectionParams,
+  InsertDocumentWithEmbeddingParams,
+  SemanticSearchParams,
+  CollectionEmbeddingStatusResult
+} from '../types/worker.js';
 import { 
   DatabaseError, 
   DEFAULT_DATABASE_CONFIG, 
@@ -516,6 +523,199 @@ export class Database implements SQLDatabase {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseError(`Schema initialization failed: ${message}`);
+    }
+  }
+
+  /**
+   * Create a new collection with optional embedding configuration
+   */
+  async createCollection(params: {
+    name: string;
+    embeddingConfig?: import('../embedding/types.js').CollectionEmbeddingConfig;
+    description?: string;
+    metadata?: Record<string, any>;
+  }): Promise<void> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      await this.workerRPC.createCollection(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Collection creation failed: ${message}`);
+    }
+  }
+
+  /**
+   * Get embedding status for a collection
+   */
+  async getCollectionEmbeddingStatus(collection: string): Promise<import('../types/worker.js').CollectionEmbeddingStatusResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.getCollectionEmbeddingStatus(collection);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Failed to get collection embedding status: ${message}`);
+    }
+  }
+
+  /**
+   * Insert a document with automatic embedding generation
+   */
+  async insertDocumentWithEmbedding(params: {
+    collection: string;
+    document: {
+      id?: string;
+      title?: string;
+      content: string;
+      metadata?: Record<string, any>;
+    };
+    options?: {
+      generateEmbedding?: boolean;
+      embeddingOptions?: import('../embedding/types.js').EmbeddingRequestOptions;
+    };
+  }): Promise<{ id: string; embeddingGenerated: boolean }> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.insertDocumentWithEmbedding(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Document insertion with embedding failed: ${message}`);
+    }
+  }
+
+  /**
+   * Perform semantic search on a collection
+   */
+  async searchSemantic(params: {
+    collection: string;
+    query: string;
+    options?: {
+      limit?: number;
+      similarityThreshold?: number;
+      includeEmbeddings?: boolean;
+      filters?: Record<string, any>;
+      generateQueryEmbedding?: boolean;
+    };
+  }): Promise<SearchResponse> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.searchSemantic(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Semantic search failed: ${message}`);
+    }
+  }
+
+  /**
+   * Generate embedding for text
+   */
+  async generateEmbedding(params: {
+    collection: string;
+    text: string;
+    options?: {
+      includeInVector?: boolean;
+      cacheKey?: string;
+      timeout?: number;
+    };
+  }): Promise<import('../types/worker.js').GenerateEmbeddingResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.generateEmbedding(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Embedding generation failed: ${message}`);
+    }
+  }
+
+  /**
+   * Generate embeddings for multiple documents
+   */
+  async batchGenerateEmbeddings(params: {
+    collection: string;
+    documents: Array<{
+      id: string;
+      content: string;
+      metadata?: Record<string, any>;
+    }>;
+    options?: {
+      batchSize?: number;
+      timeout?: number;
+      onProgress?: (progress: import('../types/worker.js').EmbeddingProgress) => void;
+    };
+  }): Promise<import('../types/worker.js').BatchEmbeddingResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.batchGenerateEmbeddings(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Batch embedding generation failed: ${message}`);
+    }
+  }
+
+  /**
+   * Regenerate all embeddings for a collection
+   */
+  async regenerateCollectionEmbeddings(
+    collection: string,
+    options?: {
+      batchSize?: number;
+      onProgress?: (progress: import('../types/worker.js').EmbeddingProgress) => void;
+    }
+  ): Promise<import('../types/worker.js').BatchEmbeddingResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.regenerateCollectionEmbeddings(collection, options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Collection embedding regeneration failed: ${message}`);
     }
   }
 
