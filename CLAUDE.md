@@ -108,6 +108,7 @@ Brief description of changes and ticket relation
 
 ## Testing
 - [ ] Unit tests added/updated
+- [ ] Playwright E2E tests added/updated
 - [ ] Integration tests passed
 - [ ] Demo works correctly
 - [ ] Cross-browser testing completed
@@ -126,7 +127,8 @@ Brief description of changes and ticket relation
 2. Linting and formatting
 3. Unit tests
 4. WASM and SDK build
-5. Browser integration tests
+5. Playwright E2E integration tests
+6. Cross-browser compatibility verification
 
 **After merge to main**:
 1. Full build and testing
@@ -373,6 +375,21 @@ npm test
 
 # Run environment tests only
 npm test:env
+
+# Run E2E integration tests with Playwright
+npm run test:e2e
+
+# Run E2E tests with UI (interactive mode)
+npm run test:e2e:ui
+
+# Run E2E tests in headed mode (visible browser)
+npm run test:e2e:headed
+
+# Run E2E tests with debugging
+npm run test:e2e:debug
+
+# Run all tests (unit + integration)
+npm run test:all
 ```
 
 ### Critical Build Dependencies
@@ -466,9 +483,50 @@ All database operations follow this pattern:
 5. Result propagated back through same chain
 
 ### Testing Strategy
-- Environment tests verify browser capabilities (SharedArrayBuffer, OPFS)
-- Demo application serves as integration test
-- WASM build verification through actual SQLite operations
+- **Unit Tests**: Environment tests verify browser capabilities (SharedArrayBuffer, OPFS)
+- **Integration Tests**: Playwright E2E tests for complete functionality verification
+- **Demo Testing**: Demo application serves as live integration test
+- **WASM Testing**: Build verification through actual SQLite operations
+
+#### E2E Testing with Playwright
+
+**Test Structure**:
+```
+tests/e2e/
+├── demo.spec.ts          # Demo application integration tests
+└── api.spec.ts           # SDK API and functionality tests
+```
+
+**Test Coverage**:
+- Database initialization and persistence
+- Full-text and vector search functionality
+- Export/import operations
+- Cross-browser compatibility
+- Performance benchmarks
+- Error handling scenarios
+- OPFS persistence across page reloads
+
+**Running E2E Tests**:
+```bash
+# Install Playwright browsers (first time only)
+npx playwright install
+
+# Run all E2E tests
+npm run test:e2e
+
+# Run with interactive UI
+npm run test:e2e:ui
+
+# Debug specific test
+npm run test:e2e:debug -- --grep "vector search"
+```
+
+**Test Configuration**:
+- Automatically starts dev server on http://localhost:5174
+- Tests multiple browsers: Chrome, Firefox, Safari, Edge
+- Includes mobile viewport testing
+- Captures screenshots and videos on failure
+- Generates HTML reports with trace viewer
 
 ## Development Server Requirements
 
@@ -558,6 +616,7 @@ Each task gets its own directory with standardized structure:
    ```bash
    npm run build         # Full build
    npm run test         # Unit tests
+   npm run test:e2e     # Integration tests
    npm run dev          # Demo application
    ```
 

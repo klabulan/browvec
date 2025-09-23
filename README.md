@@ -451,7 +451,7 @@ CREATE VIRTUAL TABLE vec_default_dense USING vec0(
 
 **High Priority**:
 2. **Complete production deployment guide**
-3. **Add comprehensive test suite** beyond existing HTML tests
+3. **✅ Add comprehensive test suite** - E2E tests with Playwright implemented
 4. **Performance optimization** and benchmarking
 
 **Medium Priority**:
@@ -568,6 +568,12 @@ npm run dev
 
 # Run tests
 npm test
+
+# Run E2E integration tests
+npm run test:e2e
+
+# Run all tests (unit + integration)
+npm run test:all
 ```
 
 ### Required Headers
@@ -584,6 +590,104 @@ Cross-Origin-Embedder-Policy: require-corp
 - **Edge 85+**: Full OPFS support
 
 **Fallback**: Graceful degradation to memory database if OPFS unavailable
+
+## 🧪 Testing
+
+LocalRetrieve includes comprehensive testing capabilities for both unit and integration testing.
+
+### Test Suite Overview
+
+**Unit Tests (Vitest)**:
+- Environment capability testing (SharedArrayBuffer, OPFS, WASM)
+- Component isolation testing
+- Browser compatibility verification
+
+**E2E Integration Tests (Playwright)**:
+- Complete demo application testing
+- SDK API functionality verification
+- Cross-browser compatibility testing
+- Performance benchmarking
+- Database persistence verification
+
+### Running Tests
+
+```bash
+# Install test dependencies (first time only)
+npm install
+npx playwright install
+
+# Run unit tests
+npm test
+
+# Run E2E integration tests
+npm run test:e2e
+
+# Run E2E tests with interactive UI
+npm run test:e2e:ui
+
+# Run E2E tests in headed mode (visible browser)
+npm run test:e2e:headed
+
+# Debug specific E2E tests
+npm run test:e2e:debug
+
+# Run all tests (unit + integration)
+npm run test:all
+```
+
+### E2E Test Coverage
+
+**Demo Application Tests** (`tests/e2e/demo.spec.ts`):
+- Database initialization and schema creation
+- Document insertion and search functionality
+- Full-text search accuracy
+- Vector search similarity calculations
+- Hybrid search fusion algorithms
+- Export/import functionality
+- Data persistence across page reloads
+- Performance metrics verification
+- Error handling scenarios
+
+**SDK API Tests** (`tests/e2e/api.spec.ts`):
+- Database class instantiation and sql.js compatibility
+- SQL operations (CREATE, INSERT, SELECT, prepared statements)
+- Vector operations with sqlite-vec extension
+- OPFS persistence and data durability
+- Concurrent operations handling
+- Large dataset performance testing
+- Error handling and graceful failures
+
+**Cross-Browser Testing**:
+- Chrome/Chromium (desktop and mobile)
+- Firefox (desktop)
+- Safari/WebKit (desktop and mobile)
+- Microsoft Edge
+- Performance comparison across browsers
+
+### Test Configuration
+
+Tests are configured to:
+- Automatically start development server on `http://localhost:5174`
+- Run in parallel across multiple browsers
+- Capture screenshots and videos on failure
+- Generate detailed HTML reports with trace viewer
+- Retry failed tests automatically in CI environment
+
+### Local Testing Requirements
+
+1. **Modern Browser**: Chrome 86+, Firefox 79+, or Safari 15+
+2. **SharedArrayBuffer Support**: Requires COOP/COEP headers (automatically set by dev server)
+3. **OPFS Support**: For persistence testing (gracefully degrades to memory if unavailable)
+4. **Development Server**: Must be running for E2E tests (`npm run dev:vite`)
+
+### Continuous Integration
+
+The test suite is designed for CI/CD environments:
+- Headless browser execution
+- Parallel test execution with configurable workers
+- Retry logic for flaky tests
+- Comprehensive error reporting and debugging traces
+- Cross-browser matrix testing
 
 ## 📚 API Reference
 
