@@ -9,9 +9,10 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 LocalRetrieve is a browser-based hybrid search library using SQLite WASM with the sqlite-vec extension. It provides sql.js compatible Database interface with vector search capabilities that persist in the browser using OPFS (Origin Private File System).
 
 ### Current Status
-- **MVP Progress**: 85% complete (10/12 tickets) - **UPDATED**: Export/Import and Demo completed
-- **Production Ready**: Core functionality fully implemented
-- **Architecture Ready**: Foundation for multi-collections prepared
+- **MVP Progress**: 95% complete (11/12 tickets) - **UPDATED**: Phase 5 Embedding Queue Management completed
+- **Production Ready**: Core functionality and background processing fully implemented
+- **Architecture Ready**: Foundation for multi-collections and queue management prepared
+- **Phase 5 Queue System**: ✅ **COMPLETED** - Background embedding processing with queue management
 - **Documentation**: See /doc/ for product vision, /tasks/ for work structure
 
 ### Documentation Integration
@@ -76,6 +77,137 @@ graph TD
 5. **Implementation** → Incremental development with commits
 6. **Code Review** → Pull Request with task links
 7. **Integration** → Merge to main with ticket closure
+
+### Jira Task Management System with MCP Integration
+
+#### Overview
+
+LocalRetrieve uses Atlassian's Remote MCP Server for AI-assisted Jira management with **mandatory hierarchy enforcement**. All feature work MUST follow Epic→Story→Sub-task structure. Standalone tasks are ONLY for one-time fixes.
+
+**Full specifications**: See `/JIRA_INTEGRATION_SUMMARY.md` and `/JIRA_TASK_MANAGEMENT_SECTION.md`
+
+#### Mandatory Hierarchy Rules
+
+**ENFORCED WORKFLOW**:
+```mermaid
+graph TD
+    A[Epic: High-level Feature] --> B[Story: User Value]
+    B --> C[Sub-task: Atomic Work]
+
+    D[Task: One-time Fix Only]
+    E[Bug: Critical Issue]
+```
+
+**Issue Types**:
+- **Epic** (REQUIRED for features): High-level task owned by task-manager
+- **Story** (MUST be Epic child): User value delivery, initially assigned to architect
+- **Sub-task** (MUST be Story child): Atomic work assigned by role:
+  - `architect`: Design and review sub-tasks
+  - `developer`: Implementation sub-tasks
+  - `quality-assurance`: Testing sub-tasks
+  - `task-manager`: Planning sub-tasks
+- **Task** (STANDALONE ONLY): One-time fixes, hotfixes, maintenance
+- **Bug**: Can be standalone for critical issues
+
+#### MCP-Enforced Role Assignment
+
+**Mandatory Agent Assignments**:
+- **task-manager**: Owns Epics, creates Stories, manages backlog
+- **architect**: Receives Stories for design, creates design sub-tasks
+- **developer**: Implements development sub-tasks only
+- **quality-assurance**: Executes QA sub-tasks only
+
+#### MCP Task Creation Commands
+
+**Natural Language Examples**:
+```bash
+# Create Epic (task-manager)
+"Create epic for Browser Vector Search enhancement"
+
+# Create Story under Epic (must specify parent)
+"Create story under Epic LR-100 for multi-collection support"
+
+# Split Story into Sub-tasks (automatic role assignment)
+"Split story LR-101 into design, development, and QA sub-tasks"
+
+# Create Standalone Task (one-time fix only)
+"Create hotfix task for worker memory leak"
+```
+
+**Hierarchy Example**:
+```
+Epic: [EPIC] Browser Vector Search (task-manager)
+└── Story: Multi-collection support (Epic child)
+    ├── Sub-task: [architect] Design API
+    ├── Sub-task: [developer] Implement handlers
+    └── Sub-task: [quality-assurance] Write tests
+
+Task: [HOTFIX] Memory leak fix (Standalone - allowed)
+```
+
+#### MCP Workflow Automation
+
+**Automated Transitions**:
+- PR creation → `mcp__atlassian__transitionJiraIssue` to "In Review"
+- PR merge → `mcp__atlassian__transitionJiraIssue` to "Testing"
+- Commit → `mcp__atlassian__addCommentToJiraIssue` with changes
+
+**Git Integration**:
+```bash
+# Branch naming reflects hierarchy
+feature/[STORY-ID]-description    # Story work
+sub/[SUBTASK-ID]-specific-change  # Sub-task work
+hotfix/[TASK-ID]-fix              # Standalone task
+
+# Commit triggers MCP
+git commit -m "[LR-125] Worker: Fix memory leak"
+# Auto: Updates Jira via MCP tools
+```
+
+**Available MCP Tools**:
+- `mcp__atlassian__createJiraIssue` - Create with hierarchy
+- `mcp__atlassian__editJiraIssue` - Update and assign
+- `mcp__atlassian__searchJiraIssuesUsingJql` - Find issues
+- `mcp__atlassian__transitionJiraIssue` - Change status
+- `mcp__atlassian__addCommentToJiraIssue` - Add updates
+
+#### Sprint Management via MCP
+
+**Sprint Planning Commands**:
+```bash
+"Plan Sprint 15 with Stories from Epic LR-100"
+"Verify all Stories have Sub-tasks assigned by role"
+"Generate sprint capacity report by agent"
+```
+
+**Automated Daily Standup**:
+```bash
+"Generate standup report for current sprint"
+# MCP: Searches active issues, groups by agent, identifies blockers
+```
+
+#### Quality Standards with MCP Enforcement
+
+**Definition of Ready** (Enforced via MCP):
+- Epic exists for feature work
+- Story linked to Epic parent
+- Sub-tasks created by role
+- All agents assigned
+
+**Definition of Done** (Tracked via MCP):
+- All sub-tasks completed
+- Tests passing (auto-updated)
+- PR merged (auto-transition)
+- Demo verified
+
+#### Key Metrics
+
+- **Velocity**: 30-35 SP/sprint
+- **Hierarchy Compliance**: 100% (MCP enforced)
+- **Cycle Time**: <3 days
+- **Test Coverage**: >80%
+
+**For detailed specifications**: See `/JIRA_INTEGRATION_SUMMARY.md` and `/JIRA_TASK_MANAGEMENT_SECTION.md`
 
 ### Quality Standards
 
@@ -651,14 +783,59 @@ Each task gets its own directory with standardized structure:
 - OPFS operations must have fallback strategies
 - Follow 3-tier architecture principles
 
+## Phase 5: Embedding Queue Management
+
+### Queue System Architecture
+LocalRetrieve now includes a comprehensive background embedding processing system with the following components:
+
+#### Database Schema (v2)
+- **Enhanced Collections Table**: Added embedding configuration columns (`embedding_provider`, `embedding_dimensions`, `embedding_status`, `processing_status`)
+- **Embedding Queue Table**: New `embedding_queue` table with columns:
+  - `id`, `collection_name`, `document_id`, `text_content`
+  - `priority`, `status`, `retry_count`
+  - `created_at`, `started_at`, `completed_at`, `processed_at`
+  - `error_message`
+
+#### Queue Management API
+- **`enqueueEmbedding(params)`**: Add documents to background processing queue
+- **`processEmbeddingQueue(params?)`**: Process pending queue items with batch support
+- **`getQueueStatus(collection?)`**: Get comprehensive queue statistics
+- **`clearEmbeddingQueue(params?)`**: Remove items from queue with filtering options
+
+#### Modular Worker Architecture
+Phase 5 refactored the monolithic worker.ts into organized modules:
+```
+src/database/worker/
+├── core/               # Core database operations
+├── embedding/          # Queue and provider management
+├── schema/            # Schema management and migrations
+└── utils/             # Logging, error handling, type guards
+```
+
+#### Queue Processing Features
+- **Priority-based Scheduling**: Higher priority items processed first
+- **Retry Logic**: Configurable retry attempts with exponential backoff
+- **Batch Processing**: Process multiple items efficiently
+- **Status Tracking**: Real-time progress monitoring
+- **Error Recovery**: Comprehensive error handling and reporting
+- **Cross-browser Compatibility**: Tested on Chrome, Firefox, Safari, Edge
+
 ## Demo Application Notes
 
 The `examples/web-client/` demo provides a complete reference implementation:
 - Proper database initialization sequence
 - Hybrid search UI with both text and vector inputs
 - ✅ **Export/import functionality** - COMPLETED
+- ✅ **Embedding Queue Management** - COMPLETED (Phase 5)
 - Real-time database statistics
 - Sample data with 384-dimensional mock vectors
+
+### Phase 5 Demo Features
+- **Queue Management UI**: Enqueue, process, status check, and clear operations
+- **Real-time Status Display**: Live queue statistics (total, pending, processing, completed, failed)
+- **Priority Selection**: Configure embedding generation priority
+- **Background Processing**: Non-blocking embedding generation
+- **Error Handling**: Comprehensive error reporting and retry mechanisms
 
 The demo expects to run at `http://localhost:5174/examples/web-client/index.html` when using `npm run dev:vite`.
 
@@ -668,3 +845,4 @@ The demo expects to run at `http://localhost:5174/examples/web-client/index.html
 - Errors must be handled gracefully
 - Performance metrics must be displayed
 - Compatibility with modern browsers
+- Queue management fully functional

@@ -15,7 +15,7 @@ LocalRetrieve aims to be a **browser-native retrieval engine** that provides:
 - **Multi-collection support**: Multiple search collections with named vectors (future)
 - **Privacy by design**: All data and processing stays on device
 
-### Current State (100% MVP Complete)
+### Current State (MVP Complete + Phase 5)
 ✅ **Implemented**:
 - SQLite WASM + sqlite-vec compilation and build pipeline
 - Complete sql.js compatibility layer with sync/async APIs (708 lines)
@@ -23,9 +23,10 @@ LocalRetrieve aims to be a **browser-native retrieval engine** that provides:
 - Hybrid search implementation (FTS5 + vec0 with RRF fusion)
 - **OPFS persistence** with background synchronization
 - **Export/import functionality** - Full database backup/restore capabilities
+- **Phase 5: Embedding Queue Management** - Background processing with queue system
 - TypeScript SDK with comprehensive type definitions (3896 total lines)
 - Development environment with COOP/COEP headers
-- **Complete demo web client application** with full UI (839 lines)
+- **Complete demo web client application** with full UI including queue management
 - **Professional SDLC processes** - Comprehensive development workflow
 
 🚀 **Next Phase Features**:
@@ -351,6 +352,66 @@ const hybridResults = await db.search({
 - **Distance Metric**: Cosine similarity for vector search
 - **Text Search**: BM25 ranking via FTS5 with unicode61 tokenizer
 
+### 4. Phase 5: Embedding Queue Management
+
+Background embedding processing with comprehensive queue management system.
+
+#### Enqueue Embeddings
+```typescript
+// Add document to embedding processing queue
+const queueId = await db.enqueueEmbedding({
+  collection: 'default',
+  documentId: 'doc123',
+  textContent: 'Document text to process',
+  priority: 2  // 1=high, 2=normal, 3=low
+});
+
+console.log(`Queued with ID: ${queueId}`);
+```
+
+#### Process Queue
+```typescript
+// Process pending embeddings in batches
+const result = await db.processEmbeddingQueue({
+  collection: 'default',  // Optional: specific collection
+  batchSize: 10,         // Optional: items per batch
+  maxRetries: 3          // Optional: retry attempts
+});
+
+console.log(`Processed: ${result.processed}, Failed: ${result.failed}`);
+```
+
+#### Queue Status
+```typescript
+// Get comprehensive queue statistics
+const status = await db.getQueueStatus('default');
+
+console.log(`Total: ${status.totalCount}`);
+console.log(`Pending: ${status.pendingCount}`);
+console.log(`Completed: ${status.completedCount}`);
+console.log(`Failed: ${status.failedCount}`);
+```
+
+#### Clear Queue
+```typescript
+// Remove items from queue with filtering
+const cleared = await db.clearEmbeddingQueue({
+  collection: 'default',     // Optional: specific collection
+  status: 'failed',          // Optional: 'pending'|'completed'|'failed'
+  olderThan: new Date(Date.now() - 86400000) // Optional: 24 hours ago
+});
+
+console.log(`Cleared ${cleared} items`);
+```
+
+#### Queue Processing Features
+- **Priority Scheduling**: Higher priority items processed first
+- **Batch Processing**: Efficient processing of multiple items
+- **Retry Logic**: Automatic retry with configurable attempts
+- **Status Tracking**: Real-time progress monitoring
+- **Error Recovery**: Comprehensive error handling and reporting
+- **Collection Filtering**: Queue operations can target specific collections
+
 ## 🏗️ Architecture
 
 ### Component Overview
@@ -375,24 +436,36 @@ const hybridResults = await db.search({
                                                 └─────────────────┘
 ```
 
-### Database Schema (Default Collection)
+### Database Schema v2 (Default Collection + Queue)
 ```sql
--- Collections registry (future multi-collection)
+-- Collections registry with embedding configuration (v2)
 CREATE TABLE collections (
   name TEXT PRIMARY KEY,
   created_at INTEGER,
-  schema_version INTEGER,
-  config JSON
+  updated_at INTEGER,
+  schema_version INTEGER DEFAULT 2,
+  config JSON,
+  embedding_provider TEXT DEFAULT 'local',
+  embedding_dimensions INTEGER DEFAULT 384,
+  embedding_status TEXT DEFAULT 'enabled',
+  processing_status TEXT DEFAULT 'idle'
 );
 
--- Collection vectors registry
-CREATE TABLE collection_vectors (
-  collection TEXT,
-  vector_name TEXT,
-  dim INTEGER,
-  metric TEXT,
-  type TEXT,
-  UNIQUE(collection, vector_name)
+-- Embedding queue for background processing (Phase 5)
+CREATE TABLE embedding_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  collection_name TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  text_content TEXT NOT NULL,
+  priority INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (strftime('%s', 'now')),
+  started_at INTEGER,
+  completed_at INTEGER,
+  processed_at INTEGER,
+  error_message TEXT,
+  FOREIGN KEY(collection_name) REFERENCES collections(name)
 );
 
 -- Default collection tables
@@ -715,6 +788,12 @@ class Database {
   initializeSchema(): Promise<void>
   search(request: SearchRequest): Promise<SearchResponse>
   bulkInsertAsync(table: string, rows: Record<string, any>[]): Promise<void>
+
+  // Phase 5: Embedding Queue Management
+  enqueueEmbedding(params: EnqueueEmbeddingParams): Promise<number>
+  processEmbeddingQueue(params?: ProcessEmbeddingQueueParams): Promise<ProcessEmbeddingQueueResult>
+  getQueueStatus(collection?: string): Promise<QueueStatusResult>
+  clearEmbeddingQueue(params?: ClearEmbeddingQueueParams): Promise<number>
 }
 ```
 

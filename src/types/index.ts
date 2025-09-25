@@ -5,8 +5,16 @@
 // Worker types (includes WorkerError, DatabaseError, VectorError, OPFSError)
 export * from './worker.js';
 
-// Embedding system types
-export * from '../embedding/types.js';
+// Embedding system types (exclude conflicting exports)
+export {
+  EmbeddingConfig,
+  CollectionEmbeddingConfig,
+  EmbeddingProviderType as EmbeddingProvider,
+  EmbeddingResult,
+  EmbeddingRequest as GenerateEmbeddingRequest,
+  EmbeddingResult as GenerateEmbeddingResult,
+  EmbeddingRequestOptions
+} from '../embedding/types.js';
 
 // Embedding system errors (exclude WorkerError to avoid conflict)
 export {

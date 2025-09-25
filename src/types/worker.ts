@@ -61,6 +61,8 @@ export interface CollectionInfo {
 // Collection creation with embedding support
 export interface CreateCollectionParams {
   name: string;
+  dimensions?: number;
+  config?: Record<string, any>;
   embeddingConfig?: import('../embedding/types.js').CollectionEmbeddingConfig;
   description?: string;
   metadata?: Record<string, any>;
@@ -69,6 +71,10 @@ export interface CreateCollectionParams {
 // Document insertion with automatic embedding generation
 export interface InsertDocumentWithEmbeddingParams {
   collection: string;
+  id?: string;
+  title?: string;
+  content: string;
+  metadata?: Record<string, any>;
   document: {
     id?: string;
     title?: string;
@@ -96,6 +102,7 @@ export interface SemanticSearchParams {
 
 // Collection embedding status
 export interface CollectionEmbeddingStatusResult {
+  collection: string;
   collectionId: string;
   provider?: string;
   model?: string;
@@ -183,6 +190,7 @@ export interface WorkerResponse<T = any> {
 // Specific message types for each database operation
 export interface OpenDatabaseParams {
   filename: string;
+  path?: string;
   vfs?: 'opfs' | 'opfs-sahpool';
   pragmas?: Record<string, string>;
 }
@@ -199,6 +207,8 @@ export interface SelectParams {
 
 export interface BulkInsertParams {
   table: string;
+  tableName: string;
+  data: any[][];
   rows: Record<string, any>[];
   batchSize?: number;
 }
@@ -222,6 +232,46 @@ export interface ImportParams {
   format?: 'sqlite' | 'json';
   overwrite?: boolean;
   onProgress?: (progress: ExportImportProgress) => void;
+}
+
+// Queue management types
+export interface EnqueueEmbeddingParams {
+  collection: string;
+  documentId: string;
+  textContent: string;
+  priority?: number;
+}
+
+export interface ProcessEmbeddingQueueParams {
+  collection?: string;
+  batchSize?: number;
+  maxProcessingTime?: number;
+}
+
+export interface ProcessEmbeddingQueueResult {
+  processed: number;
+  failed: number;
+  remainingInQueue: number;
+  errors: Array<{
+    documentId: string;
+    error: string;
+  }>;
+}
+
+export interface QueueStatusResult {
+  totalCount: number;
+  pendingCount: number;
+  processingCount: number;
+  completedCount: number;
+  failedCount: number;
+  oldestPending?: Date;
+  newestCompleted?: Date;
+}
+
+export interface ClearEmbeddingQueueParams {
+  collection?: string;
+  status?: 'pending' | 'processing' | 'completed' | 'failed';
+  olderThan?: Date;
 }
 
 // Database Worker API Interface
@@ -260,6 +310,12 @@ export interface DBWorkerAPI {
   export(params?: ExportParams): Promise<Uint8Array>;
   import(params: ImportParams): Promise<void>;
   clear(): Promise<void>;
+
+  // Embedding queue management
+  enqueueEmbedding(params: EnqueueEmbeddingParams): Promise<number>;
+  processEmbeddingQueue(params?: ProcessEmbeddingQueueParams): Promise<ProcessEmbeddingQueueResult>;
+  getQueueStatus(collection?: string): Promise<QueueStatusResult>;
+  clearEmbeddingQueue(params?: ClearEmbeddingQueueParams): Promise<number>;
 
   // Utility operations
   getVersion(): Promise<{ sqlite: string; vec: string; sdk: string }>;
@@ -336,3 +392,42 @@ export interface PerformanceMetrics {
   cacheHitRate: number;
   lastOperationTime: number;
 }
+
+// Embedding queue management types
+export interface EmbeddingQueueItem {
+  id: number;
+  collection_name: string;
+  document_id: string;
+  text_content: string;
+  priority: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  created_at: number;
+  processed_at?: number;
+  error_message?: string;
+}
+
+export interface EnqueueEmbeddingParams {
+  collection: string;
+  documentId: string;
+  textContent: string;
+  priority?: number;
+}
+
+export interface QueueStatusResult {
+  collection: string;
+  pendingCount: number;
+  processingCount: number;
+  completedCount: number;
+  failedCount: number;
+  totalCount: number;
+  oldestPendingDate?: number;
+  averageProcessingTime?: number;
+}
+
+export interface ProcessEmbeddingQueueParams {
+  collection?: string;
+  batchSize?: number;
+  maxRetries?: number;
+}
+
+

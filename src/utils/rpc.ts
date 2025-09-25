@@ -278,6 +278,23 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('regenerateCollectionEmbeddings', { collection, options });
   }
 
+  // Embedding queue management
+  async enqueueEmbedding(params: Parameters<DBWorkerAPI['enqueueEmbedding']>[0]): Promise<number> {
+    return this.call('enqueueEmbedding', params);
+  }
+
+  async processEmbeddingQueue(params?: Parameters<DBWorkerAPI['processEmbeddingQueue']>[0]) {
+    return this.call('processEmbeddingQueue', params);
+  }
+
+  async getQueueStatus(collection?: string) {
+    return this.call('getQueueStatus', collection);
+  }
+
+  async clearEmbeddingQueue(params?: Parameters<DBWorkerAPI['clearEmbeddingQueue']>[0]): Promise<number> {
+    return this.call('clearEmbeddingQueue', params);
+  }
+
   // Utility methods
   getPerformanceMetrics() {
     const avgLatency = this.performanceMetrics.totalCalls > 0 

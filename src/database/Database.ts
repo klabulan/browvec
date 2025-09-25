@@ -576,6 +576,10 @@ export class Database implements SQLDatabase {
    */
   async insertDocumentWithEmbedding(params: {
     collection: string;
+    id?: string;
+    title?: string;
+    content: string;
+    metadata?: Record<string, any>;
     document: {
       id?: string;
       title?: string;
@@ -596,7 +600,12 @@ export class Database implements SQLDatabase {
     }
 
     try {
-      return await this.workerRPC.insertDocumentWithEmbedding(params);
+      // Ensure we have the required content field at top level
+      const normalizedParams = {
+        ...params,
+        content: params.content || params.document.content
+      };
+      return await this.workerRPC.insertDocumentWithEmbedding(normalizedParams);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseError(`Document insertion with embedding failed: ${message}`);
@@ -690,6 +699,99 @@ export class Database implements SQLDatabase {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseError(`Batch embedding generation failed: ${message}`);
+    }
+  }
+
+  /**
+   * Enqueue embedding generation for background processing (Phase 5)
+   */
+  async enqueueEmbedding(params: {
+    collection: string;
+    documentId: string;
+    textContent: string;
+    priority?: number;
+  }): Promise<number> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.enqueueEmbedding(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Embedding enqueue failed: ${message}`);
+    }
+  }
+
+  /**
+   * Process pending embeddings in the queue (Phase 5)
+   */
+  async processEmbeddingQueue(params?: {
+    collection?: string;
+    batchSize?: number;
+    maxProcessingTime?: number;
+  }): Promise<import('../types/worker.js').ProcessEmbeddingQueueResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.processEmbeddingQueue(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Embedding queue processing failed: ${message}`);
+    }
+  }
+
+  /**
+   * Get embedding queue status (Phase 5)
+   */
+  async getQueueStatus(collection?: string): Promise<import('../types/worker.js').QueueStatusResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.getQueueStatus(collection);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Queue status retrieval failed: ${message}`);
+    }
+  }
+
+  /**
+   * Clear embedding queue items (Phase 5)
+   */
+  async clearEmbeddingQueue(params?: {
+    collection?: string;
+    status?: 'pending' | 'processing' | 'completed' | 'failed';
+    olderThan?: Date;
+  }): Promise<number> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.clearEmbeddingQueue(params);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Embedding queue clear failed: ${message}`);
     }
   }
 

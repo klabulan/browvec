@@ -1,5 +1,38 @@
-// LocalRetrieve MVP Demo Application
-// Showcases all core functionality with preloaded test data
+/**
+ * LocalRetrieve Complete Demo Application
+ *
+ * This demo showcases all the features of LocalRetrieve including:
+ * - Database initialization with OPFS persistence
+ * - Hybrid search (FTS5 + vector search with fusion)
+ * - Data management (insert, bulk insert, export/import)
+ * - Real-time search with performance metrics
+ * - **Phase 5: Embedding Queue Management** - Background processing system
+ * - Cross-browser compatibility testing
+ *
+ * Phase 5 Queue Management Features:
+ * - Enqueue documents for background embedding generation
+ * - Process embedding queue with batch processing and retry logic
+ * - Real-time queue status monitoring (total, pending, processing, completed, failed)
+ * - Priority-based processing (high=1, normal=2, low=3)
+ * - Comprehensive error handling and recovery mechanisms
+ * - Queue clearing with status filtering options
+ *
+ * Technical Architecture:
+ * - Uses LocalRetrieve SDK with Web Worker for non-blocking operations
+ * - OPFS persistence ensures data survives browser restarts
+ * - RPC communication between main thread and worker
+ * - Modular worker architecture with dedicated queue management
+ * - Schema v2 with embedding_queue table for background processing
+ * - Comprehensive error handling and user feedback
+ *
+ * Demo UI Components:
+ * - Search interface with hybrid text + vector search
+ * - Data management with bulk operations
+ * - Export/import functionality with progress tracking
+ * - Queue management panel with real-time status updates
+ * - Performance metrics and database statistics
+ * - Responsive design with clear status indicators
+ **/
 
 import { initLocalRetrieve, createProvider, validateProviderConfig } from '../../dist/localretrieve.mjs';
 
@@ -75,7 +108,23 @@ class LocalRetrieveDemo {
             addToCollectionBtn: document.getElementById('add-to-collection-btn'),
             embeddingProgress: document.getElementById('embedding-progress'),
             embeddingResults: document.getElementById('embedding-results'),
-            embeddingStats: document.getElementById('embedding-stats')
+            embeddingStats: document.getElementById('embedding-stats'),
+
+            // Phase 5: Queue Management elements
+            collectionStatusBtn: document.getElementById('collection-status-btn'),
+            queueCollection: document.getElementById('queue-collection'),
+            queueText: document.getElementById('queue-text'),
+            queuePriority: document.getElementById('queue-priority'),
+            enqueueBtn: document.getElementById('enqueue-btn'),
+            processQueueBtn: document.getElementById('process-queue-btn'),
+            queueStatusBtn: document.getElementById('queue-status-btn'),
+            clearQueueBtn: document.getElementById('clear-queue-btn'),
+            queueTotal: document.getElementById('queue-total'),
+            queuePending: document.getElementById('queue-pending'),
+            queueProcessing: document.getElementById('queue-processing'),
+            queueCompleted: document.getElementById('queue-completed'),
+            queueFailed: document.getElementById('queue-failed'),
+            queueResults: document.getElementById('queue-results')
         };
 
         this.initializeEventListeners();
@@ -131,6 +180,13 @@ class LocalRetrieveDemo {
         // Collection management
         this.elements.createCollectionBtn.addEventListener('click', () => this.createCollection());
         this.elements.listCollectionsBtn.addEventListener('click', () => this.listCollections());
+        this.elements.collectionStatusBtn.addEventListener('click', () => this.showCollectionStatus());
+
+        // Phase 5: Queue Management
+        this.elements.enqueueBtn.addEventListener('click', () => this.enqueueEmbedding());
+        this.elements.processQueueBtn.addEventListener('click', () => this.processEmbeddingQueue());
+        this.elements.queueStatusBtn.addEventListener('click', () => this.updateQueueStatus());
+        this.elements.clearQueueBtn.addEventListener('click', () => this.clearEmbeddingQueue());
 
         // Embedding testing
         this.elements.generateEmbeddingBtn.addEventListener('click', () => this.generateEmbedding());
@@ -176,6 +232,9 @@ class LocalRetrieveDemo {
             this.setStatus('Database initialized successfully', 'success');
             this.updateDatabaseInfo();
 
+            // Phase 5: Initialize queue status display
+            await this.updateQueueStatus();
+
             // Enable controls
             this.setControlsEnabled(true);
 
@@ -215,6 +274,17 @@ class LocalRetrieveDemo {
             const startTime = performance.now();
             const documents = getTestDocuments();
 
+            // Debug: Check if documents are loaded correctly
+            console.log('Total documents loaded:', documents?.length || 'undefined');
+            if (documents && documents.length > 0) {
+                console.log('First document sample:', {
+                    id: documents[0]?.id,
+                    title: documents[0]?.title,
+                    contentLength: documents[0]?.content?.length || 'undefined',
+                    hasVector: !!documents[0]?.vector
+                });
+            }
+
             // Ensure schema is properly initialized first
             await this.ensureSchemaInitialized();
 
@@ -222,33 +292,53 @@ class LocalRetrieveDemo {
             await this.clearExistingData();
 
             // Insert sample documents
-            for (const doc of documents) {
-                // Insert into docs table and get the rowid
-                const docInsertResult = await this.db.runAsync(
-                    'INSERT INTO docs_default (id, title, content) VALUES (?, ?, ?)',
-                    [doc.id, doc.title, doc.content]
-                );
+            for (let i = 0; i < documents.length; i++) {
+                const doc = documents[i];
 
-                // Get the actual rowid from the docs table insertion
-                const actualRowId = docInsertResult.lastInsertRowid || doc.id;
-                console.log(`Inserted document ${doc.id} with rowid: ${actualRowId}`);
+                // Debug: Check document data
+                console.debug(`Inserting document ${i + 1}/${documents.length}:`, {
+                    id: doc.id,
+                    title: doc.title,
+                    contentLength: doc.content?.length || 'undefined',
+                    contentType: typeof doc.content
+                });
 
-                // Insert into FTS table using the same rowid
-                await this.db.runAsync(
-                    'INSERT INTO fts_default (rowid, id, title, content) VALUES (?, ?, ?, ?)',
-                    [actualRowId, doc.id, doc.title, doc.content]
-                );
+                if (!doc.content || typeof doc.content !== 'string') {
+                    console.error(`Document ${doc.id} has invalid content:`, doc);
+                    continue; // Skip documents without valid content
+                }
 
-                // Insert into vector table using the same rowid
-                const vectorJson = `[${doc.vector.join(',')}]`;
-                console.log(`Inserting vector for rowid ${actualRowId}: ${vectorJson.substring(0, 50)}...`);
+                try {
+                    // Insert into docs table and get the rowid
+                    const docInsertResult = await this.db.runAsync(
+                        'INSERT INTO docs_default (id, title, content) VALUES (?, ?, ?)',
+                        [doc.id, doc.title, doc.content]
+                    );
 
-                await this.db.runAsync(
-                    'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
-                    [actualRowId, vectorJson]
-                );
+                    // Get the actual rowid from the docs table insertion
+                    const actualRowId = docInsertResult.lastInsertRowid || doc.id;
+                    console.log(`Inserted document ${doc.id} with rowid: ${actualRowId}`);
 
-                console.log(`Successfully inserted document ${doc.id} with all data linked to rowid ${actualRowId}`);
+                    // Insert into FTS table using the same rowid
+                    await this.db.runAsync(
+                        'INSERT INTO fts_default (rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
+                        [actualRowId, doc.title, doc.content, JSON.stringify({ id: doc.id })]
+                    );
+
+                    // Insert into vector table using the same rowid
+                    const vectorJson = `[${doc.vector.join(',')}]`;
+                    console.log(`Inserting vector for rowid ${actualRowId}: ${vectorJson.substring(0, 50)}...`);
+
+                    await this.db.runAsync(
+                        'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
+                        [actualRowId, vectorJson]
+                    );
+
+                    console.log(`Successfully inserted document ${doc.id} with all data linked to rowid ${actualRowId}`);
+                } catch (docError) {
+                    console.error(`Failed to insert document ${doc.id}:`, docError);
+                    // Continue with next document instead of failing completely
+                }
             }
 
             const loadTime = performance.now() - startTime;
@@ -1412,6 +1502,224 @@ class LocalRetrieveDemo {
         } finally {
             this.setLoading(false);
         }
+    }
+
+    // Phase 5: Queue Management Methods
+
+    async showCollectionStatus() {
+        const collectionName = this.elements.collectionName.value.trim() || 'default';
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.getCollectionEmbeddingStatus === 'function') {
+                const status = await this.db.getCollectionEmbeddingStatus(collectionName);
+
+                this.displayResults('collection-status', JSON.stringify(status, null, 2), 'json');
+                this.setStatus(`Collection "${collectionName}" status retrieved successfully`, 'success');
+            } else {
+                // Fallback for basic collection info
+                const collections = await this.db.exec(`
+                    SELECT name, created_at, config FROM collections WHERE name = ?
+                `, [collectionName]);
+
+                if (collections.length > 0) {
+                    this.displayResults('collection-status', JSON.stringify(collections[0], null, 2), 'json');
+                    this.setStatus(`Basic collection info retrieved`, 'success');
+                } else {
+                    this.setStatus(`Collection "${collectionName}" not found`, 'error');
+                }
+            }
+
+        } catch (error) {
+            console.error('Failed to get collection status:', error);
+            this.setStatus(`Failed to get collection status: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async enqueueEmbedding() {
+        const collection = this.elements.queueCollection.value.trim();
+        const textContent = this.elements.queueText.value.trim();
+        const priority = parseInt(this.elements.queuePriority.value);
+
+        if (!collection) {
+            this.setStatus('Collection name is required', 'error');
+            return;
+        }
+
+        if (!textContent) {
+            this.setStatus('Text content is required', 'error');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.enqueueEmbedding === 'function') {
+                const documentId = `doc-${Date.now()}`;
+
+                // First, insert the document using the proper Database API
+                const insertResult = await this.db.insertDocumentWithEmbedding({
+                    collection: collection,
+                    id: documentId,
+                    title: 'Queued Document',
+                    content: textContent,
+                    metadata: { source: 'queue' },
+                    document: {
+                        id: documentId,
+                        title: 'Queued Document',
+                        content: textContent,
+                        metadata: { source: 'queue' }
+                    },
+                    options: {
+                        generateEmbedding: false // We'll use the queue for this
+                    }
+                });
+
+                console.log(`Document ${documentId} inserted via insertDocumentWithEmbedding:`, insertResult);
+
+                // Then enqueue the embedding
+                const queueId = await this.db.enqueueEmbedding({
+                    collection: collection,
+                    documentId: documentId,
+                    textContent: textContent,
+                    priority: priority
+                });
+
+                this.displayQueueResult(`Document created and embedding enqueued successfully with ID: ${queueId}`, 'success');
+                this.setStatus('Document created and embedding enqueued for processing', 'success');
+
+                // Auto-update queue status
+                await this.updateQueueStatus();
+            } else {
+                this.setStatus('Queue functionality not available - requires Phase 5 implementation', 'error');
+            }
+
+        } catch (error) {
+            console.error('Failed to enqueue embedding:', error);
+            this.setStatus(`Failed to enqueue embedding: ${error.message}`, 'error');
+            this.displayQueueResult(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async processEmbeddingQueue() {
+        const collection = this.elements.queueCollection.value.trim() || undefined;
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.processEmbeddingQueue === 'function') {
+                const result = await this.db.processEmbeddingQueue({
+                    collection: collection,
+                    batchSize: 5
+                });
+
+                this.displayQueueResult(`Processed ${result.processed} items, ${result.failed} failed, ${result.remainingInQueue} remaining`, 'success');
+                this.setStatus('Queue processing completed', 'success');
+
+                // Auto-update queue status
+                await this.updateQueueStatus();
+            } else {
+                this.setStatus('Queue processing not available - requires Phase 5 implementation', 'error');
+            }
+
+        } catch (error) {
+            console.error('Failed to process queue:', error);
+            this.setStatus(`Failed to process queue: ${error.message}`, 'error');
+            this.displayQueueResult(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async updateQueueStatus() {
+        const collection = this.elements.queueCollection.value.trim() || undefined;
+
+        try {
+            if (this.db && typeof this.db.getQueueStatus === 'function') {
+                const status = await this.db.getQueueStatus(collection);
+
+                console.log('Queue status received:', status);
+                console.log('Status properties:', Object.keys(status));
+                console.log('totalCount:', status.totalCount);
+                console.log('pendingCount:', status.pendingCount);
+
+                // Update status display
+                this.elements.queueTotal.textContent = status.totalCount || 0;
+                this.elements.queuePending.textContent = status.pendingCount || 0;
+                this.elements.queueProcessing.textContent = status.processingCount || 0;
+                this.elements.queueCompleted.textContent = status.completedCount || 0;
+                this.elements.queueFailed.textContent = status.failedCount || 0;
+
+                console.log('Updated DOM elements:');
+                console.log('- Total:', this.elements.queueTotal.textContent);
+                console.log('- Pending:', this.elements.queuePending.textContent);
+
+                const statusMsg = collection
+                    ? `Queue status updated for collection "${collection}"`
+                    : 'Global queue status updated';
+                this.displayQueueResult(statusMsg, 'info');
+            } else {
+                // Fallback: show placeholder values
+                this.elements.queueTotal.textContent = '0';
+                this.elements.queuePending.textContent = '0';
+                this.elements.queueProcessing.textContent = '0';
+                this.elements.queueCompleted.textContent = '0';
+                this.elements.queueFailed.textContent = '0';
+
+                this.displayQueueResult('Queue status not available - requires Phase 5 implementation', 'warning');
+            }
+
+        } catch (error) {
+            console.error('Failed to get queue status:', error);
+            this.displayQueueResult(`Error getting queue status: ${error.message}`, 'error');
+        }
+    }
+
+    async clearEmbeddingQueue() {
+        const collection = this.elements.queueCollection.value.trim() || undefined;
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.clearEmbeddingQueue === 'function') {
+                const cleared = await this.db.clearEmbeddingQueue({
+                    collection: collection,
+                    status: 'completed' // Clear only completed items by default
+                });
+
+                this.displayQueueResult(`Cleared ${cleared} completed items from queue`, 'success');
+                this.setStatus('Queue cleared successfully', 'success');
+
+                // Auto-update queue status
+                await this.updateQueueStatus();
+            } else {
+                this.setStatus('Queue clearing not available - requires Phase 5 implementation', 'error');
+            }
+
+        } catch (error) {
+            console.error('Failed to clear queue:', error);
+            this.setStatus(`Failed to clear queue: ${error.message}`, 'error');
+            this.displayQueueResult(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    displayQueueResult(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+
+        this.elements.queueResults.innerHTML = `
+            <div class="queue-operation-result ${className}">
+                <div class="operation-message">${message}</div>
+                <div class="operation-details">Time: ${timestamp}</div>
+            </div>
+        `;
     }
 }
 

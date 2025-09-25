@@ -131,8 +131,7 @@ export type {
   ProviderSupportInfo,
   ProviderConfigInfo,
   ProviderRecommendation,
-  ModelInfo,
-  ProviderConfigValidation
+  ModelInfo
 } from './embedding/index.js';
 
 // Version information

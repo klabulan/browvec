@@ -31,7 +31,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
-        'database/worker': resolve(__dirname, 'src/database/worker.ts')
+        'database/worker': resolve(__dirname, 'src/database/worker/index.ts')
       },
       name: 'LocalRetrieve',
       fileName: (format, entryName) => {

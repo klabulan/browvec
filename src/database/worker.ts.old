@@ -28,7 +28,12 @@ import type {
   GenerateEmbeddingResult,
   BatchEmbeddingRequest,
   BatchEmbeddingResult,
-  EmbeddingProgress
+  EmbeddingProgress,
+  EnqueueEmbeddingParams,
+  ProcessEmbeddingQueueParams,
+  ProcessEmbeddingQueueResult,
+  QueueStatusResult,
+  ClearEmbeddingQueueParams
 } from '../types/worker.js';
 import { DatabaseError, VectorError, OPFSError } from '../types/worker.js';
 import type { EmbeddingProvider, CollectionEmbeddingConfig } from '../embedding/types.js';
@@ -497,6 +502,12 @@ class DatabaseWorker {
     this.rpcHandler.register('generateEmbedding', this.handleGenerateEmbedding.bind(this));
     this.rpcHandler.register('batchGenerateEmbeddings', this.handleBatchGenerateEmbeddings.bind(this));
     this.rpcHandler.register('regenerateCollectionEmbeddings', this.handleRegenerateCollectionEmbeddings.bind(this));
+
+    // Embedding queue management
+    this.rpcHandler.register('enqueueEmbedding', this.handleEnqueueEmbedding.bind(this));
+    this.rpcHandler.register('processEmbeddingQueue', this.handleProcessEmbeddingQueue.bind(this));
+    this.rpcHandler.register('getQueueStatus', this.handleGetQueueStatus.bind(this));
+    this.rpcHandler.register('clearEmbeddingQueue', this.handleClearEmbeddingQueue.bind(this));
 
     // Search operations
     this.rpcHandler.register('search', this.handleSearch.bind(this));
@@ -1078,25 +1089,43 @@ class DatabaseWorker {
     this.ensureInitialized();
 
     try {
-      // If this database was restored from OPFS and has data, it likely has a valid schema
-      // Check for data in expected tables as an indicator of successful restoration
+      // Check for existing schema version and handle migrations
+      let currentSchemaVersion = 0;
       let hasData = false;
       try {
+        // Check if collections table exists and get schema version
+        const versionResult = this.selectSQL('SELECT MAX(schema_version) as version FROM collections');
+        if (versionResult.length > 0 && versionResult[0][0] !== null) {
+          currentSchemaVersion = versionResult[0][0];
+          this.log('info', `Current schema version: ${currentSchemaVersion}`);
+        }
+
+        // Check for data in expected tables
         const docCount = this.selectSQL('SELECT COUNT(*) as count FROM docs_default');
         hasData = docCount.length > 0 && docCount[0][0] > 0;
-        if (hasData) {
-          this.log('info', 'Database contains data, assuming schema is complete');
+
+        // If we have the latest schema version and data, skip initialization
+        if (currentSchemaVersion >= 2 && hasData) {
+          this.log('info', 'Database has latest schema version and contains data, skipping initialization');
           return;
         }
       } catch (error) {
-        // docs_default doesn't exist or isn't accessible, continue with schema check
+        // Tables don't exist or aren't accessible, continue with schema check
+        this.log('info', 'Schema version check failed, continuing with full schema initialization');
+      }
+
+      // Handle schema migrations if we have an older version
+      if (currentSchemaVersion > 0 && currentSchemaVersion < 2) {
+        await this.migrateSchema(currentSchemaVersion);
+        this.log('info', `Schema migrated from version ${currentSchemaVersion} to 2`);
+        return;
       }
 
       // Check if schema already exists (from restored database)
       // Check for all required tables (both regular and virtual)
       const allTables = this.selectSQL(`
         SELECT name FROM sqlite_master
-        WHERE name IN ('docs_default', 'collections', 'fts_default', 'vec_default_dense')
+        WHERE name IN ('docs_default', 'collections', 'fts_default', 'vec_default_dense', 'embedding_queue')
         ORDER BY name
       `);
 
@@ -1115,15 +1144,15 @@ class DatabaseWorker {
 
       this.log('info', `Found existing tables: ${foundTableNames.join(', ')}`);
 
-      // Only skip initialization if ALL required tables exist (4 total)
-      if (foundTableNames.length >= 4) {
+      // Only skip initialization if ALL required tables exist (5 total)
+      if (foundTableNames.length >= 5) {
         this.log('info', 'Complete schema already exists, skipping initialization');
         return;
       }
 
       // If some tables exist but not all, log warning and recreate schema
       if (foundTableNames.length > 0) {
-        this.log('warn', `Partial schema detected (${foundTableNames.length}/4 tables), reinitializing schema...`);
+        this.log('warn', `Partial schema detected (${foundTableNames.length}/5 tables), reinitializing schema...`);
         // Drop existing tables to ensure clean recreation
         const tableNames = foundTableNames;
 
@@ -1142,7 +1171,7 @@ class DatabaseWorker {
         }
 
         // Drop remaining regular tables
-        const regularTablesToClean = ['docs_default', 'collections'];
+        const regularTablesToClean = ['docs_default', 'collections', 'embedding_queue'];
         for (const regularTable of regularTablesToClean) {
           if (tableNames.includes(regularTable)) {
             try {
@@ -1182,17 +1211,41 @@ class DatabaseWorker {
             embedding float[384]
           );
           
-          -- Collections metadata
+          -- Collections metadata with embedding configuration
           CREATE TABLE IF NOT EXISTS collections (
             name TEXT PRIMARY KEY,
             created_at INTEGER DEFAULT (strftime('%s', 'now')),
             updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-            schema_version INTEGER DEFAULT 1,
-            config JSON
+            schema_version INTEGER DEFAULT 2,
+            config JSON,
+            embedding_provider TEXT DEFAULT 'local',
+            embedding_dimensions INTEGER DEFAULT 384,
+            embedding_status TEXT DEFAULT 'enabled' CHECK(embedding_status IN ('enabled', 'disabled', 'pending')),
+            processing_status TEXT DEFAULT 'idle' CHECK(processing_status IN ('idle', 'processing', 'error'))
           );
           
+          -- Embedding queue for background processing
+          CREATE TABLE IF NOT EXISTS embedding_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            collection_name TEXT NOT NULL,
+            document_id TEXT NOT NULL,
+            text_content TEXT NOT NULL,
+            priority INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            processed_at INTEGER,
+            error_message TEXT,
+            FOREIGN KEY(collection_name) REFERENCES collections(name) ON DELETE CASCADE
+          );
+
+          -- Create indexes for embedding queue performance
+          CREATE INDEX IF NOT EXISTS idx_embedding_queue_status ON embedding_queue(status);
+          CREATE INDEX IF NOT EXISTS idx_embedding_queue_collection ON embedding_queue(collection_name);
+          CREATE INDEX IF NOT EXISTS idx_embedding_queue_priority ON embedding_queue(priority DESC);
+          CREATE INDEX IF NOT EXISTS idx_embedding_queue_created ON embedding_queue(created_at);
+
           -- Insert default collection info
-          INSERT OR IGNORE INTO collections (name, config) 
+          INSERT OR IGNORE INTO collections (name, config)
           VALUES ('default', '{"vectorDim": 384, "metric": "cosine"}');
         `
       });
@@ -1201,6 +1254,61 @@ class DatabaseWorker {
       
     } catch (error) {
       throw new DatabaseError(`Schema initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Миграция схемы базы данных с старой версии на новую
+   */
+  private async migrateSchema(currentVersion: number): Promise<void> {
+    this.log('info', `Migrating schema from version ${currentVersion} to version 2`);
+
+    try {
+      if (currentVersion === 1) {
+        // Migration from version 1 to version 2
+        // Add new columns to collections table
+        await this.handleExec({
+          sql: `
+            ALTER TABLE collections ADD COLUMN embedding_provider TEXT DEFAULT 'local';
+            ALTER TABLE collections ADD COLUMN embedding_dimensions INTEGER DEFAULT 384;
+            ALTER TABLE collections ADD COLUMN embedding_status TEXT DEFAULT 'enabled' CHECK(embedding_status IN ('enabled', 'disabled', 'pending'));
+            ALTER TABLE collections ADD COLUMN processing_status TEXT DEFAULT 'idle' CHECK(processing_status IN ('idle', 'processing', 'error'));
+          `
+        });
+
+        // Create embedding queue table
+        await this.handleExec({
+          sql: `
+            CREATE TABLE IF NOT EXISTS embedding_queue (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              collection_name TEXT NOT NULL,
+              document_id TEXT NOT NULL,
+              text_content TEXT NOT NULL,
+              priority INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+              created_at INTEGER DEFAULT (strftime('%s', 'now')),
+              processed_at INTEGER,
+              error_message TEXT,
+              FOREIGN KEY(collection_name) REFERENCES collections(name) ON DELETE CASCADE
+            );
+
+            -- Create indexes for embedding queue performance
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_status ON embedding_queue(status);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_collection ON embedding_queue(collection_name);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_priority ON embedding_queue(priority DESC);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_created ON embedding_queue(created_at);
+          `
+        });
+
+        // Update schema version
+        await this.handleExec({
+          sql: 'UPDATE collections SET schema_version = 2, updated_at = strftime(\'%s\', \'now\')'
+        });
+
+        this.log('info', 'Successfully migrated from schema version 1 to 2');
+      }
+    } catch (error) {
+      throw new DatabaseError(`Schema migration failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -2321,6 +2429,308 @@ class DatabaseWorker {
     } catch (error) {
       this.log('error', `Collection embedding regeneration failed for '${collection}':`, error);
       throw new DatabaseError(`Collection embedding regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Добавление документа в очередь эмбеддингов
+   */
+  private async handleEnqueueEmbedding(params: EnqueueEmbeddingParams): Promise<number> {
+    this.ensureInitialized();
+
+    const { collection, documentId, textContent, priority = 0 } = params;
+
+    try {
+      // Проверяем существование коллекции
+      const collectionExists = await this.handleSelect({
+        sql: 'SELECT name FROM collections WHERE name = ?',
+        params: [collection]
+      });
+
+      if (collectionExists.rows.length === 0) {
+        throw new DatabaseError(`Collection '${collection}' does not exist`);
+      }
+
+      // Добавляем в очередь (или обновляем существующую запись)
+      const result = await this.handleExec({
+        sql: `
+          INSERT OR REPLACE INTO embedding_queue
+          (collection_name, document_id, text_content, priority, status, created_at)
+          VALUES (?, ?, ?, ?, 'pending', strftime('%s', 'now'))
+        `,
+        params: [collection, documentId, textContent, priority]
+      });
+
+      const queueId = result.lastInsertRowid || 0;
+      this.log('info', `Enqueued embedding for document '${documentId}' in collection '${collection}' with priority ${priority}`);
+
+      return queueId;
+
+    } catch (error) {
+      this.log('error', `Failed to enqueue embedding for document '${documentId}':`, error);
+      throw new DatabaseError(`Failed to enqueue embedding: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Обработка очереди эмбеддингов
+   */
+  private async handleProcessEmbeddingQueue(params: ProcessEmbeddingQueueParams = {}): Promise<ProcessEmbeddingQueueResult> {
+    this.ensureInitialized();
+
+    const { collection, batchSize = 10, maxRetries = 3 } = params;
+
+    try {
+      // Получаем задания из очереди
+      let queueQuery = `
+        SELECT id, collection_name, document_id, text_content, priority
+        FROM embedding_queue
+        WHERE status = 'pending'
+      `;
+      let queryParams: any[] = [];
+
+      if (collection) {
+        queueQuery += ' AND collection_name = ?';
+        queryParams.push(collection);
+      }
+
+      queueQuery += ' ORDER BY priority DESC, created_at ASC LIMIT ?';
+      queryParams.push(batchSize);
+
+      const queueItems = await this.handleSelect({
+        sql: queueQuery,
+        params: queryParams
+      });
+
+      if (queueItems.rows.length === 0) {
+        this.log('info', `No pending items in embedding queue${collection ? ' for collection ' + collection : ''}`);
+        return { processed: 0, successful: 0, failed: 0, skipped: 0, errors: [] };
+      }
+
+      const result: ProcessEmbeddingQueueResult = {
+        processed: 0,
+        successful: 0,
+        failed: 0,
+        skipped: 0,
+        errors: []
+      };
+
+      // Обрабатываем каждое задание
+      for (const item of queueItems.rows) {
+        const { id: queueId, collection_name, document_id, text_content } = item;
+
+        try {
+          // Отмечаем как обрабатываемое
+          await this.handleExec({
+            sql: 'UPDATE embedding_queue SET status = \'processing\', processed_at = strftime(\'%s\', \'now\') WHERE id = ?',
+            params: [queueId]
+          });
+
+          // Генерируем эмбеддинг
+          const embeddingResult = await this.handleGenerateEmbedding({
+            collection: collection_name,
+            text: text_content,
+            options: { includeInVector: true }
+          });
+
+          // Сохраняем эмбеддинг
+          await this.storeDocumentEmbedding(collection_name, document_id, embeddingResult.embedding);
+
+          // Отмечаем как завершенное
+          await this.handleExec({
+            sql: 'UPDATE embedding_queue SET status = \'completed\', processed_at = strftime(\'%s\', \'now\') WHERE id = ?',
+            params: [queueId]
+          });
+
+          result.successful++;
+          this.log('debug', `Successfully processed embedding for document '${document_id}' in collection '${collection_name}'`);
+
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+
+          // Отмечаем как провалившееся
+          await this.handleExec({
+            sql: 'UPDATE embedding_queue SET status = \'failed\', error_message = ?, processed_at = strftime(\'%s\', \'now\') WHERE id = ?',
+            params: [errorMessage, queueId]
+          });
+
+          result.failed++;
+          result.errors.push({
+            documentId: document_id,
+            error: errorMessage
+          });
+
+          this.log('error', `Failed to process embedding for document '${document_id}':`, error);
+        }
+
+        result.processed++;
+      }
+
+      this.log('info', `Processed ${result.processed} queue items: ${result.successful} successful, ${result.failed} failed`);
+      return result;
+
+    } catch (error) {
+      this.log('error', 'Failed to process embedding queue:', error);
+      throw new DatabaseError(`Failed to process embedding queue: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Получение статуса очереди эмбеддингов
+   */
+  private async handleGetQueueStatus(collection?: string): Promise<QueueStatusResult> {
+    this.ensureInitialized();
+
+    try {
+      let baseQuery = `
+        SELECT
+          collection_name,
+          status,
+          COUNT(*) as count,
+          MIN(created_at) as oldest_pending,
+          AVG(CASE
+            WHEN status = 'completed' AND processed_at IS NOT NULL AND created_at IS NOT NULL
+            THEN processed_at - created_at
+            ELSE NULL
+          END) as avg_processing_time
+        FROM embedding_queue
+      `;
+
+      let queryParams: any[] = [];
+      if (collection) {
+        baseQuery += ' WHERE collection_name = ?';
+        queryParams.push(collection);
+      }
+
+      baseQuery += ' GROUP BY collection_name, status';
+
+      const statusResult = await this.handleSelect({
+        sql: baseQuery,
+        params: queryParams
+      });
+
+      // Собираем статистику
+      const stats: Record<string, QueueStatusResult> = {};
+
+      for (const row of statusResult.rows) {
+        const collectionName = row.collection_name;
+
+        if (!stats[collectionName]) {
+          stats[collectionName] = {
+            collection: collectionName,
+            pendingCount: 0,
+            processingCount: 0,
+            completedCount: 0,
+            failedCount: 0,
+            totalCount: 0,
+            oldestPendingDate: undefined,
+            averageProcessingTime: undefined
+          };
+        }
+
+        const count = row.count;
+        stats[collectionName].totalCount += count;
+
+        switch (row.status) {
+          case 'pending':
+            stats[collectionName].pendingCount = count;
+            if (row.oldest_pending) {
+              stats[collectionName].oldestPendingDate = row.oldest_pending;
+            }
+            break;
+          case 'processing':
+            stats[collectionName].processingCount = count;
+            break;
+          case 'completed':
+            stats[collectionName].completedCount = count;
+            if (row.avg_processing_time) {
+              stats[collectionName].averageProcessingTime = row.avg_processing_time;
+            }
+            break;
+          case 'failed':
+            stats[collectionName].failedCount = count;
+            break;
+        }
+      }
+
+      // Если запрос для конкретной коллекции
+      if (collection) {
+        return stats[collection] || {
+          collection,
+          pendingCount: 0,
+          processingCount: 0,
+          completedCount: 0,
+          failedCount: 0,
+          totalCount: 0
+        };
+      }
+
+      // Если запрос общий, возвращаем агрегированную статистику
+      const totalStats: QueueStatusResult = {
+        collection: 'all',
+        pendingCount: 0,
+        processingCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+        totalCount: 0
+      };
+
+      for (const collectionStats of Object.values(stats)) {
+        totalStats.pendingCount += collectionStats.pendingCount;
+        totalStats.processingCount += collectionStats.processingCount;
+        totalStats.completedCount += collectionStats.completedCount;
+        totalStats.failedCount += collectionStats.failedCount;
+        totalStats.totalCount += collectionStats.totalCount;
+      }
+
+      return totalStats;
+
+    } catch (error) {
+      this.log('error', 'Failed to get queue status:', error);
+      throw new DatabaseError(`Failed to get queue status: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Очистка очереди эмбеддингов
+   */
+  private async handleClearEmbeddingQueue(params: ClearEmbeddingQueueParams = {}): Promise<number> {
+    this.ensureInitialized();
+
+    const { collection, status, olderThan } = params;
+
+    try {
+      let deleteQuery = 'DELETE FROM embedding_queue WHERE 1=1';
+      const queryParams: any[] = [];
+
+      if (collection) {
+        deleteQuery += ' AND collection_name = ?';
+        queryParams.push(collection);
+      }
+
+      if (status) {
+        deleteQuery += ' AND status = ?';
+        queryParams.push(status);
+      }
+
+      if (olderThan) {
+        deleteQuery += ' AND created_at < ?';
+        queryParams.push(olderThan);
+      }
+
+      const result = await this.handleExec({
+        sql: deleteQuery,
+        params: queryParams
+      });
+
+      const deletedCount = result.rowsAffected || 0;
+      this.log('info', `Cleared ${deletedCount} items from embedding queue`);
+
+      return deletedCount;
+
+    } catch (error) {
+      this.log('error', 'Failed to clear embedding queue:', error);
+      throw new DatabaseError(`Failed to clear embedding queue: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

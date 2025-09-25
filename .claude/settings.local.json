@@ -5,7 +5,17 @@
       "Bash(npm test:*)",
       "Bash(npm run build:sdk:*)",
       "Bash(node:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "mcp__atlassian__getAccessibleAtlassianResources",
+      "mcp__atlassian__search",
+      "mcp__atlassian__searchJiraIssuesUsingJql",
+      "Bash(dir /B D:localcopilotbrowvectests)",
+      "mcp__atlassian__getVisibleJiraProjects",
+      "mcp__atlassian__editJiraIssue",
+      "mcp__atlassian__createJiraIssue",
+      "Bash(npx playwright:*)",
+      "mcp__atlassian__getJiraProjectIssueTypesMetadata",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []
