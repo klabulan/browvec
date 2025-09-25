@@ -265,6 +265,19 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('searchSemantic', params);
   }
 
+  // Enhanced search API (Task 6.1)
+  async searchText(params: Parameters<DBWorkerAPI["searchText"]>[0]) {
+    return this.call("searchText", params);
+  }
+
+  async searchAdvanced(params: Parameters<DBWorkerAPI["searchAdvanced"]>[0]) {
+    return this.call("searchAdvanced", params);
+  }
+
+  async searchGlobal(params: Parameters<DBWorkerAPI["searchGlobal"]>[0]) {
+    return this.call("searchGlobal", params);
+  }
+
   // Embedding generation operations
   async generateEmbedding(params: Parameters<DBWorkerAPI['generateEmbedding']>[0]) {
     return this.call('generateEmbedding', params);

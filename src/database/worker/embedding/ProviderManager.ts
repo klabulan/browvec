@@ -5,7 +5,8 @@
  * Handles provider initialization, caching, and lifecycle management.
  */
 
-import type { EmbeddingProvider, CollectionEmbeddingConfig } from '../../../embedding/types.js';
+import type { EmbeddingProvider } from '../../../embedding/providers/BaseProvider.js';
+import type { CollectionEmbeddingConfig } from '../../../embedding/types.js';
 import { providerFactory } from '../../../embedding/ProviderFactory.js';
 import { EmbeddingError } from '../../../embedding/errors.js';
 import type { SQLiteManager } from '../core/SQLiteManager.js';
@@ -104,14 +105,25 @@ export class ProviderManager {
       }
 
       // Create provider using factory
-      const provider = await providerFactory.createProvider(embeddingConfig.type, embeddingConfig);
+      const provider = await providerFactory.createProvider(embeddingConfig);
 
       // Initialize the provider
       if (typeof provider.initialize === 'function') {
-        await provider.initialize(embeddingConfig);
+        // Convert CollectionEmbeddingConfig to EmbeddingConfig
+        const globalConfig = {
+          defaultProvider: embeddingConfig.provider,
+          defaultDimensions: embeddingConfig.dimensions,
+          provider: embeddingConfig.provider,
+          defaultModel: embeddingConfig.model,
+          apiKey: embeddingConfig.apiKey,
+          batchSize: embeddingConfig.batchSize,
+          timeout: embeddingConfig.timeout,
+          enabled: embeddingConfig.autoGenerate !== false
+        };
+        await provider.initialize(globalConfig);
       }
 
-      this.log('info', `Initialized embedding provider '${embeddingConfig.type}' for collection '${collection}'`);
+      this.log('info', `Initialized embedding provider '${embeddingConfig.provider}' for collection '${collection}'`);
       return provider;
     } catch (error) {
       throw new EmbeddingError(`Failed to initialize embedding provider for collection '${collection}': ${error instanceof Error ? error.message : String(error)}`);
@@ -149,8 +161,8 @@ export class ProviderManager {
     const cached = this.providers.get(collection);
     if (cached) {
       try {
-        if (typeof cached.provider.dispose === 'function') {
-          await cached.provider.dispose();
+        if (typeof (cached.provider as any).dispose === 'function') {
+          await (cached.provider as any).dispose();
         }
       } catch (error) {
         this.log('warn', `Error disposing provider for collection '${collection}': ${error instanceof Error ? error.message : String(error)}`);
@@ -185,10 +197,10 @@ export class ProviderManager {
       }
 
       // Check if provider has health check method
-      if (typeof provider.healthCheck === 'function') {
+      if (typeof (provider as any).healthCheck === 'function') {
         try {
-          const isHealthy = await provider.healthCheck();
-          return { healthy: isHealthy };
+          const healthStatus = await (provider as any).healthCheck();
+          return { healthy: healthStatus.isHealthy };
         } catch (error) {
           return { healthy: false, error: error instanceof Error ? error.message : String(error) };
         }
@@ -219,7 +231,7 @@ export class ProviderManager {
   getProviderStats(): { collection: string; type: string; lastUsed: number }[] {
     return Array.from(this.providers.entries()).map(([collection, entry]) => ({
       collection,
-      type: entry.config.type,
+      type: entry.config.provider,
       lastUsed: entry.lastUsed
     }));
   }

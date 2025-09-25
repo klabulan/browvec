@@ -17,7 +17,7 @@ import {
   SQLITE_NULL,
   SQLITE_TRANSIENT
 } from './SQLite3Module.js';
-import type { SQLValue, SQLParams, QueryResult } from '../../../types/worker.js';
+import type { SQLValue, ExtendedSQLValue, SQLParams, ExtendedSQLParams, QueryResult } from '../../../types/worker.js';
 import { DatabaseError, VectorError } from '../../../types/worker.js';
 
 /**
@@ -59,7 +59,8 @@ export class SQLiteManager {
         throw new DatabaseError('SQLite WASM module is incomplete - missing core functions');
       }
 
-      const version = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_libversion());
+      const versionPtr = this.sqlite3._sqlite3_libversion();
+      const version = versionPtr && this.sqlite3.UTF8ToString ? this.sqlite3.UTF8ToString(versionPtr) : 'unknown';
       this.log('info', `SQLite WASM loaded successfully, version: ${version}`);
 
     } catch (error) {
@@ -91,7 +92,7 @@ export class SQLiteManager {
 
     if (result !== SQLITE_OK) {
       this.sqlite3!._free(dbPtrPtr);
-      const errorPtr = this.sqlite3!._sqlite3_errmsg ? this.sqlite3!._sqlite3_errmsg(0) : 0;
+      const errorPtr = (this.sqlite3!._sqlite3_errmsg && this.sqlite3!._sqlite3_errmsg(0)) || 0;
       const errorMsg = errorPtr ? this.sqlite3!.UTF8ToString(errorPtr) : `SQLite error code ${result}`;
       throw new DatabaseError(`Failed to open database: ${errorMsg}`);
     }
@@ -156,7 +157,7 @@ export class SQLiteManager {
   /**
    * Execute SQL statement with optional parameters
    */
-  async exec(sql: string, params?: SQLParams): Promise<void> {
+  async exec(sql: string, params?: ExtendedSQLParams): Promise<void> {
     if (!this.sqlite3 || !this.dbPtr) {
       throw new DatabaseError('Database not initialized');
     }
@@ -204,8 +205,18 @@ export class SQLiteManager {
 
     try {
       // Bind parameters
-      for (let i = 0; i < params.length; i++) {
-        this.bindParameter(stmtPtr, i + 1, params[i]);
+      if (params) {
+        if (Array.isArray(params)) {
+          for (let i = 0; i < params.length; i++) {
+            this.bindParameter(stmtPtr, i + 1, params[i]);
+          }
+        } else {
+          // Handle Record<string, SQLValue>
+          const keys = Object.keys(params);
+          for (let i = 0; i < keys.length; i++) {
+            this.bindParameter(stmtPtr, i + 1, params[keys[i]]);
+          }
+        }
       }
 
       // Execute the statement
@@ -227,7 +238,7 @@ export class SQLiteManager {
   /**
    * Execute SQL query and return results
    */
-  async select(sql: string, params?: SQLParams): Promise<QueryResult> {
+  async select(sql: string, params?: ExtendedSQLParams): Promise<QueryResult> {
     if (!this.sqlite3 || !this.dbPtr) {
       throw new DatabaseError('Database not initialized');
     }
@@ -244,7 +255,7 @@ export class SQLiteManager {
   /**
    * Execute SQL query with parameters and return results
    */
-  private executeQuery(dbPtr: number, sql: string, params?: SQLParams): Record<string, any>[] {
+  private executeQuery(dbPtr: number, sql: string, params?: ExtendedSQLParams): Record<string, any>[] {
     const sqlPtr = this.sqlite3!._malloc(sql.length + 1);
     this.sqlite3!.stringToUTF8(sql, sqlPtr, sql.length + 1);
 
@@ -263,10 +274,20 @@ export class SQLiteManager {
     this.sqlite3!._free(stmtPtrPtr);
 
     // Bind parameters if provided
-    if (params && params.length > 0) {
-      for (let i = 0; i < params.length; i++) {
-        const param = params[i];
-        this.bindParameter(stmtPtr, i + 1, param);
+    if (params) {
+      if (Array.isArray(params) && params.length > 0) {
+        for (let i = 0; i < params.length; i++) {
+          const param = params[i];
+          this.bindParameter(stmtPtr, i + 1, param);
+        }
+      } else if (!Array.isArray(params)) {
+        // Handle Record<string, SQLValue>
+        const keys = Object.keys(params);
+        if (keys.length > 0) {
+          for (let i = 0; i < keys.length; i++) {
+            this.bindParameter(stmtPtr, i + 1, params[keys[i]]);
+          }
+        }
       }
     }
 
@@ -295,7 +316,7 @@ export class SQLiteManager {
   /**
    * Bind parameter to prepared statement
    */
-  private bindParameter(stmtPtr: number, index: number, param: SQLValue): void {
+  private bindParameter(stmtPtr: number, index: number, param: ExtendedSQLValue): void {
     if (!this.sqlite3) {
       throw new DatabaseError('SQLite not initialized');
     }

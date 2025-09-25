@@ -11,6 +11,7 @@ import { OPFSManager } from './OPFSManager.js';
 import { SchemaManager } from '../schema/SchemaManager.js';
 import { EmbeddingQueue } from '../embedding/EmbeddingQueue.js';
 import { ProviderManager } from '../embedding/ProviderManager.js';
+import { SearchHandler } from '../handlers/SearchHandler.js';
 import { Logger } from '../utils/Logger.js';
 import { ErrorHandler } from '../utils/ErrorHandling.js';
 
@@ -37,7 +38,23 @@ import type {
   ProcessEmbeddingQueueParams,
   ProcessEmbeddingQueueResult,
   QueueStatusResult,
-  ClearEmbeddingQueueParams
+  ClearEmbeddingQueueParams,
+  TextSearchParams,
+  AdvancedSearchParams,
+  GlobalSearchParams,
+  EnhancedSearchResponse,
+  GlobalSearchResponse,
+  // Task 6.2: Internal Embedding Pipeline types
+  GenerateQueryEmbeddingParams,
+  BatchGenerateQueryEmbeddingsParams,
+  WarmEmbeddingCacheParams,
+  ClearEmbeddingCacheParams,
+  PreloadModelsParams,
+  OptimizeModelMemoryParams,
+  QueryEmbeddingResult,
+  BatchQueryEmbeddingResult,
+  PipelinePerformanceStats,
+  ModelStatusResult
 } from '../../../types/worker.js';
 
 import {
@@ -81,6 +98,7 @@ export class DatabaseWorker {
   private schemaManager: SchemaManager;
   private embeddingQueue: EmbeddingQueue;
   private providerManager: ProviderManager;
+  private searchHandler: SearchHandler;
   private logger: Logger;
 
   // RPC handler
@@ -103,6 +121,12 @@ export class DatabaseWorker {
     this.schemaManager = new SchemaManager(this.sqliteManager, this.logger);
     this.embeddingQueue = new EmbeddingQueue(this.sqliteManager, this.logger);
     this.providerManager = new ProviderManager(this.sqliteManager, this.logger);
+    this.searchHandler = new SearchHandler({
+      sqliteManager: this.sqliteManager,
+      schemaManager: this.schemaManager,
+      opfsManager: this.opfsManager,
+      logger: this.logger
+    });
 
     // Initialize RPC handler
     this.rpcHandler = new WorkerRPCHandler({
@@ -153,6 +177,20 @@ export class DatabaseWorker {
     // Search operations
     this.rpcHandler.register('search', this.handleSearch.bind(this));
     this.rpcHandler.register('searchSemantic', this.handleSearchSemantic.bind(this));
+    // Enhanced search API (Task 6.1)
+    this.rpcHandler.register('searchText', this.handleSearchText.bind(this));
+    this.rpcHandler.register('searchAdvanced', this.handleSearchAdvanced.bind(this));
+    this.rpcHandler.register('searchGlobal', this.handleSearchGlobal.bind(this));
+
+    // Task 6.2: Internal Embedding Pipeline Operations
+    this.rpcHandler.register('generateQueryEmbedding', this.handleGenerateQueryEmbedding.bind(this));
+    this.rpcHandler.register('batchGenerateQueryEmbeddings', this.handleBatchGenerateQueryEmbeddings.bind(this));
+    this.rpcHandler.register('warmEmbeddingCache', this.handleWarmEmbeddingCache.bind(this));
+    this.rpcHandler.register('clearEmbeddingCache', this.handleClearEmbeddingCache.bind(this));
+    this.rpcHandler.register('getPipelineStats', this.handleGetPipelineStats.bind(this));
+    this.rpcHandler.register('getModelStatus', this.handleGetModelStatus.bind(this));
+    this.rpcHandler.register('preloadModels', this.handlePreloadModels.bind(this));
+    this.rpcHandler.register('optimizeModelMemory', this.handleOptimizeModelMemory.bind(this));
 
     // Data export/import
     this.rpcHandler.register('export', this.handleExport.bind(this));
@@ -472,6 +510,28 @@ export class DatabaseWorker {
     };
   }
 
+  // Enhanced Search API (Task 6.1)
+  private async handleSearchText(params: TextSearchParams): Promise<EnhancedSearchResponse> {
+    this.ensureInitialized();
+    return this.withContext('searchText', async () => {
+      return await this.searchHandler.handleSearchText(params);
+    });
+  }
+
+  private async handleSearchAdvanced(params: AdvancedSearchParams): Promise<EnhancedSearchResponse> {
+    this.ensureInitialized();
+    return this.withContext('searchAdvanced', async () => {
+      return await this.searchHandler.handleSearchAdvanced(params);
+    });
+  }
+
+  private async handleSearchGlobal(params: GlobalSearchParams): Promise<GlobalSearchResponse> {
+    this.ensureInitialized();
+    return this.withContext('searchGlobal', async () => {
+      return await this.searchHandler.handleSearchGlobal(params);
+    });
+  }
+
   // =============================================================================
   // Import/Export Operations
   // =============================================================================
@@ -540,6 +600,169 @@ export class DatabaseWorker {
 
   // =============================================================================
   // Helper Methods
+  // Task 6.2: Internal Embedding Pipeline Handlers
+  // =============================================================================
+
+  private async handleGenerateQueryEmbedding(params: GenerateQueryEmbeddingParams): Promise<QueryEmbeddingResult> {
+    this.ensureInitialized();
+    return this.withContext('generateQueryEmbedding', async () => {
+      // Delegate to SearchHandler which has the InternalPipeline integrated
+      const embeddingPipeline = (this.searchHandler as any).embeddingPipeline;
+
+      if (!embeddingPipeline) {
+        throw new Error('Embedding pipeline not available in SearchHandler');
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+
+      return await embeddingPipeline.generateQueryEmbedding(
+        params.query,
+        params.collection,
+        params.options
+      );
+    });
+  }
+
+  private async handleBatchGenerateQueryEmbeddings(params: BatchGenerateQueryEmbeddingsParams): Promise<BatchQueryEmbeddingResult[]> {
+    this.ensureInitialized();
+    return this.withContext('batchGenerateQueryEmbeddings', async () => {
+      const embeddingPipeline = (this.searchHandler as any).embeddingPipeline;
+
+      if (!embeddingPipeline) {
+        throw new Error('Embedding pipeline not available in SearchHandler');
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+
+      return await embeddingPipeline.batchGenerateEmbeddings(
+        params.requests,
+        params.batchOptions
+      );
+    });
+  }
+
+  private async handleWarmEmbeddingCache(params: WarmEmbeddingCacheParams): Promise<void> {
+    this.ensureInitialized();
+    return this.withContext('warmEmbeddingCache', async () => {
+      // Use the SearchHandler's warmEmbeddingCache method
+      return await this.searchHandler.warmEmbeddingCache(params.collection, params.commonQueries);
+    });
+  }
+
+  private async handleClearEmbeddingCache(params?: ClearEmbeddingCacheParams): Promise<void> {
+    this.ensureInitialized();
+    return this.withContext('clearEmbeddingCache', async () => {
+      const embeddingPipeline = (this.searchHandler as any).embeddingPipeline;
+
+      if (!embeddingPipeline) {
+        this.logger.warn('Embedding pipeline not available for cache clearing');
+        return;
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+
+      if (params?.pattern) {
+        // TODO: Implement pattern-based cache clearing
+        this.logger.warn('Pattern-based cache clearing not yet implemented');
+      } else {
+        await embeddingPipeline.clearCache(params?.collection);
+      }
+    });
+  }
+
+  private async handleGetPipelineStats(): Promise<PipelinePerformanceStats> {
+    this.ensureInitialized();
+    return this.withContext('getPipelineStats', async () => {
+      const embeddingPipeline = (this.searchHandler as any).embeddingPipeline;
+
+      if (!embeddingPipeline) {
+        // Return empty stats if pipeline not available
+        return {
+          totalRequests: 0,
+          cacheHitRate: 0,
+          averageGenerationTime: 0,
+          activeModels: 0,
+          memoryUsage: 0,
+          cacheStats: {
+            memory: { hits: 0, misses: 0 },
+            indexedDB: { hits: 0, misses: 0 },
+            database: { hits: 0, misses: 0 }
+          }
+        };
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+      return embeddingPipeline.getPerformanceStats();
+    });
+  }
+
+  private async handleGetModelStatus(): Promise<ModelStatusResult> {
+    this.ensureInitialized();
+    return this.withContext('getModelStatus', async () => {
+      const modelManager = (this.searchHandler as any).modelManager;
+
+      if (!modelManager) {
+        // Return empty status if model manager not available
+        return {
+          loadedModels: [],
+          totalMemoryUsage: 0,
+          activeCount: 0,
+          providerStats: {}
+        };
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+      const modelStatus = modelManager.getModelStatus();
+
+      // Convert to the expected format
+      return {
+        loadedModels: modelStatus.loadedModels.map((model: any) => ({
+          modelId: model.modelId,
+          provider: model.provider,
+          modelName: model.modelName,
+          dimensions: model.dimensions,
+          memoryUsage: model.memoryUsage,
+          lastUsed: model.lastUsed,
+          usageCount: model.usageCount,
+          status: model.status
+        })),
+        totalMemoryUsage: modelStatus.totalMemoryUsage,
+        activeCount: modelStatus.activeCount,
+        providerStats: modelStatus.providerStats
+      };
+    });
+  }
+
+  private async handlePreloadModels(params: PreloadModelsParams): Promise<void> {
+    this.ensureInitialized();
+    return this.withContext('preloadModels', async () => {
+      const modelManager = (this.searchHandler as any).modelManager;
+
+      if (!modelManager) {
+        this.logger.warn('Model manager not available for preloading');
+        return;
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+      await modelManager.preloadModels(params.strategy || 'lazy');
+    });
+  }
+
+  private async handleOptimizeModelMemory(params?: OptimizeModelMemoryParams): Promise<void> {
+    this.ensureInitialized();
+    return this.withContext('optimizeModelMemory', async () => {
+      const modelManager = (this.searchHandler as any).modelManager;
+
+      if (!modelManager) {
+        this.logger.warn('Model manager not available for memory optimization');
+        return;
+      }
+
+      await (this.searchHandler as any).pipelineInitialized;
+      await modelManager.optimizeMemory(params);
+    });
+  }
+
   // =============================================================================
 
   private validateParams<T>(

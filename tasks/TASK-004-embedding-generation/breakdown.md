@@ -2,11 +2,13 @@
 
 ## Sprint Planning
 
-**Total Effort**: 10 story points
-**Estimated Duration**: 1.5-2 weeks
-**Sprint Assignment**: Current sprint
-**Dependencies**: Core LocalRetrieve architecture (completed)
-**Scope**: MVP with collection-level embedding configuration
+**Phase 5 Status**: ✅ **COMPLETED** - Collection Schema Implementation (1 story point delivered)
+**Phase 6 Scope**: 8.5 story points - Hybrid Search Enhancement with Text-Only Input + Original Demo
+**Total Effort**: 18.5 story points (Phase 5: 1 + Phase 6: 8.5 + Previous phases: 9)
+**Estimated Duration**: Phase 6 - 4 weeks
+**Sprint Assignment**: Next sprint (Phase 6)
+**Dependencies**: Phase 5 Collection Schema (✅ completed), Core LocalRetrieve architecture (✅ completed)
+**Current Focus**: Text-only hybrid search with automatic internal embedding generation + comprehensive demo
 
 ## Work Breakdown Structure
 
@@ -236,9 +238,124 @@
 - [x] RPC interface extended for queue management
 - [x] TypeScript strict mode compliance maintained
 
-### Phase 6: Demo and Documentation (0.5 story points)
+### Phase 6: Hybrid Search Enhancement with Text-Only Input (8 story points)
 
-#### Task 6.1: Demo Application Updates (MVP)
+#### Task 6.1: Text-Only Hybrid Search API ⭐ **HIGH PRIORITY**
+**Effort**: 3 story points
+**Duration**: 1 week
+**Dependencies**: Phase 5 (✅ Completed)
+
+**Implementation Steps**:
+1. **Enhanced Database Search API** (1 SP)
+   - Add `searchText()`, `searchAdvanced()`, `searchGlobal()` methods to Database class
+   - Implement auto-mode detection for optimal search strategy
+   - Maintain backward compatibility with existing search APIs
+2. **Search Strategy Engine** (1 SP)
+   - Create intelligent search mode selection algorithm
+   - Implement query classification (keyword/conceptual/mixed)
+   - Add weight optimization for hybrid results
+3. **Result Processing Enhancement** (1 SP)
+   - Implement score normalization and combination
+   - Add snippet generation with highlighting
+   - Create relevance ranking improvements
+
+**Files to Create/Modify**:
+- `src/database/Database.ts` (modify - add new search methods)
+- `src/search/StrategyEngine.ts` (new)
+- `src/search/ResultProcessor.ts` (new)
+- `src/types/search.ts` (new)
+
+**Acceptance Criteria**:
+- [ ] `searchText()` returns results in < 500ms
+- [ ] Auto-mode selects correct strategy 95% of time
+- [ ] Hybrid results properly weighted and ranked
+- [ ] Backward compatibility maintained
+- [ ] Comprehensive error handling
+
+#### Task 6.2: Internal Embedding Generation Pipeline 🔧 **MEDIUM PRIORITY**
+**Effort**: 2 story points
+**Duration**: 1 week
+**Dependencies**: Task 6.1
+
+**Implementation Steps**:
+1. **On-Demand Embedding Pipeline** (1 SP)
+   - Create query embedding generation with caching
+   - Integrate with existing Phase 5 queue system
+   - Implement batch processing with progress tracking
+2. **Model Management & Caching** (1 SP)
+   - Smart model lifecycle management and memory optimization
+   - Multi-level caching (memory → IndexedDB → database)
+   - Query embedding cache with LRU eviction
+
+**Files to Create/Modify**:
+- `src/embedding/InternalPipeline.ts` (new)
+- `src/embedding/ModelManager.ts` (new)
+- `src/embedding/CacheManager.ts` (new)
+- `src/database/worker/core/DatabaseWorker.ts` (modify)
+
+**Acceptance Criteria**:
+- [ ] Query embeddings generated in < 200ms
+- [ ] Cache hit rate > 70% for repeated queries
+- [ ] Memory usage < 100MB for embedding models
+- [ ] Proper error handling and fallbacks
+- [ ] Integration with existing queue system
+
+#### Task 6.3: Advanced Query Processing 🎯 **MEDIUM PRIORITY**
+**Effort**: 2 story points
+**Duration**: 1 week
+**Dependencies**: Task 6.2
+
+**Implementation Steps**:
+1. **Query Analysis Engine** (1 SP)
+   - Natural language query understanding and classification
+   - Intent detection and query expansion
+   - Keyword extraction and weighting
+2. **Search Result Optimization** (1 SP)
+   - ML-based result reranking algorithms
+   - Result diversity optimization
+   - Contextual snippet generation with highlighting
+
+**Files to Create/Modify**:
+- `src/search/QueryAnalyzer.ts` (new)
+- `src/search/SearchOptimizer.ts` (new)
+- `src/analytics/SearchAnalytics.ts` (new)
+
+**Acceptance Criteria**:
+- [ ] Query analysis improves search relevance by 20%
+- [ ] Reranking provides better result ordering
+- [ ] Snippets highlight relevant content
+- [ ] Performance impact < 100ms additional latency
+
+#### Task 6.4: Demo Integration and Documentation 📖 **LOW PRIORITY**
+**Effort**: 1 story point
+**Duration**: 1 week
+**Dependencies**: Tasks 6.1, 6.2, 6.3
+
+**Implementation Steps**:
+1. **Demo Application Enhancement** (0.5 SP)
+   - Add text-only search interface with auto-mode demonstration
+   - Show performance metrics and search strategy selection
+   - Display cache hit rates and embedding generation status
+2. **API Documentation** (0.5 SP)
+   - Document new text-only search features and integration examples
+   - Create performance tuning guide and best practices
+   - Update README with zero-configuration examples
+
+**Files to Create/Modify**:
+- `examples/web-client/demo.js` (modify)
+- `examples/web-client/index.html` (modify)
+- `README.md` (modify)
+- `doc/text-only-search-guide.md` (new)
+
+**Acceptance Criteria**:
+- [ ] Demo showcases all new text-only search features
+- [ ] Performance metrics visible to users
+- [ ] Documentation covers all new APIs with examples
+- [ ] Integration examples work correctly
+
+### Phase 6+: Additional Demo Enhancements (0.5 story points)
+
+#### Task 6.5: Original Demo Application Updates (MVP) - **KEPT FROM ORIGINAL PLAN**
 **Effort**: 0.5 story points
 **Duration**: 0.5 day
 
@@ -261,34 +378,60 @@
 
 ## Implementation Priority and Dependencies
 
-### Critical Path (MVP)
-1. **Foundation** (Task 1.1-1.3) → **Local Provider** (Task 2.1-2.2) → **Collection Integration** (Task 4.1-4.2)
-2. **External Providers** (Task 3.1-3.2) can be developed in parallel with local provider
-3. **Schema** (Task 5.1) depends on integration completion
-4. **Demo** (Task 6.1) final phase after all features complete
+### Critical Path (MVP + Phase 6 Enhancement)
+
+**Phases 1-5 Status**: ✅ **COMPLETED**
+1. ✅ Foundation (Tasks 1.1-1.3)
+2. ✅ Local Provider (Tasks 2.1-2.2)
+3. ✅ External Providers (Tasks 3.1-3.2)
+4. ✅ Collection Integration (Tasks 4.1-4.2)
+5. ✅ Collection Schema (Task 5.1) - **PHASE 5 COMPLETED**
+
+**Phase 6 Critical Path**: ⭐ **NEXT SPRINT**
+1. **Text-Only Search API** (Task 6.1) → **Embedding Pipeline** (Task 6.2) → **Advanced Processing** (Task 6.3) → **Demo Integration** (Task 6.4) + **Original Demo Updates** (Task 6.5)
 
 ### Dependency Graph
+
+#### Phases 1-5 (✅ COMPLETED)
 ```mermaid
 graph TD
-    A[1.1 Collection Foundation] --> B[1.2 Text Processing]
-    A --> C[1.3 Simple Cache]
-    A --> D[2.1 Transformers Provider]
-    A --> E[3.1 OpenAI Provider]
+    A[1.1 Collection Foundation ✅] --> B[1.2 Text Processing ✅]
+    A --> C[1.3 Simple Cache ✅]
+    A --> D[2.1 Transformers Provider ✅]
+    A --> E[3.1 OpenAI Provider ✅]
 
     B --> D
     C --> D
     C --> E
 
-    D --> F[2.2 Basic Optimization]
-    E --> G[3.2 Provider Factory]
+    D --> F[2.2 Basic Optimization ✅]
+    E --> G[3.2 Provider Factory ✅]
 
-    F --> H[4.1 Collection Database Extensions]
+    F --> H[4.1 Collection Database Extensions ✅]
     G --> H
 
-    H --> I[4.2 Worker RPC]
-    I --> J[5.1 Collection Schema]
+    H --> I[4.2 Worker RPC ✅]
+    I --> J[5.1 Collection Schema ✅]
+```
 
-    J --> K[6.1 Demo Updates]
+#### Phase 6 (⭐ NEXT SPRINT)
+```mermaid
+graph TD
+    J[5.1 Collection Schema ✅] --> K[6.1 Text-Only Search API]
+    K --> L[6.2 Internal Embedding Pipeline]
+    L --> M[6.3 Advanced Query Processing]
+
+    K --> N[6.4.1 Demo Enhancement]
+    L --> N
+    M --> N
+
+    M --> O[6.4.2 API Documentation]
+
+    J --> Q[6.5 Original Demo Updates]
+
+    N --> P[Phase 6 Complete - Text-Only Hybrid Search]
+    O --> P
+    Q --> P
 ```
 
 ## Risk Assessment and Mitigation
@@ -348,25 +491,45 @@ graph TD
 - Performance under various loads
 - Cross-browser compatibility
 
-## Definition of Done (MVP)
+## Definition of Done
 
-### Code Requirements
-- [ ] All TypeScript strict mode compliance
-- [ ] Unit tests with >80% coverage for new code
-- [ ] Integration tests for all major workflows
-- [ ] Basic performance benchmarks meet requirements
-- [ ] Cross-browser testing completed
+### Phase 5 (✅ COMPLETED)
+- [x] All TypeScript strict mode compliance
+- [x] 91 comprehensive E2E tests created and passing
+- [x] Collections table supports embedding configurations
+- [x] Schema supports collection-based embedding metadata
+- [x] No breaking changes to existing functionality
+- [x] Embedding queue table implemented for background processing
+- [x] Schema migration system (v1 → v2) implemented
+- [x] Modular worker architecture refactoring completed
 
-### Functionality Requirements
-- [ ] Collections can be created with embedding configuration
-- [ ] Local embeddings work with Transformers.js (384-dim)
-- [ ] External embeddings work with OpenAI API
-- [ ] Search results can optionally include embedding vectors
-- [ ] Demo showcases all basic functionality
+### Phase 6 Definition of Done (⭐ TARGET)
 
-### Quality Gates
+#### Code Requirements
+- [ ] All TypeScript strict mode compliance for Phase 6 features
+- [ ] Unit tests with >90% coverage for new search and embedding code
+- [ ] Integration tests for text-only search workflows
+- [ ] Performance benchmarks meet Phase 6 requirements (<500ms search response)
+- [ ] Cross-browser testing completed for new features
+
+#### Functionality Requirements
+- [ ] Text-only hybrid search works with auto-mode detection
+- [ ] Query embedding generation with intelligent caching
+- [ ] Search strategy engine selects optimal approach (95% accuracy)
+- [ ] Result enhancement with snippets and reranking
+- [ ] Demo showcases text-only search capabilities
+- [ ] Comprehensive documentation for new APIs
+
+#### Performance Requirements
+- [ ] `searchText()` response time < 500ms (95th percentile)
+- [ ] Query embedding generation < 200ms
+- [ ] Cache hit rate > 70% for repeated queries
+- [ ] Memory usage < 150MB with all features loaded
+- [ ] Search relevance > 85% user satisfaction
+
+#### Quality Gates
 - [ ] No breaking changes to existing APIs
-- [ ] Backward compatibility maintained
-- [ ] Security review completed for API key handling
-- [ ] Basic performance impact assessment completed
-- [ ] Memory usage stays within reasonable limits
+- [ ] Backward compatibility maintained for Phases 1-5
+- [ ] Security review completed for enhanced caching
+- [ ] Performance impact assessment for Phase 6 features
+- [ ] Mobile device compatibility verified

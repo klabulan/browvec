@@ -8,12 +8,19 @@
 // Base SQL value types compatible with sql.js
 export type SQLValue = number | string | Uint8Array | null;
 
+// Extended SQL value types for internal worker use (includes Float32Array for vectors)
+export type ExtendedSQLValue = SQLValue | Float32Array;
+
 // SQL parameter types
 export type SQLParams = Record<string, SQLValue> | SQLValue[];
+
+// Extended SQL parameter types for internal worker use
+export type ExtendedSQLParams = Record<string, ExtendedSQLValue> | ExtendedSQLValue[];
 
 // Database operation result types
 export interface QueryResult {
   rows: Record<string, any>[];
+  columns?: string[];
   rowsAffected?: number;
   lastInsertRowid?: number;
 }
@@ -306,6 +313,10 @@ export interface DBWorkerAPI {
   search(params: SearchRequest): Promise<SearchResponse>;
   searchSemantic(params: SemanticSearchParams): Promise<SearchResponse>;
 
+  // Enhanced search API (Task 6.1)
+  searchText(params: TextSearchParams): Promise<EnhancedSearchResponse>;
+  searchAdvanced(params: AdvancedSearchParams): Promise<EnhancedSearchResponse>;
+  searchGlobal(params: GlobalSearchParams): Promise<GlobalSearchResponse>;
   // Data export/import
   export(params?: ExportParams): Promise<Uint8Array>;
   import(params: ImportParams): Promise<void>;
@@ -316,6 +327,16 @@ export interface DBWorkerAPI {
   processEmbeddingQueue(params?: ProcessEmbeddingQueueParams): Promise<ProcessEmbeddingQueueResult>;
   getQueueStatus(collection?: string): Promise<QueueStatusResult>;
   clearEmbeddingQueue(params?: ClearEmbeddingQueueParams): Promise<number>;
+
+  // Task 6.2: Internal Embedding Pipeline Operations
+  generateQueryEmbedding(params: GenerateQueryEmbeddingParams): Promise<QueryEmbeddingResult>;
+  batchGenerateQueryEmbeddings(params: BatchGenerateQueryEmbeddingsParams): Promise<BatchQueryEmbeddingResult[]>;
+  warmEmbeddingCache(params: WarmEmbeddingCacheParams): Promise<void>;
+  clearEmbeddingCache(params?: ClearEmbeddingCacheParams): Promise<void>;
+  getPipelineStats(): Promise<PipelinePerformanceStats>;
+  getModelStatus(): Promise<ModelStatusResult>;
+  preloadModels(params: PreloadModelsParams): Promise<void>;
+  optimizeModelMemory(params?: OptimizeModelMemoryParams): Promise<void>;
 
   // Utility operations
   getVersion(): Promise<{ sqlite: string; vec: string; sdk: string }>;
@@ -431,3 +452,152 @@ export interface ProcessEmbeddingQueueParams {
 }
 
 
+
+// Enhanced Search API types (Task 6.1)
+export interface TextSearchParams {
+  query: string;
+  options?: import("./search.js").TextSearchOptions;
+}
+
+export interface AdvancedSearchParams {
+  query: string;
+  collections?: string[];
+  searchPlan?: Partial<import("./search.js").SearchExecutionPlan>;
+  boosts?: import("./search.js").FieldBoosts;
+  filters?: import("./search.js").AdvancedFilters;
+  aggregations?: import("./search.js").AggregationRequest[];
+  facets?: import("./search.js").FacetRequest[];
+  explain?: boolean;
+}
+
+export interface GlobalSearchParams {
+  query: string;
+  options?: import("./search.js").GlobalSearchOptions;
+}
+
+// Task 6.2: Internal Embedding Pipeline RPC Parameters
+
+export interface GenerateQueryEmbeddingParams {
+  query: string;
+  collection: string;
+  options?: {
+    forceRefresh?: boolean;
+    timeout?: number;
+    priority?: number;
+    context?: {
+      userId?: string;
+      sessionId?: string;
+      source?: string;
+    };
+  };
+}
+
+export interface BatchGenerateQueryEmbeddingsParams {
+  requests: Array<{
+    id: string;
+    query: string;
+    collection: string;
+    options?: GenerateQueryEmbeddingParams['options'];
+  }>;
+  batchOptions?: {
+    batchSize?: number;
+    concurrency?: number;
+    timeout?: number;
+    onProgress?: (completed: number, total: number, current?: string) => void;
+  };
+}
+
+export interface WarmEmbeddingCacheParams {
+  collection: string;
+  commonQueries: string[];
+}
+
+export interface ClearEmbeddingCacheParams {
+  collection?: string;
+  pattern?: string;
+}
+
+export interface PreloadModelsParams {
+  providers: string[];
+  strategy?: 'eager' | 'lazy' | 'predictive';
+}
+
+export interface OptimizeModelMemoryParams {
+  maxMemoryUsage?: number;
+  maxModels?: number;
+  idleTimeout?: number;
+  aggressive?: boolean;
+}
+
+// Task 6.2: Pipeline Response Types
+
+export interface QueryEmbeddingResult {
+  embedding: Float32Array;
+  dimensions: number;
+  source: 'cache_memory' | 'cache_indexeddb' | 'cache_database' | 'provider_fresh';
+  processingTime: number;
+  metadata?: {
+    cacheHit?: boolean;
+    modelUsed?: string;
+    provider?: string;
+    confidence?: number;
+  };
+}
+
+export interface BatchQueryEmbeddingResult extends QueryEmbeddingResult {
+  requestId: string;
+  status: 'completed' | 'failed' | 'skipped';
+  error?: string;
+}
+
+export interface PipelinePerformanceStats {
+  totalRequests: number;
+  cacheHitRate: number;
+  averageGenerationTime: number;
+  activeModels: number;
+  memoryUsage: number;
+  cacheStats: {
+    memory: { hits: number; misses: number };
+    indexedDB: { hits: number; misses: number };
+    database: { hits: number; misses: number };
+  };
+}
+
+export interface ModelStatusResult {
+  loadedModels: Array<{
+    modelId: string;
+    provider: string;
+    modelName: string;
+    dimensions: number;
+    memoryUsage: number;
+    lastUsed: number;
+    usageCount: number;
+    status: 'loading' | 'ready' | 'error' | 'unloading';
+  }>;
+  totalMemoryUsage: number;
+  activeCount: number;
+  providerStats: Record<string, {
+    count: number;
+    memoryUsage: number;
+    avgLoadTime: number;
+  }>;
+}
+
+// Enhanced search response types
+export interface EnhancedSearchResponse extends SearchResponse {
+  strategy?: import("./search.js").SearchStrategy;
+  fusion?: import("./search.js").FusionMethod;
+  aggregations?: Record<string, any>;
+  facets?: Record<string, any>;
+  suggestions?: string[];
+  debugInfo?: import("./search.js").SearchDebugInfo;
+}
+
+export interface GlobalSearchResponse extends EnhancedSearchResponse {
+  collectionResults: Array<{
+    collection: string;
+    results: SearchResult[];
+    totalInCollection: number;
+  }>;
+  collectionsSearched: string[];
+}

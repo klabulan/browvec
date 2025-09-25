@@ -2,8 +2,45 @@
  * Type Exports for LocalRetrieve
  */
 
-// Worker types (includes WorkerError, DatabaseError, VectorError, OPFSError)
-export * from './worker.js';
+// Worker types (selective export to avoid conflicts)
+export type {
+  SQLValue,
+  SQLParams,
+  DBWorkerAPI,
+  OpenDatabaseParams,
+  ExecParams,
+  SelectParams,
+  BulkInsertParams,
+  SearchRequest,
+  SearchResult,
+  SearchResponse,
+  CollectionInfo,
+  QueryResult,
+  CreateCollectionParams,
+  InsertDocumentWithEmbeddingParams,
+  SemanticSearchParams,
+  ExportParams,
+  ImportParams,
+  GenerateEmbeddingRequest,
+  GenerateEmbeddingResult,
+  BatchEmbeddingRequest,
+  BatchEmbeddingResult,
+  EnqueueEmbeddingParams,
+  ProcessEmbeddingQueueParams,
+  ProcessEmbeddingQueueResult,
+  QueueStatusResult,
+  ClearEmbeddingQueueParams,
+  CollectionEmbeddingStatusResult,
+  WorkerError,
+  DatabaseError,
+  VectorError,
+  OPFSError,
+  TextSearchParams,
+  AdvancedSearchParams,
+  GlobalSearchParams,
+  EnhancedSearchResponse,
+  GlobalSearchResponse
+} from './worker.js';
 
 // Embedding system types (exclude conflicting exports)
 export {
@@ -11,8 +48,6 @@ export {
   CollectionEmbeddingConfig,
   EmbeddingProviderType as EmbeddingProvider,
   EmbeddingResult,
-  EmbeddingRequest as GenerateEmbeddingRequest,
-  EmbeddingResult as GenerateEmbeddingResult,
   EmbeddingRequestOptions
 } from '../embedding/types.js';
 
@@ -52,3 +87,32 @@ export {
 
 // Embedding cache implementation
 export { MemoryCache } from '../embedding/cache/MemoryCache.js';
+
+// Search system types and interfaces (selective export to avoid conflicts with worker.js)
+export {
+  SearchMode,
+  SearchStrategy,
+  QueryType,
+  FusionMethod,
+  ScoreNormalization,
+  QueryAnalysisError,
+  StrategySelectionError,
+  normalizeScore,
+  DEFAULT_STRATEGY_ENGINE_CONFIG
+} from "./search.js";
+
+export type {
+  QueryFeatures,
+  QueryAnalysis,
+  SearchExecutionPlan,
+  SearchContext,
+  TextSearchOptions,
+  SearchWeights,
+  ResultProcessingOptions,
+  SnippetOptions,
+  RerankingContext,
+  StrategyEngineConfig,
+  RawSearchResult,
+  ResultWithSnippets,
+  RankedResult
+} from "./search.js";
