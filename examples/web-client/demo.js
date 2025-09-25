@@ -216,7 +216,11 @@ class LocalRetrieveDemo {
 
             // Use consistent database filename for persistence across sessions
             const dbFilename = 'opfs:/localretrieve-demo/demo.db';
-            this.db = await initLocalRetrieve(dbFilename);
+            // Configure worker URL to use dist build for development
+            const config = {
+                workerUrl: '/dist/database/worker.js'
+            };
+            this.db = await initLocalRetrieve(dbFilename, config);
 
             const initTime = performance.now() - startTime;
 

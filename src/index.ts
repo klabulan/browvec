@@ -211,7 +211,8 @@ export async function initLocalRetrieve(
     filename
   };
 
-  const db = await DatabaseClass.create(undefined, filename);
+  const db = new DatabaseClass(finalConfig);
+  await db._initialize();
   
   // Initialize schema only if needed (the schema check handles existence)
   try {

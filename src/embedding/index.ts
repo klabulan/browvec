@@ -97,14 +97,9 @@ export {
 // Text processing utilities
 export {
   TextProcessor,
-  type TextProcessorConfig,
-  type ProcessingOptions,
-  type ProcessingResult,
-  type CleaningOptions,
-  type NormalizationOptions,
-  type TokenizationOptions,
+  type TextProcessingResult,
   type TruncationOptions,
-  type PreprocessingStats
+  type ProcessingStatistics
 } from './TextProcessor.js';
 
 // Utility classes and interfaces
@@ -127,7 +122,7 @@ export {
   MemoryCache,
   type MemoryCacheConfig,
   type CacheEntry,
-  type CacheStats
+  type CacheMetrics
 } from './cache/MemoryCache.js';
 
 // Provider Factory
@@ -144,6 +139,8 @@ export {
   type ProviderConfigInfo,
   type ProviderRecommendation
 } from './ProviderFactory.js';
+import { providerFactory as providerFactoryImpl } from './ProviderFactory.js';
+import { getRecommendedConfig as getRecommendedConfigImpl } from './providers/OpenAIProvider.js';
 
 // Constants and defaults
 export const EMBEDDING_DEFAULTS = {
@@ -171,7 +168,7 @@ export const EMBEDDING_DEFAULTS = {
   }
 } as const;
 
-export const SUPPORTED_PROVIDERS: Record<EmbeddingProviderType, {
+export const SUPPORTED_PROVIDERS: Record<import('./types.js').EmbeddingProviderType, {
   name: string;
   type: 'local' | 'external';
   description: string;
@@ -223,10 +220,10 @@ export const SUPPORTED_PROVIDERS: Record<EmbeddingProviderType, {
  * @returns Экземпляр провайдера эмбеддингов
  */
 export async function createEmbeddingProvider(
-  config: CollectionEmbeddingConfig
-): Promise<EmbeddingProvider> {
+  config: import('./types.js').CollectionEmbeddingConfig
+): Promise<import('./providers/BaseProvider.js').EmbeddingProvider> {
   // Delegate to the new provider factory for better error handling and validation
-  return providerFactory.createProvider(config);
+  return providerFactoryImpl.createProvider(config);
 }
 
 /**
@@ -236,14 +233,14 @@ export async function createEmbeddingProvider(
  * @param config - Конфигурация для валидации
  * @returns Результат валидации
  */
-export function validateEmbeddingConfig(config: CollectionEmbeddingConfig): {
+export function validateEmbeddingConfig(config: import('./types.js').CollectionEmbeddingConfig): {
   isValid: boolean;
   errors: string[];
   warnings: string[];
   suggestions: string[];
 } {
   // Delegate to the new provider factory for comprehensive validation
-  return providerFactory.validateConfiguration(config);
+  return (providerFactoryImpl as any).validateConfiguration(config);
 }
 
 /**
@@ -258,7 +255,7 @@ export function getRecommendedEmbeddingConfig(requirements: {
   budget?: 'low' | 'medium' | 'high';
   performance?: 'fast' | 'balanced' | 'accurate';
   apiKey?: string;
-}): CollectionEmbeddingConfig {
+}): import('./types.js').CollectionEmbeddingConfig {
   const {
     dimensions = EMBEDDING_DEFAULTS.DIMENSIONS.SMALL,
     offline = false,
@@ -281,7 +278,7 @@ export function getRecommendedEmbeddingConfig(requirements: {
   }
 
   // Для online режима выбираем OpenAI на основе требований
-  const openaiConfig = getRecommendedConfig({ dimensions, budget, performance });
+  const openaiConfig = (getRecommendedConfigImpl as any)({ dimensions, budget, performance });
 
   return {
     provider: 'openai',
@@ -303,8 +300,8 @@ export function getRecommendedEmbeddingConfig(requirements: {
  * @returns Информация о совместимости
  */
 export function checkConfigCompatibility(
-  oldConfig: CollectionEmbeddingConfig,
-  newConfig: CollectionEmbeddingConfig
+  oldConfig: import('./types.js').CollectionEmbeddingConfig,
+  newConfig: import('./types.js').CollectionEmbeddingConfig
 ): {
   compatible: boolean;
   requiresRegeneration: boolean;

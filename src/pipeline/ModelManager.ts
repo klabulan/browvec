@@ -6,7 +6,7 @@
  * выгрузку неиспользуемых моделей для оптимизации ресурсов.
  */
 
-import type { EmbeddingProvider, EmbeddingProviderType, CollectionEmbeddingConfig } from '../embedding/types.js';
+import type { EmbeddingProviderType, CollectionEmbeddingConfig } from '../embedding/types.js';
 import { providerFactory } from '../embedding/ProviderFactory.js';
 import { ModelLoadError, ConfigurationError, EmbeddingError } from '../embedding/errors.js';
 
@@ -28,7 +28,7 @@ export interface LoadedModel {
   /** Размерность эмбеддингов */
   dimensions: number;
   /** Экземпляр провайдера */
-  providerInstance: EmbeddingProvider;
+  providerInstance: any;
   /** Время последнего использования */
   lastUsed: number;
   /** Счетчик использований */
@@ -82,7 +82,7 @@ export interface EmbeddingModel {
   /** Конфигурация */
   config: CollectionEmbeddingConfig;
   /** Провайдер */
-  provider: EmbeddingProvider;
+  provider: any;
   /** Метрики производительности */
   metrics: {
     averageInferenceTime: number;
@@ -438,7 +438,10 @@ export class ModelManagerImpl implements ModelManager {
 
       throw new ModelLoadError(
         `Failed to load model ${modelId}: ${loadingModel.error}`,
-        { provider, model, modelId }
+        provider,
+        modelId,
+        undefined,
+        { model }
       );
     }
   }
@@ -483,7 +486,7 @@ export class ModelManagerImpl implements ModelManager {
     while (Date.now() - startTime < maxWaitTime) {
       const model = this.models.get(modelId);
       if (!model) {
-        throw new ModelLoadError(`Model ${modelId} was removed during loading`);
+        throw new ModelLoadError(`Model ${modelId} was removed during loading`, 'unknown', modelId);
       }
 
       if (model.status === 'ready') {
@@ -498,13 +501,13 @@ export class ModelManagerImpl implements ModelManager {
       }
 
       if (model.status === 'error') {
-        throw new ModelLoadError(`Model ${modelId} failed to load: ${model.error}`);
+        throw new ModelLoadError(`Model ${modelId} failed to load: ${model.error}`, 'unknown', modelId);
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
-    throw new ModelLoadError(`Model ${modelId} loading timeout`);
+    throw new ModelLoadError(`Model ${modelId} loading timeout`, 'unknown', modelId);
   }
 
   /**

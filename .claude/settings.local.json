@@ -15,7 +15,9 @@
       "mcp__atlassian__createJiraIssue",
       "Bash(npx playwright:*)",
       "mcp__atlassian__getJiraProjectIssueTypesMetadata",
-      "WebSearch"
+      "WebSearch",
+      "Bash(npx tsc:*)",
+      "Bash(tasklist)"
     ],
     "deny": [],
     "ask": []

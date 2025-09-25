@@ -359,14 +359,26 @@ export class ParameterValidator {
     }
 
     // Additional validation for parameter safety
-    params.forEach((param, index) => {
-      if (typeof param === 'string' && param.length > 100000) {
-        throw new Error(`SQL parameter ${index} too large (${param.length} chars) for ${methodName}`);
-      }
-      if (param instanceof Uint8Array && param.length > 10000000) { // 10MB limit
-        throw new Error(`SQL parameter ${index} blob too large (${param.length} bytes) for ${methodName}`);
-      }
-    });
+    if (Array.isArray(params)) {
+      params.forEach((param: any, index: number) => {
+        if (typeof param === 'string' && param.length > 100000) {
+          throw new Error(`SQL parameter ${index} too large (${param.length} chars) for ${methodName}`);
+        }
+        if (param instanceof Uint8Array && param.length > 10000000) { // 10MB limit
+          throw new Error(`SQL parameter ${index} blob too large (${param.length} bytes) for ${methodName}`);
+        }
+      });
+    } else {
+      // Handle object-style parameters
+      Object.entries(params).forEach(([key, value]) => {
+        if (typeof value === 'string' && value.length > 100000) {
+          throw new Error(`SQL parameter ${key} too large (${value.length} chars) for ${methodName}`);
+        }
+        if (value instanceof Uint8Array && value.length > 10000000) { // 10MB limit
+          throw new Error(`SQL parameter ${key} blob too large (${value.length} bytes) for ${methodName}`);
+        }
+      });
+    }
 
     return params;
   }

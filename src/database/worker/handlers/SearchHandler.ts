@@ -655,8 +655,8 @@ export class SearchHandler extends BaseHandler {
         query: query.substring(0, 50),
         embeddingTime,
         dimensions: embeddingResult.dimensions,
-        source: embeddingResult.source,
-        cacheHit: embeddingResult.metadata?.cacheHit
+        source: (embeddingResult as any).source,
+        cacheHit: (embeddingResult as any).metadata?.cacheHit
       });
 
       // Выполняем векторный поиск в SQLite

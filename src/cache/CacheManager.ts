@@ -294,7 +294,8 @@ export class CacheManagerImpl implements CacheManager {
       throw new CacheError(
         `Failed to set cache value for key "${key}": ${error instanceof Error ? error.message : String(error)}`,
         'SET_FAILED',
-        { key, level, options }
+        key,
+        { level, options }
       );
     }
   }
@@ -318,7 +319,7 @@ export class CacheManagerImpl implements CacheManager {
       throw new CacheError(
         `Failed to invalidate cache pattern "${pattern}": ${error instanceof Error ? error.message : String(error)}`,
         'INVALIDATION_FAILED',
-        { pattern }
+        pattern
       );
     }
   }
@@ -356,10 +357,24 @@ export class CacheManagerImpl implements CacheManager {
   async preloadModels(providers: string[]): Promise<void> {
     // Используем ModelCache для предзагрузки
     const preloadPromises = providers.map(async (provider) => {
-      const modelInfo = {
-        provider,
-        preloadedAt: Date.now(),
-        status: 'preloaded'
+      const modelInfo: import('./ModelCache.js').CachedModelInfo = {
+        modelId: `${provider}-default`,
+        provider: provider as any, // Type assertion for provider
+        modelName: `${provider} Default Model`,
+        dimensions: 384, // Default dimensions
+        loadTime: 0,
+        cachedAt: Date.now(),
+        lastUsed: Date.now(),
+        usageCount: 0,
+        memoryUsage: 0,
+        status: 'ready',
+        performance: {
+          averageInferenceTime: 0,
+          successRate: 1.0,
+          errorCount: 0,
+          lastBenchmark: Date.now()
+        },
+        tags: ['default', 'preloaded']
       };
 
       await this.modelCache.set(`model:${provider}`, modelInfo);
@@ -469,7 +484,7 @@ export class CacheManagerImpl implements CacheManager {
         return this.getFromDatabase<T>(key);
 
       default:
-        throw new CacheError(`Unknown cache level: ${level}`);
+        throw new CacheError(`Unknown cache level: ${level}`, 'read', `unknown:${level}`);
     }
   }
 

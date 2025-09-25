@@ -308,6 +308,39 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('clearEmbeddingQueue', params);
   }
 
+  // Task 6.2: Internal Embedding Pipeline RPC methods
+  async generateQueryEmbedding(params: Parameters<DBWorkerAPI["generateQueryEmbedding"]>[0]) {
+    return this.call("generateQueryEmbedding", params);
+  }
+
+  async batchGenerateQueryEmbeddings(params: Parameters<DBWorkerAPI["batchGenerateQueryEmbeddings"]>[0]) {
+    return this.call("batchGenerateQueryEmbeddings", params);
+  }
+
+  async warmEmbeddingCache(params: Parameters<DBWorkerAPI["warmEmbeddingCache"]>[0]) {
+    return this.call("warmEmbeddingCache", params);
+  }
+
+  async clearEmbeddingCache(params?: Parameters<DBWorkerAPI["clearEmbeddingCache"]>[0]) {
+    return this.call("clearEmbeddingCache", params);
+  }
+
+  async getPipelineStats() {
+    return this.call("getPipelineStats");
+  }
+
+  async getModelStatus() {
+    return this.call("getModelStatus");
+  }
+
+  async preloadModels(params: Parameters<DBWorkerAPI["preloadModels"]>[0]) {
+    return this.call("preloadModels", params);
+  }
+
+  async optimizeModelMemory(params?: Parameters<DBWorkerAPI["optimizeModelMemory"]>[0]) {
+    return this.call("optimizeModelMemory", params);
+  }
+
   // Utility methods
   getPerformanceMetrics() {
     const avgLatency = this.performanceMetrics.totalCalls > 0 

@@ -12,9 +12,9 @@ export {
   createInternalPipeline,
   type EmbeddingOptions,
   type BatchOptions,
-  type EmbeddingResult,
-  type BatchEmbeddingResult,
-  type EmbeddingRequest,
+  type PipelineEmbeddingResult,
+  type PipelineBatchEmbeddingResult,
+  type PipelineEmbeddingRequest,
   type PipelinePerformanceStats
 } from './InternalPipeline.js';
 

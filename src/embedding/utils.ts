@@ -239,6 +239,24 @@ export class EmbeddingUtils {
   }
 
   /**
+   * Синхронная генерация хеша для текста
+   *
+   * @param text - Текст для хеширования
+   * @param options - Опции хеширования
+   * @returns Результат хеширования
+   */
+  public static hashText(text: string, options: { algorithm?: string } = {}): HashResult {
+    const algorithm = options.algorithm === 'simple' ? 'simple' : 'djb2';
+    const hash = EmbeddingUtils.simpleHash(text);
+
+    return {
+      hash,
+      algorithm,
+      timestamp: new Date()
+    };
+  }
+
+  /**
    * Сортировка ключей объекта для стабильного хеширования
    *
    * @param obj - Объект для сортировки

@@ -156,7 +156,7 @@ export class OpenAIProvider extends ExternalProvider {
     const modelInfo = OPENAI_MODELS[model as keyof typeof OPENAI_MODELS];
 
     // Валидация размерности для выбранной модели
-    if (!modelInfo.supportedDimensions.includes(dimensions)) {
+    if (!(modelInfo.supportedDimensions as readonly number[]).includes(dimensions)) {
       throw new ConfigurationError(
         `Unsupported dimensions ${dimensions} for model ${model}`,
         'dimensions',
@@ -173,7 +173,7 @@ export class OpenAIProvider extends ExternalProvider {
     );
 
     this.model = model;
-    this.supportedDimensions = modelInfo.supportedDimensions;
+    this.supportedDimensions = [...modelInfo.supportedDimensions];
     this.maxInputTokens = modelInfo.maxInputTokens;
   }
 
@@ -289,9 +289,9 @@ export class OpenAIProvider extends ExternalProvider {
       // Обработка успешного ответа
       return this.processSuccessfulResponse(responseData as OpenAIEmbeddingResponse);
 
-    } catch (error) {
+    } catch (error: unknown) {
       // Обработка ошибок запроса
-      if (error.name === 'AbortError') {
+      if (error instanceof Error && error.name === 'AbortError') {
         throw new NetworkError(
           `Request timeout after ${this.openaiConfig.timeout}ms`,
           'timeout',
@@ -491,10 +491,10 @@ export class OpenAIProvider extends ExternalProvider {
     }
 
     // Проверка модели и размерности
-    const modelName = config.providerOptions?.model || this.model;
+    const modelName = (config as any).providerOptions?.model || this.model;
     if (modelName in OPENAI_MODELS) {
       const modelInfo = OPENAI_MODELS[modelName as keyof typeof OPENAI_MODELS];
-      if (!modelInfo.supportedDimensions.includes(this.dimensions)) {
+      if (!(modelInfo.supportedDimensions as readonly number[]).includes(this.dimensions)) {
         errors.push(`Model ${modelName} does not support ${this.dimensions} dimensions`);
         suggestions.push(`Use one of: ${modelInfo.supportedDimensions.join(', ')}`);
       }
@@ -534,7 +534,7 @@ export function isValidModelDimensionCombo(model: string, dimensions: number): b
   }
 
   const modelInfo = OPENAI_MODELS[model as keyof typeof OPENAI_MODELS];
-  return modelInfo.supportedDimensions.includes(dimensions);
+  return (modelInfo.supportedDimensions as readonly number[]).includes(dimensions);
 }
 
 /**

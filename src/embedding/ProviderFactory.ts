@@ -434,6 +434,8 @@ export class EmbeddingProviderFactoryImpl implements EmbeddingProviderFactory {
     }
 
     return new TransformersProvider({
+      defaultProvider: 'transformers',
+      defaultDimensions: 384,
       batchSize: config.batchSize || 16,
       enableLogging: false,
       modelLoadTimeout: config.timeout || 30000,

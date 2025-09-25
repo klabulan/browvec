@@ -19,7 +19,7 @@ import { ProviderError, ProviderInitializationError, ModelLoadError, TimeoutErro
 /**
  * Конфигурация для Transformers.js провайдера
  */
-export interface TransformersProviderConfig {
+export interface TransformersProviderConfig extends EmbeddingConfig {
   /** Путь к скрипту воркера */
   workerScript?: string;
 
@@ -29,17 +29,14 @@ export interface TransformersProviderConfig {
   /** Максимальное время ожидания операции в миллисекундах */
   operationTimeout?: number;
 
-  /** Размер батча для оптимизации */
-  batchSize?: number;
-
-  /** Включить ли детальное логирование */
-  enableLogging?: boolean;
-
   /** Путь к модели (по умолчанию 'Xenova/all-MiniLM-L6-v2') */
   modelPath?: string;
 
   /** Кэширование модели в localStorage */
   enableModelCache?: boolean;
+
+  /** Включить ли детальное логирование */
+  enableLogging?: boolean;
 }
 
 /**
@@ -74,7 +71,7 @@ export class TransformersProvider extends BaseEmbeddingProvider {
   private worker?: Worker;
 
   /** Конфигурация провайдера */
-  private config: TransformersProviderConfig;
+  protected config: TransformersProviderConfig;
 
   /** Очередь ожидающих запросов */
   private pendingRequests = new Map<string, {
@@ -99,7 +96,10 @@ export class TransformersProvider extends BaseEmbeddingProvider {
     lastCleanup: new Date()
   };
 
-  constructor(config: TransformersProviderConfig = {}) {
+  constructor(config: TransformersProviderConfig = {
+    defaultProvider: 'transformers',
+    defaultDimensions: 384
+  }) {
     super(
       'transformers',
       384, // Фиксированная размерность для all-MiniLM-L6-v2

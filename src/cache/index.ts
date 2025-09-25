@@ -15,6 +15,7 @@ export {
   type CacheStatistics,
   type CacheResult
 } from './CacheManager.js';
+import { createCacheManager as createCacheManagerImpl } from './CacheManager.js';
 
 // Query-specific caching
 export {
@@ -157,10 +158,10 @@ export interface CacheIntegration {
 
   /** Интеграция с метриками */
   metricsCollector?: {
-    recordCacheHit: (level: CacheLevel) => void;
+    recordCacheHit: (level: import('./CacheManager.js').CacheLevel) => void;
     recordCacheMiss: () => void;
-    recordCacheEviction: (level: CacheLevel) => void;
-    recordAccessTime: (level: CacheLevel, time: number) => void;
+    recordCacheEviction: (level: import('./CacheManager.js').CacheLevel) => void;
+    recordAccessTime: (level: import('./CacheManager.js').CacheLevel, time: number) => void;
   };
 
   /** Интеграция с логированием */
@@ -181,7 +182,7 @@ export function createIntegratedCacheSystem(
 ) {
   const fullConfig = { ...DEFAULT_CACHE_CONFIG, ...config };
 
-  const cacheManager = createCacheManager({
+  const cacheManager = createCacheManagerImpl({
     memorySize: fullConfig.MEMORY_SIZE,
     indexedDBName: 'LocalRetrieveCache',
     dbVersion: 1

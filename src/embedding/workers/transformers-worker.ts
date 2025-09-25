@@ -12,7 +12,18 @@
  */
 
 // Импорт Transformers.js
-import { pipeline, Pipeline, env } from '@xenova/transformers';
+import { pipeline, env, type FeatureExtractionPipeline } from '@xenova/transformers';
+
+// Extend Performance interface to include memory
+declare global {
+  interface Performance {
+    memory?: {
+      usedJSHeapSize: number;
+      totalJSHeapSizeLimit: number;
+      totalJSHeapSize: number;
+    };
+  }
+}
 
 /**
  * Интерфейсы для сообщений воркера
@@ -48,7 +59,7 @@ interface WorkerConfig {
  * Класс для управления моделью Transformers.js в воркере
  */
 class TransformersWorkerManager {
-  private pipeline?: Pipeline;
+  private pipeline?: FeatureExtractionPipeline & { processor?: any; };
   private isInitialized = false;
   private config?: WorkerConfig;
   private modelLoadTime = 0;
@@ -387,7 +398,7 @@ self.onerror = (error) => {
   const response: WorkerResponse = {
     id: 'error',
     success: false,
-    error: `Worker error: ${error.message}`,
+    error: `Worker error: ${typeof error === 'string' ? error : (error as any).message || 'Unknown error'}`,
     metadata: {
       generationTime: 0,
       memoryUsage: performance.memory?.usedJSHeapSize

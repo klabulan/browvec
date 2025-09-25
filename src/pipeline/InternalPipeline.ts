@@ -13,11 +13,11 @@
  */
 
 import type {
-  EmbeddingProvider,
-  EmbeddingResult,
-  EmbeddingRequest,
+  EmbeddingProviderType,
+  EmbeddingResult as EmbeddingResultType,
+  EmbeddingRequest as EmbeddingRequestType,
   EmbeddingRequestOptions,
-  BatchEmbeddingResult,
+  BatchEmbeddingResult as BatchEmbeddingResultType,
   CollectionEmbeddingConfig
 } from '../embedding/types.js';
 import type { CacheManager } from '../cache/CacheManager.js';
@@ -61,7 +61,7 @@ export interface BatchOptions {
 /**
  * Результат генерации эмбеддинга
  */
-export interface EmbeddingResult {
+export interface PipelineEmbeddingResult {
   /** Вектор эмбеддинга */
   embedding: Float32Array;
   /** Размерность вектора */
@@ -82,7 +82,7 @@ export interface EmbeddingResult {
 /**
  * Batch результат с детальной информацией
  */
-export interface BatchEmbeddingResult extends EmbeddingResult {
+export interface PipelineBatchEmbeddingResult extends PipelineEmbeddingResult {
   /** ID запроса в batch */
   requestId: string;
   /** Статус обработки */
@@ -94,7 +94,7 @@ export interface BatchEmbeddingResult extends EmbeddingResult {
 /**
  * Запрос на генерацию эмбеддинга
  */
-export interface EmbeddingRequest {
+export interface PipelineEmbeddingRequest {
   /** Уникальный ID запроса */
   id: string;
   /** Текст для обработки */
@@ -112,17 +112,17 @@ export interface InternalPipeline {
   /**
    * Генерация эмбеддинга для поискового запроса с кэшированием
    */
-  generateQueryEmbedding(query: string, collection: string, options?: EmbeddingOptions): Promise<EmbeddingResult>;
+  generateQueryEmbedding(query: string, collection: string, options?: EmbeddingOptions): Promise<PipelineEmbeddingResult>;
 
   /**
    * Batch генерация эмбеддингов с управлением прогрессом
    */
-  batchGenerateEmbeddings(requests: EmbeddingRequest[], options?: BatchOptions): Promise<BatchEmbeddingResult[]>;
+  batchGenerateEmbeddings(requests: PipelineEmbeddingRequest[], options?: BatchOptions): Promise<PipelineBatchEmbeddingResult[]>;
 
   /**
    * Получение кэшированного эмбеддинга
    */
-  getCachedEmbedding(query: string, collection: string): Promise<EmbeddingResult | null>;
+  getCachedEmbedding(query: string, collection: string): Promise<PipelineEmbeddingResult | null>;
 
   /**
    * Предварительный прогрев кэша для популярных запросов
@@ -179,7 +179,7 @@ export class InternalPipelineImpl implements InternalPipeline {
   };
 
   // Провайдеры по коллекциям
-  private providers: Map<string, EmbeddingProvider>;
+  private providers: Map<string, any>;
 
   // Конфигурации коллекций
   private collectionConfigs: Map<string, CollectionEmbeddingConfig>;
@@ -203,7 +203,7 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Генерация эмбеддинга для поискового запроса с многоуровневым кэшированием
    */
-  async generateQueryEmbedding(query: string, collection: string, options?: EmbeddingOptions): Promise<EmbeddingResult> {
+  async generateQueryEmbedding(query: string, collection: string, options?: EmbeddingOptions): Promise<PipelineEmbeddingResult> {
     const startTime = Date.now();
     this.stats.totalRequests++;
 
@@ -230,7 +230,7 @@ export class InternalPipelineImpl implements InternalPipeline {
       const timeout = options?.timeout || 5000; // 5 секунд по умолчанию
       const embeddingPromise = this.generateFreshEmbedding(query, provider);
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new TimeoutError(`Embedding generation timeout after ${timeout}ms`)), timeout)
+        setTimeout(() => reject(new TimeoutError(`Embedding generation timeout after ${timeout}ms`, timeout, 'generateQueryEmbedding')), timeout)
       );
 
       // Генерация эмбеддинга с таймаутом
@@ -239,7 +239,7 @@ export class InternalPipelineImpl implements InternalPipeline {
       const processingTime = Date.now() - startTime;
       this.stats.totalGenerationTime += processingTime;
 
-      const result: EmbeddingResult = {
+      const result: PipelineEmbeddingResult = {
         embedding,
         dimensions: embedding.length,
         source: 'provider_fresh',
@@ -270,6 +270,7 @@ export class InternalPipelineImpl implements InternalPipeline {
       throw new EmbeddingError(
         `Failed to generate query embedding: ${error instanceof Error ? error.message : String(error)}`,
         'GENERATION_FAILED',
+        'provider',
         { query: query.substring(0, 100), collection }
       );
     }
@@ -278,17 +279,17 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Batch генерация эмбеддингов с управлением прогрессом
    */
-  async batchGenerateEmbeddings(requests: EmbeddingRequest[], options?: BatchOptions): Promise<BatchEmbeddingResult[]> {
+  async batchGenerateEmbeddings(requests: PipelineEmbeddingRequest[], options?: BatchOptions): Promise<PipelineBatchEmbeddingResult[]> {
     if (requests.length === 0) {
       return [];
     }
 
     const batchSize = options?.batchSize || 32;
     const concurrency = options?.concurrency || 3;
-    const results: BatchEmbeddingResult[] = [];
+    const results: PipelineBatchEmbeddingResult[] = [];
 
     // Разбиваем запросы на batch'и
-    const batches: EmbeddingRequest[][] = [];
+    const batches: PipelineEmbeddingRequest[][] = [];
     for (let i = 0; i < requests.length; i += batchSize) {
       batches.push(requests.slice(i, i + batchSize));
     }
@@ -297,8 +298,8 @@ export class InternalPipelineImpl implements InternalPipeline {
     const total = requests.length;
 
     // Обработка batch'ей с ограниченным параллелизмом
-    const processBatch = async (batch: EmbeddingRequest[]): Promise<BatchEmbeddingResult[]> => {
-      const batchResults: BatchEmbeddingResult[] = [];
+    const processBatch = async (batch: PipelineEmbeddingRequest[]): Promise<PipelineBatchEmbeddingResult[]> => {
+      const batchResults: PipelineBatchEmbeddingResult[] = [];
 
       for (const request of batch) {
         try {
@@ -352,7 +353,7 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Получение кэшированного эмбеддинга с проверкой всех уровней
    */
-  async getCachedEmbedding(query: string, collection: string): Promise<EmbeddingResult | null> {
+  async getCachedEmbedding(query: string, collection: string): Promise<PipelineEmbeddingResult | null> {
     const cacheKey = this.generateCacheKey(query, collection);
 
     try {
@@ -408,7 +409,7 @@ export class InternalPipelineImpl implements InternalPipeline {
    */
   async warmCache(commonQueries: string[], collection: string): Promise<void> {
     const batchSize = 10;
-    const requests: EmbeddingRequest[] = commonQueries.map((query, index) => ({
+    const requests: PipelineEmbeddingRequest[] = commonQueries.map((query, index) => ({
       id: `warmup-${index}`,
       query,
       collection,
@@ -484,22 +485,22 @@ export class InternalPipelineImpl implements InternalPipeline {
    */
   private validateInputs(query: string, collection: string): void {
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
-      throw new ConfigurationError('Query must be a non-empty string');
+      throw new ConfigurationError('Query must be a non-empty string', 'query', 'non-empty string', query);
     }
 
     if (query.length > 8192) { // Лимит из embedding constants
-      throw new ConfigurationError('Query is too long (max 8192 characters)');
+      throw new ConfigurationError('Query is too long (max 8192 characters)', 'query', 'string with length <= 8192', query.length);
     }
 
     if (!collection || typeof collection !== 'string') {
-      throw new ConfigurationError('Collection must be specified');
+      throw new ConfigurationError('Collection must be specified', 'collection', 'non-empty string', collection);
     }
   }
 
   /**
    * Получение провайдера для коллекции
    */
-  private async getProviderForCollection(collection: string): Promise<EmbeddingProvider> {
+  private async getProviderForCollection(collection: string): Promise<any> {
     // Проверяем кэш провайдеров
     if (this.providers.has(collection)) {
       const provider = this.providers.get(collection)!;
@@ -522,13 +523,14 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Генерация свежего эмбеддинга через провайдера
    */
-  private async generateFreshEmbedding(query: string, provider: EmbeddingProvider): Promise<Float32Array> {
+  private async generateFreshEmbedding(query: string, provider: any): Promise<Float32Array> {
     const result = await provider.generateEmbedding(query);
 
     if (!result.success || !result.embedding) {
       throw new EmbeddingError(
         'Provider failed to generate embedding',
         'PROVIDER_ERROR',
+        'provider',
         { error: result.error }
       );
     }
@@ -539,7 +541,7 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Асинхронное сохранение в кэш
    */
-  private async saveToCacheAsync(query: string, collection: string, result: EmbeddingResult): Promise<void> {
+  private async saveToCacheAsync(query: string, collection: string, result: PipelineEmbeddingResult): Promise<void> {
     const cacheKey = this.generateCacheKey(query, collection);
 
     try {
@@ -586,7 +588,7 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Получение типа провайдера
    */
-  private getProviderType(provider: EmbeddingProvider): string {
+  private getProviderType(provider: any): string {
     // Проверяем по классу или свойствам провайдера
     const modelInfo = provider.getModelInfo?.();
     return modelInfo?.provider || 'unknown';
@@ -595,7 +597,7 @@ export class InternalPipelineImpl implements InternalPipeline {
   /**
    * Обновление статистики попаданий в кэш
    */
-  private updateCacheHitStats(source: EmbeddingResult['source']): void {
+  private updateCacheHitStats(source: PipelineEmbeddingResult['source']): void {
     const current = this.stats.cacheHitsByLevel.get(source) || 0;
     this.stats.cacheHitsByLevel.set(source, current + 1);
   }

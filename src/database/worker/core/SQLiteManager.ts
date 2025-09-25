@@ -55,12 +55,12 @@ export class SQLiteManager {
       this.sqlite3 = await sqlite3Module.default();
 
       // Verify essential functions are available
-      if (!this.sqlite3._sqlite3_open || !this.sqlite3._sqlite3_close) {
+      if (!this.sqlite3?._sqlite3_open || !this.sqlite3?._sqlite3_close) {
         throw new DatabaseError('SQLite WASM module is incomplete - missing core functions');
       }
 
-      const versionPtr = this.sqlite3._sqlite3_libversion();
-      const version = versionPtr && this.sqlite3.UTF8ToString ? this.sqlite3.UTF8ToString(versionPtr) : 'unknown';
+      const versionPtr = this.sqlite3?._sqlite3_libversion();
+      const version = versionPtr && this.sqlite3?.UTF8ToString ? this.sqlite3.UTF8ToString(versionPtr) : 'unknown';
       this.log('info', `SQLite WASM loaded successfully, version: ${version}`);
 
     } catch (error) {

@@ -81,7 +81,7 @@ interface RetryState {
  * Абстрактный базовый класс для внешних API провайдеров
  */
 export abstract class ExternalProvider extends BaseEmbeddingProvider {
-  protected config?: ExternalProviderConfig;
+  protected config?: EmbeddingConfig & ExternalProviderConfig;
   protected rateLimitInfo?: RateLimitInfo;
   protected requestQueue: Array<() => void> = [];
   protected isProcessingQueue = false;
@@ -131,22 +131,23 @@ export abstract class ExternalProvider extends BaseEmbeddingProvider {
     // Настройка конфигурации провайдера
     this.config = {
       ...ExternalProvider.DEFAULT_CONFIG,
+      ...config,
       apiKey: config.apiKey,
-      baseUrl: config.providerOptions?.baseUrl,
-      timeout: config.timeout || ExternalProvider.DEFAULT_CONFIG.timeout,
-      maxRetries: config.maxRetries || ExternalProvider.DEFAULT_CONFIG.maxRetries,
-      enableRateLimit: config.providerOptions?.enableRateLimit ?? ExternalProvider.DEFAULT_CONFIG.enableRateLimit,
-      requestsPerMinute: config.providerOptions?.requestsPerMinute || ExternalProvider.DEFAULT_CONFIG.requestsPerMinute,
-      headers: config.providerOptions?.headers || {}
-    };
+      baseUrl: (config as any).providerOptions?.baseUrl,
+      timeout: (config as any).timeout || ExternalProvider.DEFAULT_CONFIG.timeout,
+      maxRetries: (config as any).maxRetries || ExternalProvider.DEFAULT_CONFIG.maxRetries,
+      enableRateLimit: (config as any).providerOptions?.enableRateLimit ?? ExternalProvider.DEFAULT_CONFIG.enableRateLimit,
+      requestsPerMinute: (config as any).providerOptions?.requestsPerMinute || ExternalProvider.DEFAULT_CONFIG.requestsPerMinute,
+      headers: (config as any).providerOptions?.headers || {}
+    } as any;
 
     // Инициализация rate limiting
-    if (this.config.enableRateLimit) {
+    if (this.config?.enableRateLimit) {
       this.initializeRateLimit();
     }
 
     // Выполнение специфичной для провайдера инициализации
-    await this.initializeProvider(this.config);
+    await this.initializeProvider(this.config!);
 
     // Проверка здоровья после инициализации
     const health = await this.healthCheck();

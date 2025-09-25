@@ -109,7 +109,7 @@ export class Logger {
 
     const timestamp = Date.now();
     const logEntry: LogEntry = {
-      level,
+      level: level as LogLevel,
       message,
       timestamp,
       component: this.config.component,

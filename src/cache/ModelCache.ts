@@ -8,7 +8,8 @@
  * - Статистику использования моделей
  */
 
-import type { EmbeddingProvider, EmbeddingProviderType } from '../embedding/types.js';
+import type { EmbeddingProviderType } from '../embedding/types.js';
+import type { EmbeddingProvider } from '../embedding/providers/BaseProvider.js';
 import { CacheError } from '../embedding/errors.js';
 
 /**
@@ -258,9 +259,9 @@ export class ModelCache {
     if (!entry) return false;
 
     // Освобождаем ресурсы провайдера
-    if (entry.providerInstance && typeof entry.providerInstance.dispose === 'function') {
+    if (entry.providerInstance && 'dispose' in entry.providerInstance && typeof (entry.providerInstance as any).dispose === 'function') {
       try {
-        await entry.providerInstance.dispose();
+        await (entry.providerInstance as any).dispose();
       } catch (error) {
         console.warn(`Failed to dispose provider for model ${modelId}:`, error);
       }

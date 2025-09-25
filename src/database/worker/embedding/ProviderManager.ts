@@ -208,8 +208,8 @@ export class ProviderManager {
 
       // Basic health check - try to generate a small embedding
       try {
-        const testResult = await provider.generateEmbedding('test', { timeout: 5000 });
-        return { healthy: testResult.embedding.length > 0 };
+        const testResult = await provider.generateEmbedding('test');
+        return { healthy: testResult.length > 0 };
       } catch (error) {
         return { healthy: false, error: error instanceof Error ? error.message : String(error) };
       }
