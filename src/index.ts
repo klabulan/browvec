@@ -115,6 +115,60 @@ export {
   EmbeddingConstants
 } from './embedding/index.js';
 
+// Task 6.2: Internal Embedding Pipeline exports
+export {
+  // Core pipeline components
+  InternalPipelineImpl,
+  createInternalPipeline,
+
+  // Model management
+  ModelManagerImpl,
+  createModelManager,
+
+  // Cache management
+  CacheManagerImpl,
+  createCacheManager,
+  QueryCache,
+  ModelCache
+} from './pipeline/index.js';
+
+// Task 6.2: Pipeline type exports
+export type {
+  // Core interfaces
+  InternalPipeline,
+  ModelManager,
+  CacheManager,
+
+  // Pipeline types
+  PipelineEmbeddingResult,
+  PipelineBatchEmbeddingResult,
+  PipelineEmbeddingRequest,
+  PipelinePerformanceStats,
+  EmbeddingOptions,
+  BatchOptions,
+
+  // Model management types
+  LoadedModel,
+  ModelStatus,
+  LoadingStrategy,
+  MemoryOptimizationOptions,
+  EmbeddingModel,
+
+  // Cache management types
+  CacheLevel,
+  CacheOptions,
+  CacheStatistics,
+  CacheResult,
+  QueryCacheOptions,
+  QueryCacheEntry,
+  QueryCacheConfig,
+  QueryCacheStats,
+  CachedModelInfo,
+  ModelCacheConfig,
+  ModelCacheStats,
+  ModelCacheEntry
+} from './pipeline/index.js';
+
 // Embedding type exports
 export type {
   EmbeddingProvider,

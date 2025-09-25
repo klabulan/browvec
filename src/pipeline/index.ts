@@ -30,7 +30,12 @@ export {
   type LoadingStrategy
 } from './ModelManager.js';
 
-// Re-export cache types for convenience
+// Cache management exports
+export {
+  CacheManagerImpl,
+  createCacheManager
+} from '../cache/CacheManager.js';
+
 export type {
   CacheManager,
   CacheLevel,
@@ -38,6 +43,26 @@ export type {
   CacheStatistics,
   CacheResult
 } from '../cache/CacheManager.js';
+
+// Query cache exports
+export { QueryCache } from '../cache/QueryCache.js';
+
+export type {
+  QueryCacheOptions,
+  QueryCacheEntry,
+  QueryCacheConfig,
+  QueryCacheStats
+} from '../cache/QueryCache.js';
+
+// Model cache exports
+export { ModelCache } from '../cache/ModelCache.js';
+
+export type {
+  CachedModelInfo,
+  ModelCacheConfig,
+  ModelCacheStats,
+  ModelCacheEntry
+} from '../cache/ModelCache.js';
 
 /**
  * Фабричная функция для создания полного pipeline стека

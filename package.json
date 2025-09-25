@@ -6,7 +6,7 @@
   "types": "dist/localretrieve.d.ts",
   "scripts": {
     "build:wasm": "bash scripts/build-wasm.sh",
-    "build:sdk": "vite build",
+    "build:sdk": "vite build && mkdir -p public/database && cp dist/database/worker.js public/database/worker.js",
     "build": "npm run build:wasm && npm run build:sdk",
     "dev": "bash scripts/dev-server.sh",
     "dev:vite": "vite --host",

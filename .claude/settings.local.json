@@ -17,7 +17,9 @@
       "mcp__atlassian__getJiraProjectIssueTypesMetadata",
       "WebSearch",
       "Bash(npx tsc:*)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(find:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
