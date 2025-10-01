@@ -209,11 +209,12 @@ emcc \
   -sALLOW_MEMORY_GROWTH=1 \
   -sWASM_BIGINT=1 \
   -sSINGLE_FILE=0 \
-  -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,getValue,setValue,UTF8ToString,stringToUTF8 \
+  -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,getValue,setValue,UTF8ToString,stringToUTF8,writeArrayToMemory \
   -sEXPORTED_FUNCTIONS=_sqlite3_open,_sqlite3_close,_sqlite3_exec,_sqlite3_prepare_v2,_sqlite3_step,_sqlite3_finalize,_sqlite3_column_count,_sqlite3_column_name,_sqlite3_column_type,_sqlite3_column_text,_sqlite3_column_int,_sqlite3_column_double,_sqlite3_column_blob,_sqlite3_column_bytes,_sqlite3_bind_text,_sqlite3_bind_int,_sqlite3_bind_double,_sqlite3_bind_blob,_sqlite3_bind_null,_sqlite3_errmsg,_sqlite3_libversion,_sqlite3_vec_init_manual,_sqlite3_serialize,_sqlite3_deserialize,_malloc,_free \
   -sEXPORT_NAME=sqlite3InitModule \
   -sSTACK_SIZE=512KB \
   -sINITIAL_MEMORY=16MB \
+  -sASSERTIONS=1 \
   -O2 \
   -DSQLITE_ENABLE_FTS5=1 \
   -DSQLITE_ENABLE_RTREE=1 \

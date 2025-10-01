@@ -35,6 +35,8 @@ Or add to your `package.json`:
 }
 ```
 
+**Note**: This works because prebuilt WASM files are included in the repository. To build from source instead, see the [Contributing](#-contributing) section below.
+
 ### From NPM (Coming Soon)
 
 ```bash
@@ -765,22 +767,33 @@ LocalRetrieve is in active development. See [CLAUDE.md](./CLAUDE.md) for develop
 **Development setup:**
 
 ```bash
-# Clone repository
+# 1. Prerequisites: Install Emscripten SDK (required for WASM compilation)
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
+source ./emsdk_env.sh  # Linux/Mac
+# OR: emsdk_env.bat    # Windows
+cd ..
+
+# 2. Clone repository
 git clone https://github.com/klabulan/browvec.git
 cd browvec
 
-# Install dependencies
+# 3. Install dependencies
 npm install
 
-# Build WASM + SDK
+# 4. Build WASM + SDK (uses emsdk/ for compilation)
 npm run build
 
-# Start development server
-npm run dev
+# 5. Start development server
+npm run dev:vite
 
-# Run tests
+# 6. Run tests
 npm run test:all
 ```
+
+**Note**: The Emscripten SDK must be cloned to `./emsdk/` in the project root. The build script will automatically detect and use it.
 
 ## 📄 License
 
@@ -789,7 +802,7 @@ MIT License - see [LICENSE](./LICENSE) for details.
 ## 🔗 Resources
 
 - **Documentation**: See `CLAUDE.md` for architecture and development details
-- **Demo**: Run `npm run dev` and visit `/examples/web-client/`
+- **Demo**: Run `npm run dev:vite` and visit `http://localhost:5174/examples/web-client/`
 - **Issues**: Report bugs at GitHub Issues
 - **Discussions**: Community discussions at GitHub Discussions
 
