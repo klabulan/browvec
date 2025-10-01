@@ -11,7 +11,7 @@ export default defineConfig({
   
   server: {
     host: true,
-    port: 5173,
+    port: 5174,
     // Use HTTP - localhost is treated as secure context by browsers
     open: false,
     
@@ -31,7 +31,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
-        'database/worker': resolve(__dirname, 'src/database/worker.ts')
+        'database/worker': resolve(__dirname, 'src/database/worker/index.ts')
       },
       name: 'LocalRetrieve',
       fileName: (format, entryName) => {

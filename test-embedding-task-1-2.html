@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Task 1.2 - Text Processing and Utilities Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .test-title {
+            color: #333;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border-left: 4px solid #007acc;
+            background-color: #f9f9f9;
+        }
+
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .sample-text {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .metric {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007acc;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background-color: #005999;
+        }
+
+        .status {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .status.pass {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.fail {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 class="test-title">Task 1.2: Text Processing and Utilities Test</h1>
+        <p>Тестирование текстового процессора и утилит для системы эмбеддингов LocalRetrieve</p>
+
+        <div class="test-section">
+            <h3>Test Status</h3>
+            <div id="overall-status">Initializing...</div>
+        </div>
+
+        <div class="test-section">
+            <h3>Browser Capabilities</h3>
+            <div id="browser-capabilities"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Text Processing Tests</h3>
+            <button onclick="runTextProcessingTests()">Run Text Processing Tests</button>
+            <div id="text-processing-results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Hash Generation Tests</h3>
+            <button onclick="runHashingTests()">Run Hashing Tests</button>
+            <div id="hashing-results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Utility Functions Tests</h3>
+            <button onclick="runUtilityTests()">Run Utility Tests</button>
+            <div id="utility-results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Performance Tests</h3>
+            <button onclick="runPerformanceTests()">Run Performance Tests</button>
+            <div id="performance-results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>All Tests</h3>
+            <button onclick="runAllTests()">Run All Tests</button>
+            <div id="all-tests-summary"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Импортируем наши модули
+        import { TextProcessor } from './src/embedding/TextProcessor.ts';
+        import { EmbeddingUtils, EmbeddingConstants, CollectionUtils } from './src/embedding/utils.ts';
+
+        // Глобальные переменные для доступа из HTML
+        window.TextProcessor = TextProcessor;
+        window.EmbeddingUtils = EmbeddingUtils;
+        window.EmbeddingConstants = EmbeddingConstants;
+        window.CollectionUtils = CollectionUtils;
+
+        // Тестовые данные
+        const sampleTexts = {
+            html: `<h1>Заголовок</h1><p>Это <strong>жирный</strong> текст с <a href="https://example.com">ссылкой</a>.</p><div>HTML теги должны быть удалены.</div>`,
+
+            markdown: `# Заголовок
+
+Это **жирный текст** и *курсивный текст*.
+
+- Элемент списка 1
+- Элемент списка 2
+
+\`Код в строке\` и блок кода:
+
+\`\`\`javascript
+function test() {
+    return "Hello, World!";
+}
+\`\`\`
+
+[Ссылка](https://example.com)`,
+
+            mixed: `<h2>Смешанный контент</h2>
+
+## Markdown заголовок
+
+Это текст с **HTML** и <em>markdown</em> разметкой.
+
+- HTML список: <ul><li>элемент</li></ul>
+- Markdown список
+
+\`code\` и <code>html code</code>`,
+
+            whitespace: `   Текст   с    множественными     пробелами
+
+
+и   переносами   строк    `,
+
+            special: `Текст с special!@#$%^&*()символами и numbers123 и UPPERCASE`,
+
+            long: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(100)
+        };
+
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkBrowserCapabilities();
+            updateStatus('Ready to test');
+        });
+
+        async function checkBrowserCapabilities() {
+            try {
+                const capabilities = await EmbeddingUtils.getBrowserCapabilities();
+
+                const capabilitiesHtml = `
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">${capabilities.webWorkers ? '✓' : '✗'}</div>
+                            <div class="metric-label">Web Workers</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">${capabilities.sharedArrayBuffer ? '✓' : '✗'}</div>
+                            <div class="metric-label">SharedArrayBuffer</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">${capabilities.opfs ? '✓' : '✗'}</div>
+                            <div class="metric-label">OPFS</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">${capabilities.webCrypto ? '✓' : '✗'}</div>
+                            <div class="metric-label">Web Crypto</div>
+                        </div>
+                    </div>
+                    <div class="info">User Agent: ${capabilities.userAgent}</div>
+                `;
+
+                document.getElementById('browser-capabilities').innerHTML = capabilitiesHtml;
+            } catch (error) {
+                document.getElementById('browser-capabilities').innerHTML =
+                    `<div class="error">Error checking capabilities: ${error.message}</div>`;
+            }
+        }
+
+        function updateStatus(message, isError = false) {
+            const statusElement = document.getElementById('overall-status');
+            statusElement.textContent = message;
+            statusElement.className = `status ${isError ? 'fail' : 'pass'}`;
+        }
+
+        // Экспорт функций в глобальный контекст для использования в HTML
+        window.runTextProcessingTests = runTextProcessingTests;
+        window.runHashingTests = runHashingTests;
+        window.runUtilityTests = runUtilityTests;
+        window.runPerformanceTests = runPerformanceTests;
+        window.runAllTests = runAllTests;
+
+        async function runTextProcessingTests() {
+            const results = [];
+            const container = document.getElementById('text-processing-results');
+            container.innerHTML = '<div class="info">Running text processing tests...</div>';
+
+            try {
+                // Тест инициализации
+                const processor = new TextProcessor();
+                results.push({
+                    name: 'TextProcessor initialization',
+                    status: 'pass',
+                    message: 'Successfully created TextProcessor instance'
+                });
+
+                // Тест удаления HTML
+                const htmlResult = processor.processText(sampleTexts.html);
+                const hasNoHtmlTags = !/<[^>]*>/.test(htmlResult.processedText);
+                results.push({
+                    name: 'HTML tag removal',
+                    status: hasNoHtmlTags ? 'pass' : 'fail',
+                    message: hasNoHtmlTags ? 'HTML tags successfully removed' : 'HTML tags still present',
+                    details: {
+                        original: sampleTexts.html,
+                        processed: htmlResult.processedText,
+                        operations: htmlResult.appliedOperations,
+                        metadata: htmlResult.metadata
+                    }
+                });
+
+                // Тест удаления Markdown
+                const markdownResult = processor.processText(sampleTexts.markdown);
+                const hasNoMarkdown = !/[#*`\-\[\]]/g.test(markdownResult.processedText);
+                results.push({
+                    name: 'Markdown removal',
+                    status: hasNoMarkdown ? 'pass' : 'fail',
+                    message: hasNoMarkdown ? 'Markdown formatting successfully removed' : 'Markdown formatting still present',
+                    details: {
+                        original: sampleTexts.markdown,
+                        processed: markdownResult.processedText,
+                        operations: markdownResult.appliedOperations
+                    }
+                });
+
+                // Тест нормализации пробелов
+                const whitespaceResult = processor.processText(sampleTexts.whitespace);
+                const hasNormalizedWhitespace = !/\s{2,}/.test(whitespaceResult.processedText);
+                results.push({
+                    name: 'Whitespace normalization',
+                    status: hasNormalizedWhitespace ? 'pass' : 'fail',
+                    message: hasNormalizedWhitespace ? 'Whitespace successfully normalized' : 'Multiple whitespaces still present',
+                    details: {
+                        original: sampleTexts.whitespace,
+                        processed: whitespaceResult.processedText
+                    }
+                });
+
+                // Тест обрезки текста
+                const truncationResult = processor.processText(sampleTexts.long, { maxTokens: 50 });
+                results.push({
+                    name: 'Text truncation',
+                    status: truncationResult.wasTruncated ? 'pass' : 'fail',
+                    message: truncationResult.wasTruncated ? 'Text successfully truncated' : 'Text was not truncated',
+                    details: {
+                        originalLength: truncationResult.originalLength,
+                        processedLength: truncationResult.processedLength,
+                        estimatedTokens: truncationResult.estimatedTokens,
+                        wasTruncated: truncationResult.wasTruncated
+                    }
+                });
+
+                // Тест всех операций вместе
+                const combinedResult = processor.processText(sampleTexts.mixed, {
+                    maxTokens: 100,
+                    strategy: 'tail',
+                    addTruncationIndicator: true
+                });
+                results.push({
+                    name: 'Combined processing',
+                    status: 'pass',
+                    message: 'All processing operations completed',
+                    details: combinedResult
+                });
+
+                // Тест статистики
+                const stats = processor.getStatistics();
+                results.push({
+                    name: 'Statistics collection',
+                    status: stats.totalProcessed > 0 ? 'pass' : 'fail',
+                    message: `Processed ${stats.totalProcessed} texts`,
+                    details: stats
+                });
+
+            } catch (error) {
+                results.push({
+                    name: 'Text processing error',
+                    status: 'fail',
+                    message: error.message,
+                    error: error
+                });
+            }
+
+            displayTestResults(container, results);
+        }
+
+        async function runHashingTests() {
+            const results = [];
+            const container = document.getElementById('hashing-results');
+            container.innerHTML = '<div class="info">Running hashing tests...</div>';
+
+            try {
+                // Тест простого хеширования
+                const simpleHash = await EmbeddingUtils.hashString('test string');
+                results.push({
+                    name: 'Simple string hashing',
+                    status: simpleHash && simpleHash.length > 0 ? 'pass' : 'fail',
+                    message: `Generated hash: ${simpleHash}`,
+                    details: { hash: simpleHash }
+                });
+
+                // Тест генерации ключей кеша
+                const cacheKeyConfig = {
+                    text: 'Test text for cache key',
+                    collectionConfig: {
+                        provider: 'transformers',
+                        dimensions: 384,
+                        model: 'test-model'
+                    }
+                };
+
+                const cacheKeyResult = await EmbeddingUtils.generateCacheKey(cacheKeyConfig);
+                results.push({
+                    name: 'Cache key generation',
+                    status: cacheKeyResult && cacheKeyResult.hash ? 'pass' : 'fail',
+                    message: `Generated cache key: ${cacheKeyResult.hash}`,
+                    details: cacheKeyResult
+                });
+
+                // Тест стабильности хеширования
+                const hash1 = await EmbeddingUtils.generateCacheKey(cacheKeyConfig);
+                const hash2 = await EmbeddingUtils.generateCacheKey(cacheKeyConfig);
+                const isStable = hash1.hash === hash2.hash;
+                results.push({
+                    name: 'Hash stability',
+                    status: isStable ? 'pass' : 'fail',
+                    message: isStable ? 'Hashes are stable' : 'Hashes are not stable',
+                    details: { hash1: hash1.hash, hash2: hash2.hash }
+                });
+
+                // Тест хеширования текста
+                const textHash = await EmbeddingUtils.generateTextHash('Sample text');
+                results.push({
+                    name: 'Text hashing',
+                    status: textHash && textHash.hash ? 'pass' : 'fail',
+                    message: `Text hash: ${textHash.hash}`,
+                    details: textHash
+                });
+
+            } catch (error) {
+                results.push({
+                    name: 'Hashing error',
+                    status: 'fail',
+                    message: error.message,
+                    error: error
+                });
+            }
+
+            displayTestResults(container, results);
+        }
+
+        async function runUtilityTests() {
+            const results = [];
+            const container = document.getElementById('utility-results');
+            container.innerHTML = '<div class="info">Running utility tests...</div>';
+
+            try {
+                // Тест валидации размерностей
+                const embedding = new Float32Array(384);
+                const validation = EmbeddingUtils.validateEmbeddingDimensions(embedding, 384);
+                results.push({
+                    name: 'Dimension validation',
+                    status: validation.isValid ? 'pass' : 'fail',
+                    message: validation.isValid ? 'Dimensions are valid' : validation.error,
+                    details: validation
+                });
+
+                // Тест конвертации в Float32Array
+                const numberArray = [1, 2, 3, 4, 5];
+                const float32Array = EmbeddingUtils.toFloat32Array(numberArray);
+                results.push({
+                    name: 'Float32Array conversion',
+                    status: float32Array instanceof Float32Array ? 'pass' : 'fail',
+                    message: `Converted ${numberArray.length} numbers to Float32Array`,
+                    details: { original: numberArray, converted: Array.from(float32Array) }
+                });
+
+                // Тест глубокого клонирования
+                const original = { a: 1, b: { c: 2 }, d: [3, 4] };
+                const cloned = EmbeddingUtils.deepClone(original);
+                const isDeepClone = JSON.stringify(original) === JSON.stringify(cloned) && original !== cloned;
+                results.push({
+                    name: 'Deep cloning',
+                    status: isDeepClone ? 'pass' : 'fail',
+                    message: isDeepClone ? 'Deep clone successful' : 'Deep clone failed',
+                    details: { original, cloned }
+                });
+
+                // Тест валидации ID коллекции
+                try {
+                    CollectionUtils.validateCollectionId('valid_collection_id');
+                    results.push({
+                        name: 'Collection ID validation (valid)',
+                        status: 'pass',
+                        message: 'Valid collection ID accepted'
+                    });
+                } catch (error) {
+                    results.push({
+                        name: 'Collection ID validation (valid)',
+                        status: 'fail',
+                        message: 'Valid collection ID rejected: ' + error.message
+                    });
+                }
+
+                // Тест создания конфигурации по умолчанию
+                const defaultConfig = CollectionUtils.createDefaultCollectionConfig('transformers', 384);
+                results.push({
+                    name: 'Default config creation',
+                    status: defaultConfig && defaultConfig.provider === 'transformers' ? 'pass' : 'fail',
+                    message: 'Default configuration created',
+                    details: defaultConfig
+                });
+
+                // Тест форматирования
+                const formattedBytes = EmbeddingUtils.formatBytes(1024 * 1024);
+                const formattedDuration = EmbeddingUtils.formatDuration(5000);
+                results.push({
+                    name: 'Formatting functions',
+                    status: formattedBytes && formattedDuration ? 'pass' : 'fail',
+                    message: `Bytes: ${formattedBytes}, Duration: ${formattedDuration}`,
+                    details: { formattedBytes, formattedDuration }
+                });
+
+                // Тест генерации ID
+                const id1 = EmbeddingUtils.generateId('test');
+                const id2 = EmbeddingUtils.generateId('test');
+                const idsUnique = id1 !== id2;
+                results.push({
+                    name: 'ID generation',
+                    status: idsUnique && id1.startsWith('test_') ? 'pass' : 'fail',
+                    message: idsUnique ? 'Unique IDs generated' : 'IDs are not unique',
+                    details: { id1, id2 }
+                });
+
+            } catch (error) {
+                results.push({
+                    name: 'Utility function error',
+                    status: 'fail',
+                    message: error.message,
+                    error: error
+                });
+            }
+
+            displayTestResults(container, results);
+        }
+
+        async function runPerformanceTests() {
+            const results = [];
+            const container = document.getElementById('performance-results');
+            container.innerHTML = '<div class="info">Running performance tests...</div>';
+
+            try {
+                const processor = new TextProcessor();
+
+                // Тест производительности обработки текста
+                const timer = EmbeddingUtils.createPerformanceTimer('text_processing');
+
+                const iterations = 100;
+                const testText = sampleTexts.mixed;
+
+                for (let i = 0; i < iterations; i++) {
+                    processor.processText(testText);
+                }
+
+                const finishedTimer = EmbeddingUtils.finishPerformanceTimer(timer);
+                const avgTime = finishedTimer.duration / iterations;
+
+                results.push({
+                    name: 'Text processing performance',
+                    status: avgTime < 10 ? 'pass' : 'fail', // Менее 10ms на обработку
+                    message: `Average processing time: ${avgTime.toFixed(2)}ms`,
+                    details: {
+                        iterations,
+                        totalTime: finishedTimer.duration,
+                        averageTime: avgTime,
+                        textLength: testText.length
+                    }
+                });
+
+                // Тест производительности хеширования
+                const hashTimer = EmbeddingUtils.createPerformanceTimer('hashing');
+
+                for (let i = 0; i < 50; i++) {
+                    await EmbeddingUtils.hashString(`test string ${i}`);
+                }
+
+                const finishedHashTimer = EmbeddingUtils.finishPerformanceTimer(hashTimer);
+                const avgHashTime = finishedHashTimer.duration / 50;
+
+                results.push({
+                    name: 'Hashing performance',
+                    status: avgHashTime < 5 ? 'pass' : 'fail', // Менее 5ms на хеширование
+                    message: `Average hashing time: ${avgHashTime.toFixed(2)}ms`,
+                    details: {
+                        iterations: 50,
+                        totalTime: finishedHashTimer.duration,
+                        averageTime: avgHashTime
+                    }
+                });
+
+                // Тест статистики процессора
+                const stats = processor.getStatistics();
+                results.push({
+                    name: 'Processor statistics',
+                    status: 'pass',
+                    message: `Processed ${stats.totalProcessed} texts`,
+                    details: stats
+                });
+
+            } catch (error) {
+                results.push({
+                    name: 'Performance test error',
+                    status: 'fail',
+                    message: error.message,
+                    error: error
+                });
+            }
+
+            displayTestResults(container, results);
+        }
+
+        async function runAllTests() {
+            const container = document.getElementById('all-tests-summary');
+            container.innerHTML = '<div class="info">Running all tests...</div>';
+
+            updateStatus('Running all tests...', false);
+
+            try {
+                await runTextProcessingTests();
+                await runHashingTests();
+                await runUtilityTests();
+                await runPerformanceTests();
+
+                // Подсчет результатов
+                const allResults = [
+                    ...getTestResults('text-processing-results'),
+                    ...getTestResults('hashing-results'),
+                    ...getTestResults('utility-results'),
+                    ...getTestResults('performance-results')
+                ];
+
+                const passCount = allResults.filter(r => r.status === 'pass').length;
+                const failCount = allResults.filter(r => r.status === 'fail').length;
+                const totalCount = allResults.length;
+
+                const summaryHtml = `
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">${totalCount}</div>
+                            <div class="metric-label">Total Tests</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value" style="color: #28a745;">${passCount}</div>
+                            <div class="metric-label">Passed</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value" style="color: #dc3545;">${failCount}</div>
+                            <div class="metric-label">Failed</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">${((passCount / totalCount) * 100).toFixed(1)}%</div>
+                            <div class="metric-label">Success Rate</div>
+                        </div>
+                    </div>
+                `;
+
+                container.innerHTML = summaryHtml;
+
+                if (failCount === 0) {
+                    updateStatus(`All tests passed! (${passCount}/${totalCount})`, false);
+                } else {
+                    updateStatus(`${failCount} tests failed (${passCount}/${totalCount} passed)`, true);
+                }
+
+            } catch (error) {
+                container.innerHTML = `<div class="error">Error running tests: ${error.message}</div>`;
+                updateStatus('Error running tests', true);
+            }
+        }
+
+        function getTestResults(containerId) {
+            // Простая функция для извлечения результатов из отображенных тестов
+            const container = document.getElementById(containerId);
+            const results = [];
+            const statusElements = container.querySelectorAll('.status');
+
+            statusElements.forEach(element => {
+                results.push({
+                    status: element.classList.contains('pass') ? 'pass' : 'fail'
+                });
+            });
+
+            return results;
+        }
+
+        function displayTestResults(container, results) {
+            let html = '';
+
+            results.forEach(result => {
+                html += `
+                    <div class="test-result ${result.status === 'pass' ? 'success' : 'error'}">
+                        <div class="status ${result.status}">${result.status.toUpperCase()}</div>
+                        <strong>${result.name}</strong>: ${result.message}
+                        ${result.details ? `
+                            <details style="margin-top: 10px;">
+                                <summary>Details</summary>
+                                <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(result.details, null, 2)}</pre>
+                            </details>
+                        ` : ''}
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

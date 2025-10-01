@@ -246,6 +246,118 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('getStats');
   }
 
+  // Collection management with embedding support
+  async createCollection(params: Parameters<DBWorkerAPI['createCollection']>[0]): Promise<void> {
+    return this.call('createCollection', params);
+  }
+
+  async getCollectionEmbeddingStatus(collection: string) {
+    return this.call('getCollectionEmbeddingStatus', collection);
+  }
+
+  // Document operations with embedding support
+  async insertDocumentWithEmbedding(params: Parameters<DBWorkerAPI['insertDocumentWithEmbedding']>[0]) {
+    return this.call('insertDocumentWithEmbedding', params);
+  }
+
+  // Search operations
+  async searchSemantic(params: Parameters<DBWorkerAPI['searchSemantic']>[0]) {
+    return this.call('searchSemantic', params);
+  }
+
+  // Enhanced search API (Task 6.1)
+  async searchText(params: Parameters<DBWorkerAPI["searchText"]>[0]) {
+    return this.call("searchText", params);
+  }
+
+  async searchAdvanced(params: Parameters<DBWorkerAPI["searchAdvanced"]>[0]) {
+    return this.call("searchAdvanced", params);
+  }
+
+  async searchGlobal(params: Parameters<DBWorkerAPI["searchGlobal"]>[0]) {
+    return this.call("searchGlobal", params);
+  }
+
+  // Embedding generation operations
+  async generateEmbedding(params: Parameters<DBWorkerAPI['generateEmbedding']>[0]) {
+    return this.call('generateEmbedding', params);
+  }
+
+  async batchGenerateEmbeddings(params: Parameters<DBWorkerAPI['batchGenerateEmbeddings']>[0]) {
+    return this.call('batchGenerateEmbeddings', params);
+  }
+
+  async regenerateCollectionEmbeddings(collection: string, options?: Parameters<DBWorkerAPI['regenerateCollectionEmbeddings']>[1]) {
+    return this.call('regenerateCollectionEmbeddings', { collection, options });
+  }
+
+  // Embedding queue management
+  async enqueueEmbedding(params: Parameters<DBWorkerAPI['enqueueEmbedding']>[0]): Promise<number> {
+    return this.call('enqueueEmbedding', params);
+  }
+
+  async processEmbeddingQueue(params?: Parameters<DBWorkerAPI['processEmbeddingQueue']>[0]) {
+    return this.call('processEmbeddingQueue', params);
+  }
+
+  async getQueueStatus(collection?: string) {
+    return this.call('getQueueStatus', collection);
+  }
+
+  async clearEmbeddingQueue(params?: Parameters<DBWorkerAPI['clearEmbeddingQueue']>[0]): Promise<number> {
+    return this.call('clearEmbeddingQueue', params);
+  }
+
+  // SCRUM-17: LLM Integration RPC methods
+  async enhanceQuery(params: Parameters<DBWorkerAPI['enhanceQuery']>[0]) {
+    return this.call('enhanceQuery', params);
+  }
+
+  async summarizeResults(params: Parameters<DBWorkerAPI['summarizeResults']>[0]) {
+    return this.call('summarizeResults', params);
+  }
+
+  async searchWithLLM(params: Parameters<DBWorkerAPI['searchWithLLM']>[0]) {
+    return this.call('searchWithLLM', params);
+  }
+
+  async callLLM(params: Parameters<DBWorkerAPI['callLLM']>[0]) {
+    return this.call('callLLM', params);
+  }
+
+  // Task 6.2: Internal Embedding Pipeline RPC methods
+  async generateQueryEmbedding(params: Parameters<DBWorkerAPI["generateQueryEmbedding"]>[0]) {
+    return this.call("generateQueryEmbedding", params);
+  }
+
+  async batchGenerateQueryEmbeddings(params: Parameters<DBWorkerAPI["batchGenerateQueryEmbeddings"]>[0]) {
+    return this.call("batchGenerateQueryEmbeddings", params);
+  }
+
+  async warmEmbeddingCache(params: Parameters<DBWorkerAPI["warmEmbeddingCache"]>[0]) {
+    return this.call("warmEmbeddingCache", params);
+  }
+
+  async clearEmbeddingCache(params?: Parameters<DBWorkerAPI["clearEmbeddingCache"]>[0]) {
+    return this.call("clearEmbeddingCache", params);
+  }
+
+  async getPipelineStats() {
+    return this.call("getPipelineStats");
+  }
+
+  async getModelStatus() {
+    return this.call("getModelStatus");
+  }
+
+  async preloadModels(params: Parameters<DBWorkerAPI["preloadModels"]>[0]) {
+    return this.call("preloadModels", params);
+  }
+
+  async optimizeModelMemory(params?: Parameters<DBWorkerAPI["optimizeModelMemory"]>[0]) {
+    return this.call("optimizeModelMemory", params);
+  }
+
   // Utility methods
   getPerformanceMetrics() {
     const avgLatency = this.performanceMetrics.totalCalls > 0 

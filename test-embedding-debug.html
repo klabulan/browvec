@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embedding Debug Test</title>
+</head>
+<body>
+    <h1>Embedding Debug Test</h1>
+
+    <div>
+        <h2>Test 1: Check Imports</h2>
+        <button id="test-imports">Test Imports</button>
+        <div id="import-results"></div>
+    </div>
+
+    <div>
+        <h2>Test 2: Create Provider</h2>
+        <button id="test-provider">Test Provider Creation</button>
+        <div id="provider-results"></div>
+    </div>
+
+    <div>
+        <h2>Test 3: Generate Embedding</h2>
+        <button id="test-embedding">Test Embedding Generation</button>
+        <div id="embedding-results"></div>
+    </div>
+
+    <script type="module">
+        import { createProvider, validateProviderConfig } from './dist/localretrieve.mjs';
+
+        // Test 1: Check if imports work
+        document.getElementById('test-imports').addEventListener('click', () => {
+            const results = document.getElementById('import-results');
+            results.innerHTML = `
+                <p>✅ createProvider: ${typeof createProvider}</p>
+                <p>✅ validateProviderConfig: ${typeof validateProviderConfig}</p>
+            `;
+        });
+
+        // Test 2: Test provider creation
+        document.getElementById('test-provider').addEventListener('click', async () => {
+            const results = document.getElementById('provider-results');
+            results.innerHTML = 'Testing provider creation...';
+
+            try {
+                const config = {
+                    provider: 'transformers',
+                    model: 'all-MiniLM-L6-v2',
+                    dimensions: 384
+                };
+
+                console.log('Testing validation...');
+                const validation = validateProviderConfig(config);
+                console.log('Validation result:', validation);
+
+                results.innerHTML += `<p>Validation: ${validation.isValid ? '✅' : '❌'}</p>`;
+                if (!validation.isValid) {
+                    results.innerHTML += `<p>Errors: ${validation.errors.join(', ')}</p>`;
+                    return;
+                }
+
+                console.log('Creating provider...');
+                const provider = await createProvider(config);
+                console.log('Provider created:', provider);
+
+                results.innerHTML += `<p>✅ Provider created: ${provider.constructor.name}</p>`;
+                results.innerHTML += `<p>✅ Provider ready: ${provider.isReady}</p>`;
+
+            } catch (error) {
+                console.error('Provider creation failed:', error);
+                results.innerHTML += `<p>❌ Error: ${error.message}</p>`;
+            }
+        });
+
+        // Test 3: Test embedding generation
+        document.getElementById('test-embedding').addEventListener('click', async () => {
+            const results = document.getElementById('embedding-results');
+            results.innerHTML = 'Testing embedding generation...';
+
+            try {
+                const config = {
+                    provider: 'transformers',
+                    model: 'all-MiniLM-L6-v2',
+                    dimensions: 384
+                };
+
+                console.log('Creating provider for embedding test...');
+                const provider = await createProvider(config);
+
+                console.log('Generating embedding...');
+                const embedding = await provider.generateEmbedding('test text');
+
+                console.log('Embedding generated:', embedding);
+
+                results.innerHTML += `<p>✅ Embedding generated</p>`;
+                results.innerHTML += `<p>✅ Length: ${embedding.length}</p>`;
+                results.innerHTML += `<p>✅ Type: ${embedding.constructor.name}</p>`;
+                results.innerHTML += `<p>✅ First few values: [${Array.from(embedding.slice(0, 5)).map(v => v.toFixed(4)).join(', ')}...]</p>`;
+
+                await provider.cleanup();
+
+            } catch (error) {
+                console.error('Embedding generation failed:', error);
+                results.innerHTML += `<p>❌ Error: ${error.message}</p>`;
+                results.innerHTML += `<p>❌ Stack: ${error.stack}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

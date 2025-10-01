@@ -1,7 +1,36 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:sdk:*)",
+      "Bash(node:*)",
+      "mcp__ide__getDiagnostics",
+      "mcp__atlassian__getAccessibleAtlassianResources",
+      "mcp__atlassian__search",
+      "mcp__atlassian__searchJiraIssuesUsingJql",
+      "Bash(dir /B D:localcopilotbrowvectests)",
+      "mcp__atlassian__getVisibleJiraProjects",
+      "mcp__atlassian__editJiraIssue",
+      "mcp__atlassian__createJiraIssue",
+      "Bash(npx playwright:*)",
+      "mcp__atlassian__getJiraProjectIssueTypesMetadata",
+      "WebSearch",
+      "Bash(npx tsc:*)",
+      "Bash(tasklist)",
+      "Bash(find:*)",
+      "Bash(npm run build:*)",
+      "mcp__atlassian__getJiraIssue",
+      "mcp__atlassian__atlassianUserInfo",
+      "Bash(dir:*)",
+      "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ai-sdk.dev)",
+      "WebFetch(domain:llmjs.themaximalist.com)",
+      "WebFetch(domain:js.langchain.com)",
+      "Bash(findstr:*)",
+      "Bash(npm run dev:vite:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []

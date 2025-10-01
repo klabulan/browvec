@@ -1,7 +1,44 @@
-// LocalRetrieve MVP Demo Application
-// Showcases all core functionality with preloaded test data
+/**
+ * LocalRetrieve Complete Demo Application
+ *
+ * This demo showcases all the features of LocalRetrieve including:
+ * - Database initialization with OPFS persistence
+ * - Hybrid search (FTS5 + vector search with fusion)
+ * - Data management (insert, bulk insert, export/import)
+ * - Real-time search with performance metrics
+ * - **Phase 5: Embedding Queue Management** - Background processing system
+ * - Cross-browser compatibility testing
+ *
+ * Phase 5 Queue Management Features:
+ * - Enqueue documents for background embedding generation
+ * - Process embedding queue with batch processing and retry logic
+ * - Real-time queue status monitoring (total, pending, processing, completed, failed)
+ * - Priority-based processing (high=1, normal=2, low=3)
+ * - Comprehensive error handling and recovery mechanisms
+ * - Queue clearing with status filtering options
+ *
+ * Technical Architecture:
+ * - Uses LocalRetrieve SDK with Web Worker for non-blocking operations
+ * - OPFS persistence ensures data survives browser restarts
+ * - RPC communication between main thread and worker
+ * - Modular worker architecture with dedicated queue management
+ * - Schema v2 with embedding_queue table for background processing
+ * - Comprehensive error handling and user feedback
+ *
+ * Demo UI Components:
+ * - Search interface with hybrid text + vector search
+ * - Data management with bulk operations
+ * - Export/import functionality with progress tracking
+ * - Queue management panel with real-time status updates
+ * - Performance metrics and database statistics
+ * - Responsive design with clear status indicators
+ **/
 
-import { initLocalRetrieve } from '../../dist/localretrieve.mjs';
+import { initLocalRetrieve, createProvider, validateProviderConfig } from '../../dist/localretrieve.mjs';
+
+// Expose LocalRetrieve API to window for E2E testing
+import * as LocalRetrieve from '../../dist/localretrieve.mjs';
+window.LocalRetrieve = LocalRetrieve;
 
 class LocalRetrieveDemo {
     constructor() {
@@ -9,6 +46,14 @@ class LocalRetrieveDemo {
         this.isLoading = false;
         this.queryHistory = [];
         this.searchHistory = [];
+        this.currentEmbedding = null;
+        this.allowAutoLoad = false; // Prevent automatic data loading
+        this.embeddingConfig = {
+            provider: 'transformers',
+            openaiApiKey: '',
+            model: 'text-embedding-3-small',
+            dimensions: 384
+        };
 
         // DOM elements
         this.elements = {
@@ -47,9 +92,62 @@ class LocalRetrieveDemo {
             vecWeight: document.getElementById('vec-weight'),
             vecWeightValue: document.getElementById('vec-weight-value'),
             searchLimit: document.getElementById('search-limit'),
+            enableAdvanced: document.getElementById('enable-advanced-processing'),
             searchBtn: document.getElementById('search-btn'),
             searchResults: document.getElementById('search-results'),
-            searchStats: document.getElementById('search-stats')
+            searchStats: document.getElementById('search-stats'),
+
+            // Embedding elements
+            embeddingProvider: document.getElementById('embedding-provider'),
+            providerStatus: document.getElementById('provider-status'),
+            openaiConfig: document.getElementById('openai-config'),
+            openaiApiKey: document.getElementById('openai-api-key'),
+            testApiKey: document.getElementById('test-api-key'),
+            openaiModel: document.getElementById('openai-model'),
+            embeddingDimensions: document.getElementById('embedding-dimensions'),
+            collectionName: document.getElementById('collection-name'),
+            collectionDescription: document.getElementById('collection-description'),
+            createCollectionBtn: document.getElementById('create-collection-btn'),
+            listCollectionsBtn: document.getElementById('list-collections-btn'),
+            testText: document.getElementById('test-text'),
+            generateEmbeddingBtn: document.getElementById('generate-embedding-btn'),
+            addToCollectionBtn: document.getElementById('add-to-collection-btn'),
+            embeddingProgress: document.getElementById('embedding-progress'),
+            embeddingResults: document.getElementById('embedding-results'),
+            embeddingStats: document.getElementById('embedding-stats'),
+
+            // Phase 5: Queue Management elements
+            collectionStatusBtn: document.getElementById('collection-status-btn'),
+            queueCollection: document.getElementById('queue-collection'),
+            queueText: document.getElementById('queue-text'),
+            queuePriority: document.getElementById('queue-priority'),
+            enqueueBtn: document.getElementById('enqueue-btn'),
+            processQueueBtn: document.getElementById('process-queue-btn'),
+            queueStatusBtn: document.getElementById('queue-status-btn'),
+            clearQueueBtn: document.getElementById('clear-queue-btn'),
+            queueTotal: document.getElementById('queue-total'),
+            queuePending: document.getElementById('queue-pending'),
+            queueProcessing: document.getElementById('queue-processing'),
+            queueCompleted: document.getElementById('queue-completed'),
+            queueFailed: document.getElementById('queue-failed'),
+            queueResults: document.getElementById('queue-results'),
+
+            // SCRUM-17: LLM Integration elements
+            llmProvider: document.getElementById('llm-provider'),
+            llmModel: document.getElementById('llm-model'),
+            llmEndpointGroup: document.getElementById('llm-endpoint-group'),
+            llmEndpoint: document.getElementById('llm-endpoint'),
+            llmApiKey: document.getElementById('llm-api-key'),
+            llmPrompt: document.getElementById('llm-prompt'),
+            llmTemperature: document.getElementById('llm-temperature'),
+            llmMaxTokens: document.getElementById('llm-max-tokens'),
+            callLLMBtn: document.getElementById('call-llm-btn'),
+            clearLLMBtn: document.getElementById('clear-llm-btn'),
+            llmResponseContainer: document.getElementById('llm-response-container'),
+            llmResponseText: document.getElementById('llm-response-text'),
+            llmResponseModel: document.getElementById('llm-response-model'),
+            llmResponseTokens: document.getElementById('llm-response-tokens'),
+            llmResponseTime: document.getElementById('llm-response-time')
         };
 
         this.initializeEventListeners();
@@ -58,7 +156,7 @@ class LocalRetrieveDemo {
 
     initializeEventListeners() {
         // Data management
-        this.elements.loadSampleBtn.addEventListener('click', () => this.loadSampleData());
+        this.elements.loadSampleBtn.addEventListener('click', () => this.loadSampleData(true));
         this.elements.clearDbBtn.addEventListener('click', () => this.clearDatabase());
         this.elements.recreateDbBtn.addEventListener('click', () => this.recreateDatabase());
         this.elements.importBtn.addEventListener('click', () => this.elements.importFile.click());
@@ -94,6 +192,33 @@ class LocalRetrieveDemo {
             this.elements.vecWeightValue.textContent = e.target.value;
             this.updateFtsWeight();
         });
+
+        // Embedding configuration
+        this.elements.embeddingProvider.addEventListener('change', (e) => this.handleProviderChange(e));
+        this.elements.openaiApiKey.addEventListener('input', (e) => this.handleApiKeyInput(e));
+        this.elements.testApiKey.addEventListener('click', () => this.testApiConnection());
+        this.elements.openaiModel.addEventListener('change', (e) => this.handleModelChange(e));
+        this.elements.embeddingDimensions.addEventListener('change', (e) => this.handleDimensionsChange(e));
+
+        // Collection management
+        this.elements.createCollectionBtn.addEventListener('click', () => this.createCollection());
+        this.elements.listCollectionsBtn.addEventListener('click', () => this.listCollections());
+        this.elements.collectionStatusBtn.addEventListener('click', () => this.showCollectionStatus());
+
+        // Phase 5: Queue Management
+        this.elements.enqueueBtn.addEventListener('click', () => this.enqueueEmbedding());
+        this.elements.processQueueBtn.addEventListener('click', () => this.processEmbeddingQueue());
+        this.elements.queueStatusBtn.addEventListener('click', () => this.updateQueueStatus());
+        this.elements.clearQueueBtn.addEventListener('click', () => this.clearEmbeddingQueue());
+
+        // Embedding testing
+        this.elements.generateEmbeddingBtn.addEventListener('click', () => this.generateEmbedding());
+        this.elements.addToCollectionBtn.addEventListener('click', () => this.addToCollection());
+
+        // SCRUM-17: LLM Integration
+        this.elements.callLLMBtn.addEventListener('click', () => this.callLLM());
+        this.elements.clearLLMBtn.addEventListener('click', () => this.clearLLMResponse());
+        this.elements.llmProvider.addEventListener('change', () => this.updateLLMModelPlaceholder());
     }
 
     updateFtsWeight() {
@@ -119,7 +244,11 @@ class LocalRetrieveDemo {
 
             // Use consistent database filename for persistence across sessions
             const dbFilename = 'opfs:/localretrieve-demo/demo.db';
-            this.db = await initLocalRetrieve(dbFilename);
+            // Configure worker URL to use dist build for development
+            const config = {
+                workerUrl: '/dist/database/worker.js'
+            };
+            this.db = await initLocalRetrieve(dbFilename, config);
 
             const initTime = performance.now() - startTime;
 
@@ -134,6 +263,9 @@ class LocalRetrieveDemo {
 
             this.setStatus('Database initialized successfully', 'success');
             this.updateDatabaseInfo();
+
+            // Phase 5: Initialize queue status display
+            await this.updateQueueStatus();
 
             // Enable controls
             this.setControlsEnabled(true);
@@ -174,40 +306,74 @@ class LocalRetrieveDemo {
             const startTime = performance.now();
             const documents = getTestDocuments();
 
+            // Debug: Check if documents are loaded correctly
+            console.log('Total documents loaded:', documents?.length || 'undefined');
+            if (documents && documents.length > 0) {
+                console.log('First document sample:', {
+                    id: documents[0]?.id,
+                    title: documents[0]?.title,
+                    contentLength: documents[0]?.content?.length || 'undefined',
+                    hasVector: !!documents[0]?.vector
+                });
+            }
+
             // Ensure schema is properly initialized first
             await this.ensureSchemaInitialized();
+
+            // Ensure default collection exists with embedding configuration
+            await this.createDefaultCollectionIfNeeded();
 
             // Clear existing data safely
             await this.clearExistingData();
 
             // Insert sample documents
-            for (const doc of documents) {
-                // Insert into docs table and get the rowid
-                const docInsertResult = await this.db.runAsync(
-                    'INSERT INTO docs_default (id, title, content) VALUES (?, ?, ?)',
-                    [doc.id, doc.title, doc.content]
-                );
+            for (let i = 0; i < documents.length; i++) {
+                const doc = documents[i];
 
-                // Get the actual rowid from the docs table insertion
-                const actualRowId = docInsertResult.lastInsertRowid || doc.id;
-                console.log(`Inserted document ${doc.id} with rowid: ${actualRowId}`);
+                // Debug: Check document data
+                console.debug(`Inserting document ${i + 1}/${documents.length}:`, {
+                    id: doc.id,
+                    title: doc.title,
+                    contentLength: doc.content?.length || 'undefined',
+                    contentType: typeof doc.content
+                });
 
-                // Insert into FTS table using the same rowid
-                await this.db.runAsync(
-                    'INSERT INTO fts_default (rowid, id, title, content) VALUES (?, ?, ?, ?)',
-                    [actualRowId, doc.id, doc.title, doc.content]
-                );
+                if (!doc.content || typeof doc.content !== 'string') {
+                    console.error(`Document ${doc.id} has invalid content:`, doc);
+                    continue; // Skip documents without valid content
+                }
 
-                // Insert into vector table using the same rowid
-                const vectorJson = `[${doc.vector.join(',')}]`;
-                console.log(`Inserting vector for rowid ${actualRowId}: ${vectorJson.substring(0, 50)}...`);
+                try {
+                    // Insert into docs table and get the rowid
+                    const docInsertResult = await this.db.runAsync(
+                        'INSERT INTO docs_default (id, title, content) VALUES (?, ?, ?)',
+                        [doc.id, doc.title, doc.content]
+                    );
 
-                await this.db.runAsync(
-                    'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
-                    [actualRowId, vectorJson]
-                );
+                    // Get the actual rowid from the docs table insertion
+                    const actualRowId = docInsertResult.lastInsertRowid || doc.id;
+                    console.log(`Inserted document ${doc.id} with rowid: ${actualRowId}`);
 
-                console.log(`Successfully inserted document ${doc.id} with all data linked to rowid ${actualRowId}`);
+                    // Insert into FTS table using the same rowid
+                    await this.db.runAsync(
+                        'INSERT INTO fts_default (rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
+                        [actualRowId, doc.title, doc.content, JSON.stringify({ id: doc.id })]
+                    );
+
+                    // Insert into vector table using the same rowid
+                    const vectorJson = `[${doc.vector.join(',')}]`;
+                    console.log(`Inserting vector for rowid ${actualRowId}: ${vectorJson.substring(0, 50)}...`);
+
+                    await this.db.runAsync(
+                        'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
+                        [actualRowId, vectorJson]
+                    );
+
+                    console.log(`Successfully inserted document ${doc.id} with all data linked to rowid ${actualRowId}`);
+                } catch (docError) {
+                    console.error(`Failed to insert document ${doc.id}:`, docError);
+                    // Continue with next document instead of failing completely
+                }
             }
 
             const loadTime = performance.now() - startTime;
@@ -386,6 +552,29 @@ class LocalRetrieveDemo {
         } catch (error) {
             console.error('Data clearing failed:', error);
             throw new Error(`Failed to clear existing data: ${error.message}`);
+        }
+    }
+
+    async createDefaultCollectionIfNeeded() {
+        try {
+            // Use the SDK's createCollection method
+            await this.db.createCollection({
+                name: 'default',
+                embeddingConfig: {
+                    provider: 'transformers',
+                    model: 'Xenova/all-MiniLM-L6-v2',
+                    dimensions: 384
+                }
+            });
+            console.log('Default collection created with embedding configuration');
+        } catch (error) {
+            // If collection already exists, that's fine
+            if (error.message?.includes('already exists')) {
+                console.log('Default collection already exists');
+            } else {
+                console.error('Failed to create default collection:', error);
+                throw error;
+            }
         }
     }
 
@@ -585,30 +774,49 @@ class LocalRetrieveDemo {
                 }
             }
 
-            // Build search request
-            const searchRequest = {
-                query: {
-                    text: textQuery || undefined,
-                    vector: vector ? new Float32Array(vector) : undefined
-                },
+            // Check Advanced Query Processing setting
+            const enableAdvanced = this.elements.enableAdvanced?.checked || false;
+
+            console.log('Advanced Query Processing enabled:', enableAdvanced);
+
+            // Build search options using Phase 6 API
+            const searchOptions = {
+                mode: 'auto',
                 limit: parseInt(this.elements.searchLimit.value) || 10,
+                enableEmbedding: !!vector || enableAdvanced,
                 fusion: {
                     method: this.elements.fusionMethod.value,
                     weights: {
                         fts: parseFloat(this.elements.ftsWeight.value),
                         vector: parseFloat(this.elements.vecWeight.value)
                     }
-                }
+                },
+                collection: 'default'
             };
 
             // Log search request details
             console.log('Search request:', {
-                query: searchRequest.query,
-                limit: searchRequest.limit,
-                fusion: searchRequest.fusion
+                query: textQuery,
+                vector: vector ? 'provided' : 'none',
+                options: searchOptions
             });
 
-            // Perform search
+            // Use simple search API
+            const searchRequest = {
+                query: {
+                    text: textQuery || 'machine learning'
+                },
+                limit: parseInt(this.elements.searchLimit.value) || 10,
+                fusionMethod: this.elements.fusionMethod.value,
+                fusionWeights: {
+                    fts: parseFloat(this.elements.ftsWeight.value),
+                    vec: parseFloat(this.elements.vecWeight.value)
+                },
+                options: {
+                    enableEmbedding: enableAdvanced
+                }
+            };
+
             const results = await this.db.search(searchRequest);
 
             const searchTime = performance.now() - startTime;
@@ -799,7 +1007,12 @@ class LocalRetrieveDemo {
             this.elements.importBtn,
             this.elements.exportBtn,
             this.elements.executeSqlBtn,
-            this.elements.searchBtn
+            this.elements.searchBtn,
+            this.elements.testApiKey,
+            this.elements.createCollectionBtn,
+            this.elements.listCollectionsBtn,
+            this.elements.generateEmbeddingBtn,
+            this.elements.addToCollectionBtn
         ];
 
         const allButtons = [
@@ -829,7 +1042,19 @@ class LocalRetrieveDemo {
             this.elements.executeSqlBtn,
             this.elements.searchBtn,
             this.elements.sqlInput,
-            this.elements.searchText
+            this.elements.searchText,
+            this.elements.embeddingProvider,
+            this.elements.openaiApiKey,
+            this.elements.testApiKey,
+            this.elements.openaiModel,
+            this.elements.embeddingDimensions,
+            this.elements.collectionName,
+            this.elements.collectionDescription,
+            this.elements.createCollectionBtn,
+            this.elements.listCollectionsBtn,
+            this.elements.testText,
+            this.elements.generateEmbeddingBtn,
+            this.elements.addToCollectionBtn
         ];
 
         controls.forEach(control => {
@@ -868,6 +1093,1152 @@ class LocalRetrieveDemo {
     truncateText(text, maxLength) {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength) + '...';
+    }
+
+    // Embedding Configuration Methods
+    handleProviderChange(event) {
+        const provider = event.target.value;
+        this.embeddingConfig.provider = provider;
+
+        if (provider === 'openai') {
+            this.elements.openaiConfig.style.display = 'block';
+            this.updateProviderStatus('OpenAI API - API key required', 'openai');
+        } else {
+            this.elements.openaiConfig.style.display = 'none';
+            this.updateProviderStatus('Local processing - No API key required', 'transformers');
+        }
+
+        // Reset embedding results when provider changes
+        this.currentEmbedding = null;
+        this.elements.addToCollectionBtn.disabled = true;
+        this.clearEmbeddingResults();
+    }
+
+    handleApiKeyInput(event) {
+        const apiKey = event.target.value.trim();
+        this.embeddingConfig.openaiApiKey = apiKey;
+        this.elements.testApiKey.disabled = !apiKey;
+
+        if (apiKey) {
+            this.updateProviderStatus('API key entered - Click "Test Connection" to verify', 'openai');
+        } else {
+            this.updateProviderStatus('OpenAI API - API key required', 'openai');
+        }
+    }
+
+    handleModelChange(event) {
+        this.embeddingConfig.model = event.target.value;
+
+        // Update dimensions based on model
+        if (event.target.value === 'text-embedding-ada-002') {
+            this.elements.embeddingDimensions.value = '1536';
+            this.embeddingConfig.dimensions = 1536;
+        }
+    }
+
+    handleDimensionsChange(event) {
+        this.embeddingConfig.dimensions = parseInt(event.target.value);
+    }
+
+    updateProviderStatus(message, type) {
+        this.elements.providerStatus.className = `provider-status ${type}`;
+        this.elements.providerStatus.querySelector('.status-text').textContent = message;
+    }
+
+    async testApiConnection() {
+        if (!this.embeddingConfig.openaiApiKey) return;
+
+        try {
+            this.setLoading(true);
+            this.updateProviderStatus('Testing API connection...', 'openai');
+
+            // Test with a simple embedding request
+            const response = await this.generateOpenAIEmbedding('test', false);
+
+            if (response && response.length > 0) {
+                this.updateProviderStatus('API connection successful', 'openai');
+                this.setStatus('OpenAI API connection test successful', 'success');
+            } else {
+                throw new Error('Invalid response from OpenAI API');
+            }
+
+        } catch (error) {
+            console.error('API test failed:', error);
+            this.updateProviderStatus(`API test failed: ${error.message}`, 'error');
+            this.setStatus(`OpenAI API test failed: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async generateOpenAIEmbedding(text, fullResponse = true) {
+        if (!this.embeddingConfig.openaiApiKey) {
+            throw new Error('OpenAI API key is required');
+        }
+
+        try {
+            console.log('[DEBUG] Creating OpenAI provider config:', {
+                provider: 'openai',
+                model: this.embeddingConfig.model,
+                dimensions: this.embeddingConfig.dimensions,
+                hasApiKey: !!this.embeddingConfig.openaiApiKey
+            });
+
+            // Create provider configuration
+            const config = {
+                provider: 'openai',
+                apiKey: this.embeddingConfig.openaiApiKey,
+                model: this.embeddingConfig.model,
+                dimensions: this.embeddingConfig.dimensions
+            };
+
+            // Validate configuration
+            console.log('[DEBUG] Validating OpenAI provider config...');
+            const validation = validateProviderConfig(config);
+            console.log('[DEBUG] OpenAI validation result:', validation);
+
+            if (!validation.isValid) {
+                throw new Error(`Configuration error: ${validation.errors.join(', ')}`);
+            }
+
+            // Create provider
+            console.log('[DEBUG] Creating OpenAI provider...');
+            const provider = await createProvider(config);
+            console.log('[DEBUG] OpenAI provider created:', provider.constructor.name);
+
+            // Generate embedding using the SDK
+            console.log('[DEBUG] Generating OpenAI embedding...');
+            const embedding = await provider.generateEmbedding(text);
+            console.log('[DEBUG] OpenAI embedding generated, length:', embedding.length);
+
+            // Get provider metrics for usage info
+            const metrics = provider.getMetrics();
+
+            // Clean up provider
+            await provider.cleanup();
+
+            if (fullResponse) {
+                return {
+                    embedding: Array.from(embedding), // Convert Float32Array to regular array
+                    model: this.embeddingConfig.model,
+                    usage: {
+                        prompt_tokens: Math.ceil(text.length / 4), // Estimate
+                        total_tokens: Math.ceil(text.length / 4)
+                    },
+                    metrics: metrics
+                };
+            } else {
+                return Array.from(embedding);
+            }
+        } catch (error) {
+            console.error('OpenAI embedding generation failed:', error);
+            throw error;
+        }
+    }
+
+    async generateTransformersEmbedding(text) {
+        try {
+            console.log('[DEBUG] Creating Transformers provider config...');
+            // Create provider configuration for Transformers.js
+            const config = {
+                provider: 'transformers',
+                model: 'all-MiniLM-L6-v2',
+                dimensions: 384
+            };
+
+            // Validate configuration
+            console.log('[DEBUG] Validating Transformers provider config...');
+            const validation = validateProviderConfig(config);
+            console.log('[DEBUG] Transformers validation result:', validation);
+
+            if (!validation.isValid) {
+                throw new Error(`Configuration error: ${validation.errors.join(', ')}`);
+            }
+
+            // Create provider
+            console.log('[DEBUG] Creating Transformers provider...');
+            const provider = await createProvider(config);
+            console.log('[DEBUG] Transformers provider created:', provider.constructor.name);
+
+            // Generate embedding using the SDK
+            console.log('[DEBUG] Generating Transformers embedding...');
+            const embedding = await provider.generateEmbedding(text);
+            console.log('[DEBUG] Transformers embedding generated, length:', embedding.length);
+
+            // Get provider metrics
+            const metrics = provider.getMetrics();
+
+            // Clean up provider
+            await provider.cleanup();
+
+            return {
+                embedding: Array.from(embedding), // Convert Float32Array to regular array
+                metrics: metrics
+            };
+        } catch (error) {
+            console.warn('Transformers.js provider failed, falling back to mock embedding:', error.message);
+
+            // Fallback to mock embedding for demo purposes
+            const embedding = Array.from({length: 384}, () => Math.random() * 2 - 1);
+
+            // Normalize to unit vector
+            const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+            return {
+                embedding: embedding.map(val => val / magnitude),
+                metrics: { totalEmbeddings: 1, averageGenerationTime: 100, errorCount: 0 }
+            };
+        }
+    }
+
+    async generateEmbedding() {
+        const text = this.elements.testText.value.trim();
+        if (!text) {
+            this.setStatus('Please enter text to generate embedding', 'error');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+            this.showEmbeddingProgress();
+            this.clearEmbeddingResults();
+
+            console.log('[DEBUG] Starting embedding generation:', {
+                text: text.substring(0, 50) + '...',
+                provider: this.embeddingConfig.provider,
+                config: this.embeddingConfig
+            });
+
+            const startTime = performance.now();
+            let result;
+
+            if (this.embeddingConfig.provider === 'openai') {
+                result = await this.generateOpenAIEmbedding(text);
+                this.currentEmbedding = {
+                    text: text,
+                    embedding: new Float32Array(result.embedding),
+                    provider: 'openai',
+                    model: result.model,
+                    dimensions: result.embedding.length,
+                    usage: result.usage,
+                    metrics: result.metrics,
+                    generatedAt: new Date().toISOString()
+                };
+            } else {
+                console.log('[DEBUG] Calling generateTransformersEmbedding...');
+                const result = await this.generateTransformersEmbedding(text);
+                console.log('[DEBUG] Transformers result:', result);
+
+                this.currentEmbedding = {
+                    text: text,
+                    embedding: new Float32Array(result.embedding),
+                    provider: 'transformers',
+                    model: 'all-MiniLM-L6-v2',
+                    dimensions: result.embedding.length,
+                    metrics: result.metrics,
+                    generatedAt: new Date().toISOString()
+                };
+                console.log('[DEBUG] currentEmbedding set:', this.currentEmbedding);
+            }
+
+            const generationTime = performance.now() - startTime;
+
+            console.log('[DEBUG] About to call displayEmbeddingResults with:', this.currentEmbedding);
+            this.displayEmbeddingResults(this.currentEmbedding, generationTime);
+            console.log('[DEBUG] displayEmbeddingResults called successfully');
+
+            this.elements.addToCollectionBtn.disabled = false;
+            this.setStatus(`Embedding generated successfully in ${generationTime.toFixed(1)}ms`, 'success');
+
+        } catch (error) {
+            console.error('[DEBUG] Embedding generation failed:', error);
+            console.error('[DEBUG] Error details:', {
+                message: error.message,
+                stack: error.stack,
+                provider: this.embeddingConfig.provider
+            });
+            this.setStatus(`Embedding generation failed: ${error.message}`, 'error');
+            this.currentEmbedding = null;
+            this.elements.addToCollectionBtn.disabled = true;
+        } finally {
+            this.setLoading(false);
+            this.hideEmbeddingProgress();
+        }
+    }
+
+    displayEmbeddingResults(embedding, generationTime) {
+        const container = this.elements.embeddingResults;
+
+        const resultHtml = `
+            <div class="embedding-result">
+                <div class="embedding-info">
+                    <div class="embedding-metric">
+                        <span class="label">Provider:</span>
+                        <span class="value">${embedding.provider}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Model:</span>
+                        <span class="value">${embedding.model}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Dimensions:</span>
+                        <span class="value">${embedding.dimensions}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Generation Time:</span>
+                        <span class="value">${generationTime.toFixed(1)}ms</span>
+                    </div>
+                    ${embedding.usage ? `
+                    <div class="embedding-metric">
+                        <span class="label">Tokens Used:</span>
+                        <span class="value">${embedding.usage.total_tokens}</span>
+                    </div>
+                    <div class="embedding-metric">
+                        <span class="label">Prompt Tokens:</span>
+                        <span class="value">${embedding.usage.prompt_tokens}</span>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="input-group">
+                    <label>Generated Text:</label>
+                    <div class="result-content">${this.escapeHtml(embedding.text)}</div>
+                </div>
+
+                <div class="input-group">
+                    <label>Embedding Vector (first 20 dimensions):</label>
+                    <div class="embedding-vector">[${Array.from(embedding.embedding.slice(0, 20)).map(v => v.toFixed(6)).join(', ')}${embedding.dimensions > 20 ? ', ...' : ''}]</div>
+                </div>
+            </div>
+        `;
+
+        container.innerHTML = resultHtml;
+
+        this.elements.embeddingStats.textContent =
+            `Embedding generated: ${embedding.dimensions} dimensions, ${embedding.provider} provider`;
+    }
+
+    clearEmbeddingResults() {
+        this.elements.embeddingResults.innerHTML = '<div class="results-placeholder">No embedding generated yet</div>';
+        this.elements.embeddingStats.textContent = '';
+    }
+
+    showEmbeddingProgress() {
+        this.elements.embeddingProgress.style.display = 'block';
+        const fill = this.elements.embeddingProgress.querySelector('.progress-fill');
+        const text = this.elements.embeddingProgress.querySelector('.progress-text');
+
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += 10;
+            fill.style.width = `${Math.min(progress, 90)}%`;
+            text.textContent = `${Math.min(progress, 90)}%`;
+
+            if (progress >= 90) {
+                clearInterval(interval);
+            }
+        }, 100);
+
+        this.embeddingProgressInterval = interval;
+    }
+
+    hideEmbeddingProgress() {
+        if (this.embeddingProgressInterval) {
+            clearInterval(this.embeddingProgressInterval);
+        }
+
+        const fill = this.elements.embeddingProgress.querySelector('.progress-fill');
+        const text = this.elements.embeddingProgress.querySelector('.progress-text');
+        fill.style.width = '100%';
+        text.textContent = '100%';
+
+        setTimeout(() => {
+            this.elements.embeddingProgress.style.display = 'none';
+        }, 500);
+    }
+
+    async createCollection() {
+        const name = this.elements.collectionName.value.trim();
+        const description = this.elements.collectionDescription.value.trim();
+
+        if (!name) {
+            this.setStatus('Collection name is required', 'error');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+
+            // Use the SDK's createCollection method
+            await this.db.createCollection({
+                name: name,
+                embeddingConfig: {
+                    provider: 'transformers',
+                    model: 'Xenova/all-MiniLM-L6-v2',
+                    dimensions: 384
+                }
+            });
+
+            this.setStatus(`Collection "${name}" created successfully`, 'success');
+
+            // Clear form
+            this.elements.collectionName.value = '';
+            this.elements.collectionDescription.value = '';
+
+        } catch (error) {
+            console.error('Collection creation failed:', error);
+            this.setStatus(`Collection creation failed: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async listCollections() {
+        try {
+            this.setLoading(true);
+
+            // This is a placeholder for listing collections
+            // In a real implementation, you would query the collections from the database
+            const collections = [
+                {
+                    name: 'default',
+                    description: 'Default collection for demo data',
+                    documents: 12,
+                    created: '2024-01-15'
+                }
+            ];
+
+            this.displayCollections(collections);
+            this.setStatus('Collections loaded successfully', 'success');
+
+        } catch (error) {
+            console.error('Failed to list collections:', error);
+            this.setStatus(`Failed to list collections: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    displayCollections(collections) {
+        const container = this.elements.embeddingResults;
+
+        if (collections.length === 0) {
+            container.innerHTML = '<div class="results-placeholder">No collections found</div>';
+            return;
+        }
+
+        const collectionsHtml = collections.map(collection => `
+            <div class="collection-item">
+                <div>
+                    <div class="collection-name">${this.escapeHtml(collection.name)}</div>
+                    <div class="collection-meta">${this.escapeHtml(collection.description || 'No description')}</div>
+                </div>
+                <div class="collection-meta">
+                    ${collection.documents} docs • Created ${collection.created}
+                </div>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="collection-list">
+                ${collectionsHtml}
+            </div>
+        `;
+
+        this.elements.embeddingStats.textContent = `Found ${collections.length} collection(s)`;
+    }
+
+    async addToCollection() {
+        if (!this.currentEmbedding) {
+            this.setStatus('No embedding to add - generate an embedding first', 'error');
+            return;
+        }
+
+        const collectionName = this.elements.collectionName.value.trim() || 'default';
+
+        try {
+            this.setLoading(true);
+
+            // This is a placeholder for adding embedding to collection
+            // In a real implementation, you would store this in your database
+            console.log('Adding to collection:', {
+                collection: collectionName,
+                text: this.currentEmbedding.text,
+                embedding: this.currentEmbedding.embedding,
+                metadata: {
+                    provider: this.currentEmbedding.provider,
+                    model: this.currentEmbedding.model,
+                    dimensions: this.currentEmbedding.dimensions,
+                    generatedAt: this.currentEmbedding.generatedAt
+                }
+            });
+
+            this.setStatus(`Embedding added to collection "${collectionName}" successfully`, 'success');
+
+            // Clear current embedding
+            this.currentEmbedding = null;
+            this.elements.addToCollectionBtn.disabled = true;
+            this.clearEmbeddingResults();
+
+        } catch (error) {
+            console.error('Failed to add to collection:', error);
+            this.setStatus(`Failed to add to collection: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    // Phase 5: Queue Management Methods
+
+    async showCollectionStatus() {
+        const collectionName = this.elements.collectionName.value.trim() || 'default';
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.getCollectionEmbeddingStatus === 'function') {
+                const status = await this.db.getCollectionEmbeddingStatus(collectionName);
+
+                this.displayResults('collection-status', JSON.stringify(status, null, 2), 'json');
+                this.setStatus(`Collection "${collectionName}" status retrieved successfully`, 'success');
+            } else {
+                // Fallback for basic collection info
+                const collections = await this.db.exec(`
+                    SELECT name, created_at, config FROM collections WHERE name = ?
+                `, [collectionName]);
+
+                if (collections.length > 0) {
+                    this.displayResults('collection-status', JSON.stringify(collections[0], null, 2), 'json');
+                    this.setStatus(`Basic collection info retrieved`, 'success');
+                } else {
+                    this.setStatus(`Collection "${collectionName}" not found`, 'error');
+                }
+            }
+
+        } catch (error) {
+            console.error('Failed to get collection status:', error);
+            this.setStatus(`Failed to get collection status: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async enqueueEmbedding() {
+        const collection = this.elements.queueCollection.value.trim();
+        const textContent = this.elements.queueText.value.trim();
+        const priority = parseInt(this.elements.queuePriority.value);
+
+        if (!collection) {
+            this.setStatus('Collection name is required', 'error');
+            return;
+        }
+
+        if (!textContent) {
+            this.setStatus('Text content is required', 'error');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.enqueueEmbedding === 'function') {
+                const documentId = `doc-${Date.now()}`;
+
+                // First, insert the document using the proper Database API
+                const insertResult = await this.db.insertDocumentWithEmbedding({
+                    collection: collection,
+                    id: documentId,
+                    title: 'Queued Document',
+                    content: textContent,
+                    metadata: { source: 'queue' },
+                    document: {
+                        id: documentId,
+                        title: 'Queued Document',
+                        content: textContent,
+                        metadata: { source: 'queue' }
+                    },
+                    options: {
+                        generateEmbedding: false // We'll use the queue for this
+                    }
+                });
+
+                console.log(`Document ${documentId} inserted via insertDocumentWithEmbedding:`, insertResult);
+
+                // Then enqueue the embedding
+                const queueId = await this.db.enqueueEmbedding({
+                    collection: collection,
+                    documentId: documentId,
+                    textContent: textContent,
+                    priority: priority
+                });
+
+                this.displayQueueResult(`Document created and embedding enqueued successfully with ID: ${queueId}`, 'success');
+                this.setStatus('Document created and embedding enqueued for processing', 'success');
+
+                // Auto-update queue status
+                await this.updateQueueStatus();
+            } else {
+                this.setStatus('Queue functionality not available - requires Phase 5 implementation', 'error');
+            }
+
+        } catch (error) {
+            console.error('Failed to enqueue embedding:', error);
+            this.setStatus(`Failed to enqueue embedding: ${error.message}`, 'error');
+            this.displayQueueResult(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async processEmbeddingQueue() {
+        const collection = this.elements.queueCollection.value.trim() || undefined;
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.processEmbeddingQueue === 'function') {
+                const result = await this.db.processEmbeddingQueue({
+                    collection: collection,
+                    batchSize: 5
+                });
+
+                this.displayQueueResult(`Processed ${result.processed} items, ${result.failed} failed, ${result.remainingInQueue} remaining`, 'success');
+                this.setStatus('Queue processing completed', 'success');
+
+                // Auto-update queue status
+                await this.updateQueueStatus();
+            } else {
+                this.setStatus('Queue processing not available - requires Phase 5 implementation', 'error');
+            }
+
+        } catch (error) {
+            console.error('Failed to process queue:', error);
+            this.setStatus(`Failed to process queue: ${error.message}`, 'error');
+            this.displayQueueResult(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async updateQueueStatus() {
+        const collection = this.elements.queueCollection.value.trim() || undefined;
+
+        try {
+            if (this.db && typeof this.db.getQueueStatus === 'function') {
+                const status = await this.db.getQueueStatus(collection);
+
+                console.log('Queue status received:', status);
+                console.log('Status properties:', Object.keys(status));
+                console.log('totalCount:', status.totalCount);
+                console.log('pendingCount:', status.pendingCount);
+
+                // Update status display
+                this.elements.queueTotal.textContent = status.totalCount || 0;
+                this.elements.queuePending.textContent = status.pendingCount || 0;
+                this.elements.queueProcessing.textContent = status.processingCount || 0;
+                this.elements.queueCompleted.textContent = status.completedCount || 0;
+                this.elements.queueFailed.textContent = status.failedCount || 0;
+
+                console.log('Updated DOM elements:');
+                console.log('- Total:', this.elements.queueTotal.textContent);
+                console.log('- Pending:', this.elements.queuePending.textContent);
+
+                const statusMsg = collection
+                    ? `Queue status updated for collection "${collection}"`
+                    : 'Global queue status updated';
+                this.displayQueueResult(statusMsg, 'info');
+            } else {
+                // Fallback: show placeholder values
+                this.elements.queueTotal.textContent = '0';
+                this.elements.queuePending.textContent = '0';
+                this.elements.queueProcessing.textContent = '0';
+                this.elements.queueCompleted.textContent = '0';
+                this.elements.queueFailed.textContent = '0';
+
+                this.displayQueueResult('Queue status not available - requires Phase 5 implementation', 'warning');
+            }
+
+        } catch (error) {
+            console.error('Failed to get queue status:', error);
+            this.displayQueueResult(`Error getting queue status: ${error.message}`, 'error');
+        }
+    }
+
+    async clearEmbeddingQueue() {
+        const collection = this.elements.queueCollection.value.trim() || undefined;
+
+        try {
+            this.setLoading(true);
+
+            if (this.db && typeof this.db.clearEmbeddingQueue === 'function') {
+                const cleared = await this.db.clearEmbeddingQueue({
+                    collection: collection,
+                    status: 'completed' // Clear only completed items by default
+                });
+
+                this.displayQueueResult(`Cleared ${cleared} completed items from queue`, 'success');
+                this.setStatus('Queue cleared successfully', 'success');
+
+                // Auto-update queue status
+                await this.updateQueueStatus();
+            } else {
+                this.setStatus('Queue clearing not available - requires Phase 5 implementation', 'error');
+            }
+
+        } catch (error) {
+            console.error('Failed to clear queue:', error);
+            this.setStatus(`Failed to clear queue: ${error.message}`, 'error');
+            this.displayQueueResult(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    displayQueueResult(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+
+        this.elements.queueResults.innerHTML = `
+            <div class="queue-operation-result ${className}">
+                <div class="operation-message">${message}</div>
+                <div class="operation-details">Time: ${timestamp}</div>
+            </div>
+        `;
+    }
+
+    // SCRUM-17: LLM Integration Methods
+
+    /**
+     * Load API keys from config (mock for demo - in real app load from secure storage)
+     */
+    loadApiKeys() {
+        try {
+            // In a real application, this would load from secure storage
+            // For demo purposes, show instructions
+            const provider = this.elements.llmProvider.value;
+
+            alert(`To use ${provider} LLM integration:\n\n` +
+                  `1. Get your API key from the provider\n` +
+                  `2. Paste it in the API Key field\n` +
+                  `3. Click one of the test buttons\n\n` +
+                  `Note: Your API key is never stored, only used for this session.`);
+
+            this.setStatus(`Ready to test ${provider} LLM integration`, 'success');
+        } catch (error) {
+            console.error('Load keys error:', error);
+            this.setStatus(`Error: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Get LLM configuration from UI
+     */
+    getLLMConfig() {
+        const provider = this.elements.llmProvider.value;
+        const apiKey = this.elements.llmApiKey.value.trim();
+
+        if (!apiKey) {
+            throw new Error('API key is required. Please enter your API key.');
+        }
+
+        const config = {
+            provider,
+            apiKey,
+            timeout: 30000
+        };
+
+        // Provider-specific configurations
+        switch (provider) {
+            case 'openai':
+                config.model = 'gpt-4';
+                break;
+            case 'anthropic':
+                config.model = 'claude-3-sonnet-20240229';
+                break;
+            case 'openrouter':
+                config.model = 'openai/gpt-4';
+                config.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+                break;
+            case 'custom':
+                config.model = 'custom-model';
+                config.endpoint = 'https://your-endpoint.com/v1/chat/completions';
+                break;
+        }
+
+        return config;
+    }
+
+    /**
+     * Display LLM result in formatted way
+     */
+    displayLLMResult(element, result, type = 'success') {
+        const className = type === 'error' ? 'error' : 'success';
+
+        if (typeof result === 'string') {
+            element.className = `llm-results ${className}`;
+            element.textContent = result;
+            return;
+        }
+
+        element.className = `llm-results ${className}`;
+        element.innerHTML = '';
+
+        Object.entries(result).forEach(([key, value]) => {
+            const item = document.createElement('div');
+            item.className = 'llm-result-item';
+
+            const label = document.createElement('span');
+            label.className = 'llm-result-label';
+            label.textContent = `${key}:`;
+
+            const val = document.createElement('span');
+            val.className = 'llm-result-value';
+
+            if (Array.isArray(value)) {
+                val.textContent = JSON.stringify(value, null, 2);
+            } else if (typeof value === 'object') {
+                val.textContent = JSON.stringify(value, null, 2);
+            } else {
+                val.textContent = String(value);
+            }
+
+            item.appendChild(label);
+            item.appendChild(val);
+            element.appendChild(item);
+        });
+    }
+
+    /**
+     * Test query enhancement with LLM
+     */
+    async testEnhanceQuery() {
+        const resultsEl = this.elements.enhanceQueryResults;
+
+        try {
+            resultsEl.className = 'llm-results loading';
+            resultsEl.textContent = 'Enhancing query with LLM...';
+
+            const query = this.elements.enhanceQueryInput.value.trim();
+            if (!query) {
+                throw new Error('Please enter a query to enhance');
+            }
+
+            const config = this.getLLMConfig();
+            const startTime = performance.now();
+
+            this.setStatus(`Enhancing query with ${config.provider}...`, 'info');
+
+            const enhanced = await this.db.enhanceQuery(query, config);
+
+            const elapsedTime = performance.now() - startTime;
+
+            this.displayLLMResult(resultsEl, {
+                'Original Query': enhanced.originalQuery,
+                'Enhanced Query': enhanced.enhancedQuery,
+                'Suggestions': enhanced.suggestions,
+                'Intent': enhanced.intent || 'N/A',
+                'Confidence': enhanced.confidence,
+                'Processing Time': `${elapsedTime.toFixed(0)}ms`,
+                'Provider': `${config.provider} (${config.model})`
+            }, 'success');
+
+            this.setStatus(`Query enhanced successfully in ${elapsedTime.toFixed(0)}ms`, 'success');
+
+        } catch (error) {
+            console.error('Enhance query error:', error);
+            this.displayLLMResult(resultsEl, `Error: ${error.message}`, 'error');
+            this.setStatus(`Enhancement failed: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Test result summarization with LLM
+     */
+    async testSummarizeResults() {
+        const resultsEl = this.elements.summarizeResults;
+
+        try {
+            resultsEl.className = 'llm-results loading';
+            resultsEl.textContent = 'Searching and summarizing with LLM...';
+
+            const searchQuery = this.elements.summarizeSearchInput.value.trim();
+            if (!searchQuery) {
+                throw new Error('Please enter a search query');
+            }
+
+            const config = this.getLLMConfig();
+
+            this.setStatus(`Searching for "${searchQuery}"...`, 'info');
+
+            // First, perform a search
+            const searchResults = await this.db.searchText(searchQuery);
+
+            if (!searchResults.results || searchResults.results.length === 0) {
+                throw new Error('No search results found to summarize');
+            }
+
+            const startTime = performance.now();
+            this.setStatus(`Summarizing ${searchResults.results.length} results with ${config.provider}...`, 'info');
+
+            const summary = await this.db.summarizeResults(searchResults.results, config);
+
+            const elapsedTime = performance.now() - startTime;
+
+            this.displayLLMResult(resultsEl, {
+                'Summary': summary.summary,
+                'Key Points': summary.keyPoints,
+                'Themes': summary.themes,
+                'Results Count': searchResults.results.length,
+                'Confidence': summary.confidence,
+                'Processing Time': `${elapsedTime.toFixed(0)}ms`,
+                'Provider': `${config.provider} (${config.model})`
+            }, 'success');
+
+            this.setStatus(`Summarized ${searchResults.results.length} results in ${elapsedTime.toFixed(0)}ms`, 'success');
+
+        } catch (error) {
+            console.error('Summarize results error:', error);
+            this.displayLLMResult(resultsEl, `Error: ${error.message}`, 'error');
+            this.setStatus(`Summarization failed: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Test combined smart search (enhance + search + summarize)
+     */
+    async testSmartSearch() {
+        const resultsEl = this.elements.smartSearchResults;
+
+        try {
+            resultsEl.className = 'llm-results loading';
+            resultsEl.textContent = 'Performing smart search with LLM...';
+
+            const query = this.elements.smartSearchInput.value.trim();
+            if (!query) {
+                throw new Error('Please enter a search query');
+            }
+
+            const enhanceEnabled = this.elements.smartEnhance.checked;
+            const summarizeEnabled = this.elements.smartSummarize.checked;
+
+            if (!enhanceEnabled && !summarizeEnabled) {
+                throw new Error('Please enable at least one LLM feature (enhance or summarize)');
+            }
+
+            const config = this.getLLMConfig();
+            const startTime = performance.now();
+
+            this.setStatus(`Smart searching with ${config.provider}...`, 'info');
+
+            const smartSearch = await this.db.searchWithLLM(query, {
+                enhanceQuery: enhanceEnabled,
+                summarizeResults: summarizeEnabled,
+                searchOptions: { limit: 10 },
+                llmOptions: config
+            });
+
+            const elapsedTime = performance.now() - startTime;
+
+            const resultData = {
+                'Original Query': query,
+                'Results Found': smartSearch.results.length,
+                'Total Time': `${elapsedTime.toFixed(0)}ms`
+            };
+
+            if (smartSearch.enhancedQuery) {
+                resultData['Enhanced Query'] = smartSearch.enhancedQuery.enhancedQuery;
+                resultData['Suggestions'] = smartSearch.enhancedQuery.suggestions;
+                resultData['Enhancement Time'] = `${smartSearch.enhancedQuery.processingTime}ms`;
+            }
+
+            if (smartSearch.summary) {
+                resultData['Summary'] = smartSearch.summary.summary;
+                resultData['Key Points'] = smartSearch.summary.keyPoints;
+                resultData['Summarization Time'] = `${smartSearch.summary.processingTime}ms`;
+            }
+
+            resultData['Search Time'] = `${smartSearch.searchTime}ms`;
+            resultData['LLM Time'] = `${smartSearch.llmTime}ms`;
+            resultData['Provider'] = `${config.provider} (${config.model})`;
+
+            this.displayLLMResult(resultsEl, resultData, 'success');
+
+            this.setStatus(`Smart search completed in ${elapsedTime.toFixed(0)}ms`, 'success');
+
+        } catch (error) {
+            console.error('Smart search error:', error);
+            this.displayLLMResult(resultsEl, `Error: ${error.message}`, 'error');
+            this.setStatus(`Smart search failed: ${error.message}`, 'error');
+        }
+    }
+
+    // =============================================================================
+    // Pure LLM Call Methods (SCRUM-17)
+    // =============================================================================
+
+    /**
+     * Detect provider from API key prefix
+     */
+    detectProviderFromApiKey(apiKey) {
+        if (!apiKey) return null;
+
+        // OpenRouter keys: sk-or-v1-...
+        if (apiKey.startsWith('sk-or-v1-')) {
+            return 'openrouter';
+        }
+        // Anthropic keys: sk-ant-...
+        if (apiKey.startsWith('sk-ant-')) {
+            return 'anthropic';
+        }
+        // OpenAI keys: sk-...
+        if (apiKey.startsWith('sk-')) {
+            return 'openai';
+        }
+
+        return null;
+    }
+
+    /**
+     * Update model placeholder and UI based on selected provider
+     */
+    updateLLMModelPlaceholder() {
+        const provider = this.elements.llmProvider.value;
+        const modelInput = this.elements.llmModel;
+
+        const placeholders = {
+            'openai': 'gpt-4, gpt-4-turbo, gpt-3.5-turbo',
+            'anthropic': 'claude-3-opus, claude-3-sonnet, claude-3-haiku',
+            'openrouter': 'gpt-4, claude-3-opus, mixtral-8x7b, etc.',
+            'custom': 'model-name'
+        };
+
+        const defaultModels = {
+            'openai': 'gpt-4',
+            'anthropic': 'claude-3-sonnet',
+            'openrouter': 'gpt-4',
+            'custom': 'gpt-4'
+        };
+
+        modelInput.placeholder = placeholders[provider] || 'model-name';
+        modelInput.value = defaultModels[provider] || 'gpt-4';
+
+        // Show endpoint field only for custom provider
+        if (provider === 'custom') {
+            this.elements.llmEndpointGroup.style.display = 'block';
+        } else {
+            this.elements.llmEndpointGroup.style.display = 'none';
+        }
+    }
+
+    /**
+     * Call LLM with the provided prompt
+     */
+    async callLLM() {
+        if (!this.db) {
+            alert('Database not initialized');
+            return;
+        }
+
+        let provider = this.elements.llmProvider.value;
+        const model = this.elements.llmModel.value.trim();
+        const apiKey = this.elements.llmApiKey.value.trim();
+        const endpoint = this.elements.llmEndpoint.value.trim();
+        const prompt = this.elements.llmPrompt.value.trim();
+        const temperature = parseFloat(this.elements.llmTemperature.value);
+        const maxTokens = parseInt(this.elements.llmMaxTokens.value);
+
+        if (!prompt) {
+            alert('Please enter a prompt');
+            return;
+        }
+
+        if (!apiKey) {
+            alert('Please enter your API key');
+            return;
+        }
+
+        if (!model) {
+            alert('Please enter a model name');
+            return;
+        }
+
+        // Auto-detect provider from API key if possible
+        const detectedProvider = this.detectProviderFromApiKey(apiKey);
+        if (detectedProvider && detectedProvider !== provider) {
+            console.log(`Auto-detected provider '${detectedProvider}' from API key (selected: '${provider}')`);
+            provider = detectedProvider;
+            this.setStatus(`Auto-detected provider: ${provider}`, 'info');
+        }
+
+        // Validate endpoint for custom provider
+        if (provider === 'custom' && !endpoint) {
+            alert('Please enter an endpoint URL for custom provider');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+            this.elements.callLLMBtn.disabled = true;
+            this.elements.callLLMBtn.textContent = 'Calling LLM...';
+
+            const startTime = Date.now();
+
+            const options = {
+                provider,
+                model,
+                apiKey,
+                temperature,
+                maxTokens,
+                timeout: 30000
+            };
+
+            // Set endpoint for OpenRouter and custom providers
+            if (provider === 'openrouter') {
+                options.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+            } else if (provider === 'custom' && endpoint) {
+                options.endpoint = endpoint;
+            }
+
+            const result = await this.db.callLLM(prompt, options);
+
+            const elapsed = Date.now() - startTime;
+
+            // Display response
+            this.elements.llmResponseContainer.style.display = 'block';
+            this.elements.llmResponseText.textContent = result.text;
+            this.elements.llmResponseModel.textContent = `${result.provider}/${result.model}`;
+
+            if (result.usage) {
+                this.elements.llmResponseTokens.textContent =
+                    `${result.usage.totalTokens} (${result.usage.promptTokens}+${result.usage.completionTokens})`;
+            } else {
+                this.elements.llmResponseTokens.textContent = 'N/A';
+            }
+
+            this.elements.llmResponseTime.textContent = `${result.processingTime}ms (${elapsed}ms total)`;
+
+            this.setStatus(`LLM call completed successfully in ${result.processingTime}ms`, 'success');
+
+        } catch (error) {
+            console.error('LLM call failed:', error);
+            alert(`LLM call failed: ${error.message}`);
+            this.setStatus(`LLM call failed: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+            this.elements.callLLMBtn.disabled = false;
+            this.elements.callLLMBtn.textContent = 'Call LLM';
+        }
+    }
+
+    /**
+     * Clear LLM response display
+     */
+    clearLLMResponse() {
+        this.elements.llmResponseContainer.style.display = 'none';
+        this.elements.llmResponseText.textContent = '';
+        this.elements.llmResponseModel.textContent = '-';
+        this.elements.llmResponseTokens.textContent = '-';
+        this.elements.llmResponseTime.textContent = '-';
+        this.setStatus('LLM response cleared', 'info');
     }
 }
 

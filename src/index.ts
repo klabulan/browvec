@@ -34,7 +34,11 @@ export type {
   SearchQuery,
   SearchResult,
   CollectionInfo,
-  WorkerConfig
+  WorkerConfig,
+  CreateCollectionParams,
+  InsertDocumentWithEmbeddingParams,
+  SemanticSearchParams,
+  CollectionEmbeddingStatusResult
 } from './types/worker.js';
 
 // Utility exports
@@ -59,15 +63,144 @@ export {
 // Worker utilities (for advanced usage)
 export { WorkerRPC, createWorkerRPC } from './utils/rpc.js';
 
+// Embedding system exports
+export {
+  // Provider implementations
+  OpenAIProvider,
+  createOpenAIProvider,
+  isValidModelDimensionCombo,
+  getRecommendedConfig,
+  TransformersProvider,
+  createTransformersProvider,
+
+  // Factory and utilities
+  createEmbeddingProvider,
+  validateEmbeddingConfig,
+  getRecommendedEmbeddingConfig,
+  checkConfigCompatibility,
+
+  // Provider Factory (new)
+  EmbeddingProviderFactoryImpl,
+  providerFactory,
+  createProvider,
+  validateProviderConfig,
+  checkProviderSupport,
+  getProviderRecommendations,
+  getAvailableProviders,
+  getAvailableModels,
+
+  // Base classes and interfaces
+  BaseEmbeddingProvider,
+  ExternalProvider,
+  ProviderUtils,
+
+  // Constants
+  EMBEDDING_DEFAULTS,
+  SUPPORTED_PROVIDERS,
+
+  // Errors
+  EmbeddingError,
+  ProviderError,
+  AuthenticationError,
+  ConfigurationError,
+  ValidationError,
+  QuotaExceededError,
+  TimeoutError,
+
+  // Utilities
+  TextProcessor,
+  MemoryCache,
+  EmbeddingUtils,
+  CollectionUtils,
+  EmbeddingConstants
+} from './embedding/index.js';
+
+// Task 6.2: Internal Embedding Pipeline exports
+export {
+  // Core pipeline components
+  InternalPipelineImpl,
+  createInternalPipeline,
+
+  // Model management
+  ModelManagerImpl,
+  createModelManager,
+
+  // Cache management
+  CacheManagerImpl,
+  createCacheManager,
+  QueryCache,
+  ModelCache
+} from './pipeline/index.js';
+
+// Task 6.2: Pipeline type exports
+export type {
+  // Core interfaces
+  InternalPipeline,
+  ModelManager,
+  CacheManager,
+
+  // Pipeline types
+  PipelineEmbeddingResult,
+  PipelineBatchEmbeddingResult,
+  PipelineEmbeddingRequest,
+  PipelinePerformanceStats,
+  EmbeddingOptions,
+  BatchOptions,
+
+  // Model management types
+  LoadedModel,
+  ModelStatus,
+  LoadingStrategy,
+  MemoryOptimizationOptions,
+  EmbeddingModel,
+
+  // Cache management types
+  CacheLevel,
+  CacheOptions,
+  CacheStatistics,
+  CacheResult,
+  QueryCacheOptions,
+  QueryCacheEntry,
+  QueryCacheConfig,
+  QueryCacheStats,
+  CachedModelInfo,
+  ModelCacheConfig,
+  ModelCacheStats,
+  ModelCacheEntry
+} from './pipeline/index.js';
+
+// Embedding type exports
+export type {
+  EmbeddingProvider,
+  CollectionEmbeddingConfig,
+  EmbeddingConfig,
+  EmbeddingProviderType,
+  EmbeddingResult,
+  BatchEmbeddingResult,
+  SemanticSearchOptions,
+  HybridSearchOptions,
+  SearchResultWithEmbedding,
+
+  // Provider Factory types
+  ProviderSupportInfo,
+  ProviderConfigInfo,
+  ProviderRecommendation,
+  ModelInfo
+} from './embedding/index.js';
+
 // Version information
 export const VERSION = '1.0.0-mvp';
 export const FEATURES = [
   'sql.js-compatibility',
-  'opfs-persistence', 
+  'opfs-persistence',
   'hybrid-search',
   'sqlite-vec',
   'fts5',
-  'worker-based'
+  'worker-based',
+  'embedding-generation',
+  'collection-based-embeddings',
+  'automatic-embedding-generation',
+  'semantic-search'
 ] as const;
 
 /**
@@ -80,18 +213,44 @@ export const FEATURES = [
  * @example
  * ```typescript
  * import { initLocalRetrieve } from 'localretrieve';
- * 
+ *
  * // Initialize with OPFS persistence
  * const db = await initLocalRetrieve('opfs:/myapp/search.db');
- * 
+ *
  * // Initialize schema for hybrid search
  * await db.initializeSchema();
- * 
- * // Use sql.js compatible API
+ *
+ * // Create a collection with embedding configuration
+ * await db.createCollection({
+ *   name: 'documents',
+ *   embeddingConfig: {
+ *     provider: 'transformers',
+ *     model: 'all-MiniLM-L6-v2',
+ *     dimensions: 384
+ *   }
+ * });
+ *
+ * // Insert document with automatic embedding generation
+ * await db.insertDocumentWithEmbedding({
+ *   collection: 'documents',
+ *   document: {
+ *     title: 'Sample Document',
+ *     content: 'This is a sample document content.'
+ *   }
+ * });
+ *
+ * // Perform semantic search
+ * const results = await db.searchSemantic({
+ *   collection: 'documents',
+ *   query: 'sample content',
+ *   options: { limit: 10 }
+ * });
+ *
+ * // Or use traditional sql.js compatible API
  * db.run('INSERT INTO docs_default (id, content) VALUES (?, ?)', ['doc1', 'hello world']);
- * 
- * // Or use hybrid search
- * const results = await db.search({
+ *
+ * // Or use hybrid search with manual vectors
+ * const hybridResults = await db.search({
  *   query: { text: 'hello', vector: myVector },
  *   limit: 10
  * });
@@ -106,7 +265,8 @@ export async function initLocalRetrieve(
     filename
   };
 
-  const db = await DatabaseClass.create(undefined, filename);
+  const db = new DatabaseClass(finalConfig);
+  await db._initialize();
   
   // Initialize schema only if needed (the schema check handles existence)
   try {

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Transformers Import</title>
+</head>
+<body>
+    <h1>Testing @xenova/transformers Import</h1>
+    <div id="status">Loading...</div>
+    <div id="error" style="color: red; display: none;"></div>
+    <div id="success" style="color: green; display: none;"></div>
+
+    <script type="module">
+        async function testImport() {
+            try {
+                document.getElementById('status').textContent = 'Importing @xenova/transformers...';
+
+                // Test main thread import
+                const { pipeline, env } = await import('@xenova/transformers');
+
+                document.getElementById('success').style.display = 'block';
+                document.getElementById('success').textContent = 'Successfully imported @xenova/transformers!';
+                document.getElementById('status').textContent = 'Testing pipeline...';
+
+                // Test environment variables
+                console.log('Transformers.js env:', env);
+
+                // Test if we can create a pipeline (without loading a model)
+                console.log('Pipeline function available:', typeof pipeline);
+
+                document.getElementById('status').textContent = 'Import test completed successfully!';
+
+            } catch (error) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerHTML = `
+                    <h3>Import Error:</h3>
+                    <p><strong>Message:</strong> ${error.message}</p>
+                    <p><strong>Stack:</strong></p>
+                    <pre>${error.stack}</pre>
+                `;
+                document.getElementById('status').textContent = 'Import failed!';
+                console.error('Import error:', error);
+            }
+        }
+
+        testImport();
+    </script>
+</body>
+</html>
