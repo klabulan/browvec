@@ -610,3 +610,12 @@ export const DEFAULT_RESULT_PROCESSOR_CONFIG: ResultProcessorConfig = {
   enableHighlighting: true,
   maxProcessingTime: 100
 };
+
+export const DEFAULT_QUERY_ANALYZER_CONFIG = {
+  enableLearning: true,
+  confidenceThreshold: 0.7,
+  maxQueryLength: 1000,
+  supportedLanguages: ['en', 'ru'],
+  enableQueryExpansion: true,
+  enableEntityExtraction: true
+};

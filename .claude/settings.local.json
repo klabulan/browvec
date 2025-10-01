@@ -19,7 +19,18 @@
       "Bash(npx tsc:*)",
       "Bash(tasklist)",
       "Bash(find:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "mcp__atlassian__getJiraIssue",
+      "mcp__atlassian__atlassianUserInfo",
+      "Bash(dir:*)",
+      "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ai-sdk.dev)",
+      "WebFetch(domain:llmjs.themaximalist.com)",
+      "WebFetch(domain:js.langchain.com)",
+      "Bash(findstr:*)",
+      "Bash(npm run dev:vite:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []

@@ -145,9 +145,9 @@ export class SQLiteManager {
 
     this.log('info', 'sqlite-vec extension initialized successfully');
 
-    // Test the extension with a simple query
+    // Test the extension with a simple query (using JSON string syntax)
     try {
-      const testResults = await this.select('SELECT vec_f32([1.0, 2.0, 3.0]) as test_vector');
+      const testResults = await this.select("SELECT vec_f32('[1.0, 2.0, 3.0]') as test_vector");
       this.log('info', `vec_f32 function test result: ${JSON.stringify(testResults.rows[0])}`);
     } catch (error) {
       this.log('warn', `vec_f32 test failed: ${error instanceof Error ? error.message : String(error)}`);

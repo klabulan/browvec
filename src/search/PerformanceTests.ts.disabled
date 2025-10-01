@@ -1,0 +1,713 @@
+/**
+ * Тесты производительности для системы расширенной обработки запросов
+ * Проверяет соответствие требованию <100ms дополнительной задержки
+ */
+
+import { Database } from '../database/Database';
+import { QueryAnalyzer } from './QueryAnalyzer';
+import { SearchOptimizer } from './SearchOptimizer';
+import { SearchAnalytics } from '../analytics/SearchAnalytics';
+import { StrategyEngine } from './StrategyEngine';
+import { ResultProcessor } from './ResultProcessor';
+import type { StrategyEngineConfig, ResultProcessorConfig } from '../types/search.js';
+
+/**
+ * Конфигурация для тестирования производительности
+ */
+export interface PerformanceTestConfig {
+  /** Количество тестовых запросов для каждого теста */
+  queryCount: number;
+  /** Максимально допустимая дополнительная задержка в миллисекундах */
+  maxAdditionalLatency: number;
+  /** Размер тестового набора документов */
+  documentCount: number;
+  /** Включить подробные метрики производительности */
+  detailedMetrics: boolean;
+  /** Включить тестирование кэширования */
+  testCaching: boolean;
+}
+
+/**
+ * Результаты измерения производительности
+ */
+export interface PerformanceMetrics {
+  /** Базовое время обработки без расширенных функций (ms) */
+  baselineLatency: number;
+  /** Время обработки с расширенными функциями (ms) */
+  enhancedLatency: number;
+  /** Дополнительная задержка от расширенных функций (ms) */
+  additionalLatency: number;
+  /** Статистика времени выполнения */
+  statistics: {
+    min: number;
+    max: number;
+    mean: number;
+    median: number;
+    p95: number;
+    p99: number;
+    stdDev: number;
+  };
+  /** Детализация по компонентам */
+  componentBreakdown: {
+    queryAnalysis: number;
+    searchExecution: number;
+    resultOptimization: number;
+    analyticsTracking: number;
+  };
+  /** Эффективность кэширования */
+  cacheMetrics?: {
+    hitRate: number;
+    missRate: number;
+    avgCacheLatency: number;
+    avgDatabaseLatency: number;
+  };
+}
+
+/**
+ * Результат тестирования производительности
+ */
+export interface PerformanceTestResult {
+  /** Прошел ли тест требование по производительности */
+  passed: boolean;
+  /** Метрики производительности */
+  metrics: PerformanceMetrics;
+  /** Рекомендации по оптимизации */
+  recommendations: string[];
+  /** Подробные результаты всех тестов */
+  detailedResults?: {
+    testName: string;
+    queryTimes: number[];
+    avgLatency: number;
+    passed: boolean;
+  }[];
+}
+
+/**
+ * Класс для тестирования производительности системы расширенной обработки запросов
+ */
+export class PerformanceTestRunner {
+  private db: Database;
+  private queryAnalyzer: QueryAnalyzer;
+  private searchOptimizer: SearchOptimizer;
+  private analytics: SearchAnalytics;
+  private strategyEngine: StrategyEngine;
+  private resultProcessor: ResultProcessor;
+
+  constructor(
+    db: Database,
+    queryAnalyzer: QueryAnalyzer,
+    searchOptimizer: SearchOptimizer,
+    analytics: SearchAnalytics,
+    strategyEngine: StrategyEngine,
+    resultProcessor: ResultProcessor
+  ) {
+    this.db = db;
+    this.queryAnalyzer = queryAnalyzer;
+    this.searchOptimizer = searchOptimizer;
+    this.analytics = analytics;
+    this.strategyEngine = strategyEngine;
+    this.resultProcessor = resultProcessor;
+  }
+
+  /**
+   * Запускает полный набор тестов производительности
+   */
+  async runPerformanceTests(config: PerformanceTestConfig): Promise<PerformanceTestResult> {
+    console.log('🚀 Запуск тестов производительности расширенной обработки запросов...');
+
+    // Подготовка тестовых данных
+    await this.setupTestData(config.documentCount);
+
+    // Генерация тестовых запросов
+    const testQueries = this.generateTestQueries(config.queryCount);
+
+    // Измерение базовой производительности (без расширенных функций)
+    console.log('📊 Измерение базовой производительности...');
+    const baselineMetrics = await this.measureBaselinePerformance(testQueries);
+
+    // Измерение производительности с расширенными функциями
+    console.log('🔍 Измерение производительности с расширенными функциями...');
+    const enhancedMetrics = await this.measureEnhancedPerformance(testQueries, config);
+
+    // Измерение производительности кэширования (если включено)
+    let cacheMetrics: PerformanceMetrics['cacheMetrics'] | undefined;
+    if (config.testCaching) {
+      console.log('💾 Тестирование эффективности кэширования...');
+      cacheMetrics = await this.measureCachePerformance(testQueries);
+    }
+
+    // Детализированные тесты (если включены)
+    let detailedResults: PerformanceTestResult['detailedResults'] | undefined;
+    if (config.detailedMetrics) {
+      console.log('📈 Запуск детализированных тестов...');
+      detailedResults = await this.runDetailedTests(testQueries, config);
+    }
+
+    // Анализ результатов
+    const results = this.analyzeResults(
+      baselineMetrics,
+      enhancedMetrics,
+      config.maxAdditionalLatency,
+      cacheMetrics,
+      detailedResults
+    );
+
+    console.log('✅ Тесты производительности завершены');
+    return results;
+  }
+
+  /**
+   * Подготавливает тестовые данные
+   */
+  private async setupTestData(documentCount: number): Promise<void> {
+    console.log(`📚 Подготовка ${documentCount} тестовых документов...`);
+
+    const docs = [];
+    for (let i = 0; i < documentCount; i++) {
+      docs.push({
+        id: `test_doc_${i}`,
+        title: `Test Document ${i}`,
+        content: this.generateTestContent(i),
+        vector: new Float32Array(Array.from({ length: 384 }, () => Math.random() - 0.5))
+      });
+    }
+
+    // Очистка и инициализация базы данных
+    await this.db.exec('DELETE FROM docs_default WHERE id LIKE "test_doc_%"');
+
+    // Вставка тестовых документов
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO docs_default (id, title, content)
+      VALUES (?, ?, ?)
+    `);
+
+    for (const doc of docs) {
+      stmt.run([doc.id, doc.title, doc.content]);
+    }
+
+    stmt.finalize();
+
+    // Вставка векторов
+    const vecStmt = this.db.prepare(`
+      INSERT OR REPLACE INTO vec_default_dense (rowid, embedding)
+      SELECT rowid, ? FROM docs_default WHERE id = ?
+    `);
+
+    for (const doc of docs) {
+      vecStmt.run([doc.vector, doc.id]);
+    }
+
+    vecStmt.finalize();
+  }
+
+  /**
+   * Генерирует тестовое содержимое документа
+   */
+  private generateTestContent(index: number): string {
+    const topics = [
+      'machine learning algorithms',
+      'database optimization techniques',
+      'web development frameworks',
+      'cloud computing platforms',
+      'artificial intelligence applications',
+      'data visualization tools',
+      'security protocols',
+      'performance monitoring',
+      'user interface design',
+      'mobile application development'
+    ];
+
+    const topic = topics[index % topics.length];
+    return `This is test document ${index} about ${topic}. It contains various information related to ${topic} and demonstrates search capabilities. The content includes technical details, implementation examples, and best practices for ${topic} in modern software development.`;
+  }
+
+  /**
+   * Генерирует тестовые запросы
+   */
+  private generateTestQueries(count: number): string[] {
+    const queries = [
+      'machine learning optimization',
+      'database performance tuning',
+      'web framework comparison',
+      'cloud security best practices',
+      'AI model deployment',
+      'data visualization techniques',
+      'user interface patterns',
+      'mobile app architecture',
+      'performance monitoring tools',
+      'search algorithm implementation'
+    ];
+
+    const testQueries = [];
+    for (let i = 0; i < count; i++) {
+      testQueries.push(queries[i % queries.length]);
+    }
+
+    return testQueries;
+  }
+
+  /**
+   * Измеряет базовую производительность без расширенных функций
+   */
+  private async measureBaselinePerformance(queries: string[]): Promise<number[]> {
+    const times: number[] = [];
+
+    for (const query of queries) {
+      const startTime = performance.now();
+
+      // Выполнение базового поиска без расширенных функций
+      await this.executeBasicSearch(query);
+
+      const endTime = performance.now();
+      times.push(endTime - startTime);
+    }
+
+    return times;
+  }
+
+  /**
+   * Измеряет производительность с расширенными функциями
+   */
+  private async measureEnhancedPerformance(
+    queries: string[],
+    config: PerformanceTestConfig
+  ): Promise<{ times: number[], breakdown: PerformanceMetrics['componentBreakdown'][] }> {
+    const times: number[] = [];
+    const breakdowns: PerformanceMetrics['componentBreakdown'][] = [];
+
+    for (const query of queries) {
+      const startTime = performance.now();
+      const componentTimes = {
+        queryAnalysis: 0,
+        searchExecution: 0,
+        resultOptimization: 0,
+        analyticsTracking: 0
+      };
+
+      try {
+        // 1. Анализ запроса
+        const analysisStart = performance.now();
+        const analysis = await this.queryAnalyzer.analyzeQuery(query, {
+          collectionName: 'default',
+          limit: 10
+        });
+        componentTimes.queryAnalysis = performance.now() - analysisStart;
+
+        // 2. Выполнение поиска
+        const searchStart = performance.now();
+        const searchResults = await this.executeBasicSearch(query);
+        componentTimes.searchExecution = performance.now() - searchStart;
+
+        // 3. Оптимизация результатов
+        const optimizationStart = performance.now();
+        await this.searchOptimizer.optimizeResults(
+          searchResults.map(r => ({ ...r, snippet: r.content?.substring(0, 200) || '' })),
+          query,
+          {
+            userPreferences: { contentTypes: ['article'] },
+            diversificationEnabled: true,
+            personalizationEnabled: false
+          }
+        );
+        componentTimes.resultOptimization = performance.now() - optimizationStart;
+
+        // 4. Отслеживание аналитики
+        const analyticsStart = performance.now();
+        await this.analytics.trackQuery({
+          query,
+          timestamp: Date.now(),
+          resultCount: searchResults.length,
+          searchTime: componentTimes.searchExecution
+        });
+        componentTimes.analyticsTracking = performance.now() - analyticsStart;
+
+      } catch (error) {
+        console.warn(`Ошибка при обработке запроса "${query}":`, error);
+      }
+
+      const endTime = performance.now();
+      times.push(endTime - startTime);
+      breakdowns.push(componentTimes);
+    }
+
+    return { times, breakdown: breakdowns };
+  }
+
+  /**
+   * Выполняет базовый поиск без расширенных функций
+   */
+  private async executeBasicSearch(query: string): Promise<any[]> {
+    // Простой FTS поиск
+    const stmt = this.db.prepare(`
+      SELECT d.id, d.title, d.content
+      FROM docs_default d
+      JOIN fts_default fts ON d.rowid = fts.rowid
+      WHERE fts MATCH ?
+      LIMIT 10
+    `);
+
+    const results = stmt.all([query]);
+    stmt.finalize();
+
+    return results;
+  }
+
+  /**
+   * Измеряет производительность кэширования
+   */
+  private async measureCachePerformance(queries: string[]): Promise<PerformanceMetrics['cacheMetrics']> {
+    const cacheHits: number[] = [];
+    const cacheMisses: number[] = [];
+    let totalQueries = 0;
+    let cacheHitsCount = 0;
+
+    // Первый проход - заполнение кэша
+    for (const query of queries) {
+      await this.queryAnalyzer.analyzeQuery(query, { collectionName: 'default', limit: 10 });
+    }
+
+    // Второй проход - измерение кэшированных запросов
+    for (const query of queries) {
+      const startTime = performance.now();
+      await this.queryAnalyzer.analyzeQuery(query, { collectionName: 'default', limit: 10 });
+      const endTime = performance.now();
+
+      cacheHits.push(endTime - startTime);
+      totalQueries++;
+      cacheHitsCount++;
+    }
+
+    // Третий проход - измерение новых запросов (cache miss)
+    const newQueries = queries.map(q => `${q} extended query`);
+    for (const query of newQueries) {
+      const startTime = performance.now();
+      await this.queryAnalyzer.analyzeQuery(query, { collectionName: 'default', limit: 10 });
+      const endTime = performance.now();
+
+      cacheMisses.push(endTime - startTime);
+      totalQueries++;
+    }
+
+    return {
+      hitRate: cacheHitsCount / totalQueries,
+      missRate: (totalQueries - cacheHitsCount) / totalQueries,
+      avgCacheLatency: cacheHits.reduce((a, b) => a + b, 0) / cacheHits.length,
+      avgDatabaseLatency: cacheMisses.reduce((a, b) => a + b, 0) / cacheMisses.length
+    };
+  }
+
+  /**
+   * Запускает детализированные тесты
+   */
+  private async runDetailedTests(
+    queries: string[],
+    config: PerformanceTestConfig
+  ): Promise<PerformanceTestResult['detailedResults']> {
+    const tests = [
+      {
+        name: 'Query Analysis Performance',
+        test: async (query: string) => {
+          const start = performance.now();
+          await this.queryAnalyzer.analyzeQuery(query, { collectionName: 'default', limit: 10 });
+          return performance.now() - start;
+        }
+      },
+      {
+        name: 'Result Optimization Performance',
+        test: async (query: string) => {
+          const results = await this.executeBasicSearch(query);
+          const start = performance.now();
+          await this.searchOptimizer.optimizeResults(
+            results.map(r => ({ ...r, snippet: r.content?.substring(0, 200) || '' })),
+            query,
+            { diversificationEnabled: true, personalizationEnabled: false }
+          );
+          return performance.now() - start;
+        }
+      },
+      {
+        name: 'Analytics Tracking Performance',
+        test: async (query: string) => {
+          const start = performance.now();
+          await this.analytics.trackQuery({
+            query,
+            timestamp: Date.now(),
+            resultCount: 10,
+            searchTime: 50
+          });
+          return performance.now() - start;
+        }
+      }
+    ];
+
+    const results = [];
+
+    for (const test of tests) {
+      const times = [];
+      for (const query of queries) {
+        try {
+          const time = await test.test(query);
+          times.push(time);
+        } catch (error) {
+          console.warn(`Ошибка в тесте "${test.name}" для запроса "${query}":`, error);
+        }
+      }
+
+      const avgLatency = times.reduce((a, b) => a + b, 0) / times.length;
+      results.push({
+        testName: test.name,
+        queryTimes: times,
+        avgLatency,
+        passed: avgLatency < config.maxAdditionalLatency
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Анализирует результаты тестирования
+   */
+  private analyzeResults(
+    baselineTimes: number[],
+    enhancedData: { times: number[], breakdown: PerformanceMetrics['componentBreakdown'][] },
+    maxAdditionalLatency: number,
+    cacheMetrics?: PerformanceMetrics['cacheMetrics'],
+    detailedResults?: PerformanceTestResult['detailedResults']
+  ): PerformanceTestResult {
+    const enhancedTimes = enhancedData.times;
+    const breakdowns = enhancedData.breakdown;
+
+    // Вычисление статистик
+    const baselineStats = this.calculateStatistics(baselineTimes);
+    const enhancedStats = this.calculateStatistics(enhancedTimes);
+
+    const additionalLatency = enhancedStats.mean - baselineStats.mean;
+    const passed = additionalLatency <= maxAdditionalLatency;
+
+    // Усреднение компонентов
+    const avgComponentBreakdown = {
+      queryAnalysis: breakdowns.reduce((sum, b) => sum + b.queryAnalysis, 0) / breakdowns.length,
+      searchExecution: breakdowns.reduce((sum, b) => sum + b.searchExecution, 0) / breakdowns.length,
+      resultOptimization: breakdowns.reduce((sum, b) => sum + b.resultOptimization, 0) / breakdowns.length,
+      analyticsTracking: breakdowns.reduce((sum, b) => sum + b.analyticsTracking, 0) / breakdowns.length
+    };
+
+    // Генерация рекомендаций
+    const recommendations = this.generateRecommendations(
+      additionalLatency,
+      maxAdditionalLatency,
+      avgComponentBreakdown,
+      cacheMetrics
+    );
+
+    return {
+      passed,
+      metrics: {
+        baselineLatency: baselineStats.mean,
+        enhancedLatency: enhancedStats.mean,
+        additionalLatency,
+        statistics: enhancedStats,
+        componentBreakdown: avgComponentBreakdown,
+        cacheMetrics
+      },
+      recommendations,
+      detailedResults
+    };
+  }
+
+  /**
+   * Вычисляет статистики для массива времен
+   */
+  private calculateStatistics(times: number[]): PerformanceMetrics['statistics'] {
+    const sorted = [...times].sort((a, b) => a - b);
+    const n = sorted.length;
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    const mean = sum / n;
+
+    const variance = sorted.reduce((acc, time) => acc + Math.pow(time - mean, 2), 0) / n;
+    const stdDev = Math.sqrt(variance);
+
+    return {
+      min: sorted[0],
+      max: sorted[n - 1],
+      mean,
+      median: n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)],
+      p95: sorted[Math.floor(n * 0.95)],
+      p99: sorted[Math.floor(n * 0.99)],
+      stdDev
+    };
+  }
+
+  /**
+   * Генерирует рекомендации по оптимизации
+   */
+  private generateRecommendations(
+    additionalLatency: number,
+    maxLatency: number,
+    breakdown: PerformanceMetrics['componentBreakdown'],
+    cacheMetrics?: PerformanceMetrics['cacheMetrics']
+  ): string[] {
+    const recommendations: string[] = [];
+
+    if (additionalLatency > maxLatency) {
+      recommendations.push(
+        `⚠️ Дополнительная задержка ${additionalLatency.toFixed(2)}ms превышает лимит ${maxLatency}ms`
+      );
+    } else {
+      recommendations.push(
+        `✅ Дополнительная задержка ${additionalLatency.toFixed(2)}ms в пределах нормы (лимит: ${maxLatency}ms)`
+      );
+    }
+
+    // Анализ компонентов
+    const maxComponent = Math.max(
+      breakdown.queryAnalysis,
+      breakdown.resultOptimization,
+      breakdown.analyticsTracking
+    );
+
+    if (breakdown.queryAnalysis === maxComponent && breakdown.queryAnalysis > 30) {
+      recommendations.push('🔍 Рассмотрите оптимизацию анализа запросов - включите более агрессивное кэширование');
+    }
+
+    if (breakdown.resultOptimization === maxComponent && breakdown.resultOptimization > 40) {
+      recommendations.push('⚡ Оптимизируйте алгоритмы ранжирования - уменьшите сложность или размер выборки');
+    }
+
+    if (breakdown.analyticsTracking > 10) {
+      recommendations.push('📊 Рассмотрите асинхронную отправку аналитики для снижения задержки');
+    }
+
+    // Анализ кэширования
+    if (cacheMetrics) {
+      if (cacheMetrics.hitRate < 0.7) {
+        recommendations.push('💾 Низкий процент попаданий в кэш - рассмотрите увеличение размера кэша');
+      }
+
+      if (cacheMetrics.avgCacheLatency > cacheMetrics.avgDatabaseLatency * 0.5) {
+        recommendations.push('🚀 Оптимизируйте производительность кэша - время доступа к кэшу слишком высокое');
+      }
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * Выводит отчет о производительности
+   */
+  static printPerformanceReport(result: PerformanceTestResult): void {
+    console.log('\n' + '='.repeat(60));
+    console.log('📊 ОТЧЕТ О ПРОИЗВОДИТЕЛЬНОСТИ РАСШИРЕННОЙ ОБРАБОТКИ ЗАПРОСОВ');
+    console.log('='.repeat(60));
+
+    console.log(`\n✅ Тест ${result.passed ? 'ПРОЙДЕН' : 'НЕ ПРОЙДЕН'}`);
+    console.log(`📈 Базовая задержка: ${result.metrics.baselineLatency.toFixed(2)}ms`);
+    console.log(`⚡ Расширенная задержка: ${result.metrics.enhancedLatency.toFixed(2)}ms`);
+    console.log(`➕ Дополнительная задержка: ${result.metrics.additionalLatency.toFixed(2)}ms`);
+
+    console.log('\n📊 СТАТИСТИКА ПРОИЗВОДИТЕЛЬНОСТИ:');
+    console.log(`   Среднее: ${result.metrics.statistics.mean.toFixed(2)}ms`);
+    console.log(`   Медиана: ${result.metrics.statistics.median.toFixed(2)}ms`);
+    console.log(`   95-й процентиль: ${result.metrics.statistics.p95.toFixed(2)}ms`);
+    console.log(`   99-й процентиль: ${result.metrics.statistics.p99.toFixed(2)}ms`);
+    console.log(`   Стд. отклонение: ${result.metrics.statistics.stdDev.toFixed(2)}ms`);
+
+    console.log('\n🔧 ДЕТАЛИЗАЦИЯ ПО КОМПОНЕНТАМ:');
+    console.log(`   Анализ запроса: ${result.metrics.componentBreakdown.queryAnalysis.toFixed(2)}ms`);
+    console.log(`   Выполнение поиска: ${result.metrics.componentBreakdown.searchExecution.toFixed(2)}ms`);
+    console.log(`   Оптимизация результатов: ${result.metrics.componentBreakdown.resultOptimization.toFixed(2)}ms`);
+    console.log(`   Отслеживание аналитики: ${result.metrics.componentBreakdown.analyticsTracking.toFixed(2)}ms`);
+
+    if (result.metrics.cacheMetrics) {
+      console.log('\n💾 МЕТРИКИ КЭШИРОВАНИЯ:');
+      console.log(`   Процент попаданий: ${(result.metrics.cacheMetrics.hitRate * 100).toFixed(1)}%`);
+      console.log(`   Время доступа к кэшу: ${result.metrics.cacheMetrics.avgCacheLatency.toFixed(2)}ms`);
+      console.log(`   Время доступа к БД: ${result.metrics.cacheMetrics.avgDatabaseLatency.toFixed(2)}ms`);
+    }
+
+    console.log('\n💡 РЕКОМЕНДАЦИИ:');
+    result.recommendations.forEach(rec => console.log(`   ${rec}`));
+
+    if (result.detailedResults) {
+      console.log('\n📈 ДЕТАЛИЗИРОВАННЫЕ ТЕСТЫ:');
+      result.detailedResults.forEach(test => {
+        const status = test.passed ? '✅' : '❌';
+        console.log(`   ${status} ${test.testName}: ${test.avgLatency.toFixed(2)}ms`);
+      });
+    }
+
+    console.log('\n' + '='.repeat(60));
+  }
+}
+
+/**
+ * Утилита для быстрого запуска тестов производительности
+ */
+export class QuickPerformanceTest {
+  /**
+   * Запускает быстрый тест производительности с минимальной конфигурацией
+   */
+  static async runQuickTest(
+    db: Database,
+    components: {
+      queryAnalyzer: QueryAnalyzer;
+      searchOptimizer: SearchOptimizer;
+      analytics: SearchAnalytics;
+      strategyEngine: StrategyEngine;
+      resultProcessor: ResultProcessor;
+    }
+  ): Promise<PerformanceTestResult> {
+    const runner = new PerformanceTestRunner(
+      db,
+      components.queryAnalyzer,
+      components.searchOptimizer,
+      components.analytics,
+      components.strategyEngine,
+      components.resultProcessor
+    );
+
+    const config: PerformanceTestConfig = {
+      queryCount: 20,
+      maxAdditionalLatency: 100,
+      documentCount: 100,
+      detailedMetrics: true,
+      testCaching: true
+    };
+
+    return await runner.runPerformanceTests(config);
+  }
+
+  /**
+   * Запускает всестороннее тестирование производительности
+   */
+  static async runComprehensiveTest(
+    db: Database,
+    components: {
+      queryAnalyzer: QueryAnalyzer;
+      searchOptimizer: SearchOptimizer;
+      analytics: SearchAnalytics;
+      strategyEngine: StrategyEngine;
+      resultProcessor: ResultProcessor;
+    }
+  ): Promise<PerformanceTestResult> {
+    const runner = new PerformanceTestRunner(
+      db,
+      components.queryAnalyzer,
+      components.searchOptimizer,
+      components.analytics,
+      components.strategyEngine,
+      components.resultProcessor
+    );
+
+    const config: PerformanceTestConfig = {
+      queryCount: 100,
+      maxAdditionalLatency: 100,
+      documentCount: 1000,
+      detailedMetrics: true,
+      testCaching: true
+    };
+
+    return await runner.runPerformanceTests(config);
+  }
+}

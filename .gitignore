@@ -4,7 +4,7 @@ package-lock.json
 
 # Build outputs
 .build/
-dist/
+# dist/  # Commented out - dist/ must be committed for GitHub installation
 build/
 
 # WASM and Emscripten
@@ -23,6 +23,9 @@ ext/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# LLM API Keys (SCRUM-17)
+.llm-api-keys.json
 
 # Logs
 logs/
@@ -78,7 +81,7 @@ jspm_packages/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+# dist  # Commented out - dist/ must be committed for GitHub installation
 
 # Gatsby files
 .cache/

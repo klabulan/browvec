@@ -1,4 +1,4 @@
-/* LocalRetrieve MVP Demo Styles */
+/* LocalRetrieve MVP Demo Styles - Enhanced with Performance Testing UI */
 
 /* Reset and base styles */
 * {
@@ -1030,7 +1030,225 @@ select:focus {
     color: #0c5460;
 }
 
-/* Responsive adjustments */
+/* Performance Testing Styles */
+.fifth-panel {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.performance-controls {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.test-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.test-flags {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.test-flags label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.test-flags input[type="checkbox"] {
+    transform: scale(1.1);
+}
+
+.performance-metrics {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.metric-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 4px solid #007bff;
+}
+
+.metric-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.metric-value {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.component-breakdown {
+    margin-top: 25px;
+}
+
+.component-breakdown h4 {
+    margin-bottom: 15px;
+    color: #495057;
+    font-size: 1.1rem;
+}
+
+.breakdown-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.breakdown-item {
+    display: grid;
+    grid-template-columns: 140px 1fr 80px;
+    align-items: center;
+    gap: 15px;
+}
+
+.breakdown-label {
+    font-size: 0.9rem;
+    color: #495057;
+    font-weight: 500;
+}
+
+.breakdown-bar {
+    position: relative;
+    height: 20px;
+    background: #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.breakdown-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #28a745, #20c997);
+    border-radius: 10px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.breakdown-value {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #495057;
+    text-align: right;
+}
+
+.performance-progress {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.progress-header h4 {
+    color: #495057;
+    margin: 0;
+}
+
+#progress-status {
+    color: #6c757d;
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+#perf-progress-fill {
+    background: linear-gradient(90deg, #007bff, #6610f2);
+}
+
+/* Enhanced button styles for performance testing */
+.btn.accent {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border: none;
+}
+
+.btn.accent:hover {
+    background: linear-gradient(135deg, #e085f0 0%, #f04565 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(240, 69, 101, 0.3);
+}
+
+/* Status indicators for performance tests */
+.metric-value.pass {
+    color: #28a745;
+}
+
+.metric-value.fail {
+    color: #dc3545;
+}
+
+.metric-value.warning {
+    color: #fd7e14;
+}
+
+/* Animation for progress bars */
+@keyframes fillBar {
+    from { width: 0%; }
+    to { width: var(--target-width); }
+}
+
+.breakdown-fill.animate {
+    animation: fillBar 1s ease-out;
+}
+
+/* Enhanced result containers for performance */
+.performance-results .result-item {
+    background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+    border-left: 4px solid #f5576c;
+}
+
+.performance-results .result-header {
+    background: linear-gradient(90deg, #f093fb, #f5576c);
+    color: white;
+}
+
+/* Responsive adjustments for performance panel */
+@media (max-width: 1200px) {
+    .test-options {
+        grid-template-columns: 1fr;
+    }
+
+    .breakdown-item {
+        grid-template-columns: 120px 1fr 70px;
+        gap: 10px;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+}
+
 @media (max-width: 768px) {
     .status-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -1045,4 +1263,102 @@ select:focus {
         font-size: 0.7em;
         padding: 1px 6px;
     }
+
+    .test-flags {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .breakdown-item {
+        grid-template-columns: 1fr;
+        gap: 5px;
+        text-align: center;
+    }
+
+    .breakdown-bar {
+        order: 2;
+    }
+
+    .breakdown-value {
+        order: 3;
+        text-align: center;
+    }
+
+    .performance-controls {
+        padding: 15px;
+    }
+}
+/* SCRUM-17: LLM Integration Styles */
+.llm-integration {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    border-radius: 8px;
+    padding: 20px;
+    border: 2px solid #2196f3;
+    margin-top: 10px;
+}
+
+.llm-controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.llm-controls .input-group.inline {
+    flex: 0 1 auto;
+    margin-bottom: 0;
+}
+
+.llm-response {
+    background: white;
+    border-radius: 6px;
+    padding: 15px;
+    margin-top: 15px;
+    border-left: 4px solid #2196f3;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.llm-response h4 {
+    margin-bottom: 12px;
+    color: #1976d2;
+    font-size: 1.1em;
+    border-bottom: 2px solid #2196f3;
+    padding-bottom: 8px;
+}
+
+.response-text {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid #e0e0e0;
+    margin-bottom: 12px;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.llm-metadata {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-size: 0.9em;
+    color: #666;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 10px;
+}
+
+.metadata-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.metadata-item strong {
+    color: #1976d2;
+    font-weight: 600;
 }

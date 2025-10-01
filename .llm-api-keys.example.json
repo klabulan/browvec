@@ -1,0 +1,29 @@
+{
+  "comment": "Copy this file to .llm-api-keys.json and fill in your actual API keys",
+  "openai": {
+    "apiKey": "sk-your-openai-key-here",
+    "model": "gpt-4",
+    "comment": "Get your API key from https://platform.openai.com/api-keys"
+  },
+  "anthropic": {
+    "apiKey": "sk-ant-your-anthropic-key-here",
+    "model": "claude-3-sonnet-20240229",
+    "comment": "Get your API key from https://console.anthropic.com/settings/keys"
+  },
+  "openrouter": {
+    "apiKey": "sk-or-your-openrouter-key-here",
+    "model": "openai/gpt-4",
+    "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+    "comment": "Get your API key from https://openrouter.ai/keys"
+  },
+  "custom": {
+    "apiKey": "your-custom-api-key",
+    "model": "your-model-name",
+    "endpoint": "https://your-api-endpoint.com/v1/chat/completions",
+    "comment": "For custom OpenAI-compatible endpoints"
+  },
+  "usage": {
+    "description": "Use these keys in tests by importing this JSON file",
+    "example": "const keys = require('./.llm-api-keys.json'); await db.enhanceQuery('test', { provider: 'openai', model: keys.openai.model, apiKey: keys.openai.apiKey });"
+  }
+}

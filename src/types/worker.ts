@@ -78,10 +78,6 @@ export interface CreateCollectionParams {
 // Document insertion with automatic embedding generation
 export interface InsertDocumentWithEmbeddingParams {
   collection: string;
-  id?: string;
-  title?: string;
-  content: string;
-  metadata?: Record<string, any>;
   document: {
     id?: string;
     title?: string;
@@ -281,6 +277,131 @@ export interface ClearEmbeddingQueueParams {
   olderThan?: Date;
 }
 
+// =============================================================================
+// LLM Integration Types (SCRUM-17)
+// =============================================================================
+
+/**
+ * Enhanced Query Parameters
+ */
+export interface EnhanceQueryParams {
+  query: string;
+  options?: {
+    provider?: string;
+    model?: string;
+    apiKey?: string;
+    maxSuggestions?: number;
+    includeIntent?: boolean;
+    temperature?: number;
+    timeout?: number;
+  };
+}
+
+/**
+ * Enhanced Query Result
+ */
+export interface EnhancedQueryResult {
+  originalQuery: string;
+  enhancedQuery: string;
+  suggestions: string[];
+  intent?: string;
+  confidence: number;
+  provider: string;
+  model: string;
+  processingTime: number;
+}
+
+/**
+ * Summarize Results Parameters
+ */
+export interface SummarizeResultsParams {
+  results: SearchResult[];
+  options?: {
+    provider?: string;
+    model?: string;
+    apiKey?: string;
+    maxLength?: number;
+    includeKeyPoints?: boolean;
+    temperature?: number;
+    timeout?: number;
+  };
+}
+
+/**
+ * Result Summary Result
+ */
+export interface ResultSummaryResult {
+  summary: string;
+  keyPoints: string[];
+  themes: string[];
+  confidence: number;
+  provider: string;
+  model: string;
+  processingTime: number;
+}
+
+/**
+ * Search with LLM Parameters
+ */
+export interface SearchWithLLMParams {
+  query: string;
+  options?: {
+    enhanceQuery?: boolean;
+    summarizeResults?: boolean;
+    searchOptions?: TextSearchOptions;
+    llmOptions?: {
+      provider?: string;
+      model?: string;
+      apiKey?: string;
+      temperature?: number;
+    };
+  };
+}
+
+/**
+ * LLM Search Response Result
+ */
+export interface LLMSearchResponseResult {
+  results: SearchResult[];
+  enhancedQuery?: EnhancedQueryResult;
+  summary?: ResultSummaryResult;
+  searchTime: number;
+  llmTime: number;
+  totalTime: number;
+}
+
+/**
+ * Generic LLM Call Parameters (SCRUM-17 - Pure LLM API)
+ */
+export interface CallLLMParams {
+  prompt: string;
+  options?: {
+    provider?: string;
+    model?: string;
+    apiKey?: string;
+    temperature?: number;
+    maxTokens?: number;
+    timeout?: number;
+    systemPrompt?: string;
+  };
+}
+
+/**
+ * Generic LLM Call Result (SCRUM-17 - Pure LLM API)
+ */
+export interface CallLLMResult {
+  text: string;
+  finishReason: 'stop' | 'length' | 'error' | 'timeout';
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  model: string;
+  provider: string;
+  processingTime: number;
+}
+
 // Database Worker API Interface
 export interface DBWorkerAPI {
   // Core database operations
@@ -317,6 +438,13 @@ export interface DBWorkerAPI {
   searchText(params: TextSearchParams): Promise<EnhancedSearchResponse>;
   searchAdvanced(params: AdvancedSearchParams): Promise<EnhancedSearchResponse>;
   searchGlobal(params: GlobalSearchParams): Promise<GlobalSearchResponse>;
+
+  // LLM operations (SCRUM-17)
+  enhanceQuery(params: EnhanceQueryParams): Promise<EnhancedQueryResult>;
+  summarizeResults(params: SummarizeResultsParams): Promise<ResultSummaryResult>;
+  searchWithLLM(params: SearchWithLLMParams): Promise<LLMSearchResponseResult>;
+  callLLM(params: CallLLMParams): Promise<CallLLMResult>;
+
   // Data export/import
   export(params?: ExportParams): Promise<Uint8Array>;
   import(params: ImportParams): Promise<void>;

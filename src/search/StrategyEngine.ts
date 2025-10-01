@@ -1,9 +1,15 @@
 /**
- * Search Strategy Engine для LocalRetrieve
+ * Enhanced Search Strategy Engine для LocalRetrieve
  *
- * Интеллектуальный движок анализа запросов и выбора стратегии поиска.
- * Автоматически определяет наиболее подходящий тип поиска на основе
- * анализа запроса и контекста коллекции.
+ * Интеллектуальный движок анализа запросов и выбора стратегии поиска
+ * с интеграцией расширенного QueryAnalyzer для улучшенного понимания
+ * запросов и более точного выбора стратегий.
+ *
+ * Архитектурные улучшения:
+ * - Интеграция с QueryAnalyzer для расширенного анализа NLP
+ * - Контекстно-зависимый выбор стратегий
+ * - Адаптивное обучение на основе пользовательского поведения
+ * - Поддержка персонализированных стратегий
  */
 
 import {
@@ -25,59 +31,248 @@ import type {
   SearchContext,
   TextSearchOptions,
   SearchWeights,
-  StrategyEngineConfig
+  StrategyEngineConfig,
+  QueryHistory
 } from '../types/search.js';
 
+import { QueryAnalyzer, type AdvancedQueryAnalysis, type QueryAnalyzerConfig } from './QueryAnalyzer.js';
+import type { SearchAnalytics } from '../analytics/SearchAnalytics.js';
+
 /**
- * Основной движок анализа запросов и выбора стратегии
+ * Расширенная конфигурация StrategyEngine с поддержкой QueryAnalyzer
+ */
+export interface EnhancedStrategyEngineConfig extends StrategyEngineConfig {
+  /** Включить расширенный анализ через QueryAnalyzer */
+  enableAdvancedAnalysis: boolean;
+
+  /** Конфигурация QueryAnalyzer */
+  queryAnalyzerConfig?: Partial<QueryAnalyzerConfig>;
+
+  /** Включить персонализированные стратегии */
+  enablePersonalization: boolean;
+
+  /** Включить интеграцию с аналитикой */
+  enableAnalyticsIntegration: boolean;
+
+  /** Веса для комбинирования базового и расширенного анализа */
+  analysisWeights: {
+    baseAnalysis: number;
+    advancedAnalysis: number;
+  };
+}
+
+/**
+ * Основной движок анализа запросов и выбора стратегии с расширенными возможностями
  */
 export class StrategyEngine {
-  private config: StrategyEngineConfig;
+  private config: EnhancedStrategyEngineConfig;
   private queryPatterns: Map<string, QueryAnalysis>;
   private performanceMetrics: Map<string, number>;
 
-  constructor(config: Partial<StrategyEngineConfig> = {}) {
-    this.config = { ...DEFAULT_STRATEGY_ENGINE_CONFIG, ...config };
+  // Интеграция с QueryAnalyzer
+  private queryAnalyzer?: QueryAnalyzer;
+  private analytics?: SearchAnalytics;
+
+  // Кэш расширенных анализов
+  private advancedAnalysisCache = new Map<string, AdvancedQueryAnalysis>();
+
+  // История для персонализации
+  private userHistory = new Map<string, QueryHistory[]>();
+
+  // Статистика производительности
+  private strategyPerformance = new Map<SearchStrategy, {
+    totalUses: number;
+    avgResponseTime: number;
+    successRate: number;
+    userSatisfaction: number;
+  }>();
+
+  constructor(
+    config: Partial<EnhancedStrategyEngineConfig> = {},
+    analytics?: SearchAnalytics
+  ) {
+    this.config = {
+      ...DEFAULT_STRATEGY_ENGINE_CONFIG,
+      enableAdvancedAnalysis: true,
+      enablePersonalization: true,
+      enableAnalyticsIntegration: true,
+      analysisWeights: {
+        baseAnalysis: 0.4,
+        advancedAnalysis: 0.6
+      },
+      ...config
+    };
     this.queryPatterns = new Map();
     this.performanceMetrics = new Map();
+    this.analytics = analytics;
+
+    // Инициализируем QueryAnalyzer если включен расширенный анализ
+    if (this.config.enableAdvancedAnalysis) {
+      this.queryAnalyzer = new QueryAnalyzer(this.config.queryAnalyzerConfig);
+    }
   }
 
   /**
-   * Анализирует запрос и определяет его характеристики
+   * Расширенный анализ запроса с интеграцией QueryAnalyzer
    */
-  async analyzeQuery(query: string, context: SearchContext = { documentCount: 0, averageDocumentLength: 0, indexCapabilities: { hasFTS: true, hasVector: false, hasEmbeddings: false } }): Promise<QueryAnalysis> {
+  async analyzeQuery(
+    query: string,
+    context: SearchContext = {
+      documentCount: 0,
+      averageDocumentLength: 0,
+      indexCapabilities: { hasFTS: true, hasVector: false, hasEmbeddings: false }
+    },
+    userContext?: {
+      userId?: string;
+      sessionId?: string;
+      previousQueries?: QueryHistory[];
+    }
+  ): Promise<QueryAnalysis> {
     try {
-      const normalizedQuery = this.normalizeQuery(query);
-      const features = this.extractFeatures(normalizedQuery);
-      const queryType = this.classifyQuery(normalizedQuery, features);
-      const confidence = this.calculateConfidence(queryType, features);
+      // Базовый анализ (совместимость с существующим кодом)
+      const baseAnalysis = await this.performBaseAnalysis(query, context);
 
-      const suggestedStrategy = this.selectPrimaryStrategy(queryType, features, context);
-      const alternativeStrategies = this.getAlternativeStrategies(suggestedStrategy, queryType, context);
+      // Расширенный анализ через QueryAnalyzer (если включен)
+      let enhancedAnalysis: AdvancedQueryAnalysis | null = null;
+      if (this.config.enableAdvancedAnalysis && this.queryAnalyzer) {
+        enhancedAnalysis = await this.performAdvancedAnalysis(query, context, userContext?.previousQueries);
+      }
 
-      const analysis: QueryAnalysis = {
-        originalQuery: query,
-        normalizedQuery,
-        queryType,
-        confidence,
-        features,
-        suggestedStrategy,
-        alternativeStrategies,
-        estimatedComplexity: this.estimateComplexity(features, context)
-      };
+      // Комбинируем анализы
+      const finalAnalysis = this.combineAnalyses(baseAnalysis, enhancedAnalysis, context, userContext);
+
+      // Интеграция с аналитикой
+      if (this.config.enableAnalyticsIntegration && this.analytics) {
+        this.analytics.trackQuery(
+          this.generateQueryId(query),
+          userContext?.sessionId || 'anonymous',
+          query,
+          enhancedAnalysis || this.convertToEnhancedAnalysis(baseAnalysis),
+          context
+        );
+      }
 
       // Кэшируем анализ для повторного использования
       if (this.config.enableLearning) {
-        this.queryPatterns.set(query, analysis);
+        this.queryPatterns.set(query, finalAnalysis);
       }
+
+      return finalAnalysis;
+    } catch (error) {
+      // Логируем ошибку в аналитику
+      if (this.config.enableAnalyticsIntegration && this.analytics) {
+        this.analytics.trackError(
+          'query_parsing',
+          'ANALYSIS_FAILED',
+          error instanceof Error ? error.message : String(error),
+          { query: query.substring(0, 100), context },
+          userContext?.sessionId
+        );
+      }
+
+      throw new QueryAnalysisError(
+        `Enhanced query analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+        { query, context, userContext }
+      );
+    }
+  }
+
+  /**
+   * Выполнение базового анализа (совместимость)
+   */
+  private async performBaseAnalysis(query: string, context: SearchContext): Promise<QueryAnalysis> {
+    const normalizedQuery = this.normalizeQuery(query);
+    const features = this.extractFeatures(normalizedQuery);
+    const queryType = this.classifyQuery(normalizedQuery, features);
+    const confidence = this.calculateConfidence(queryType, features);
+
+    const suggestedStrategy = this.selectPrimaryStrategy(queryType, features, context);
+    const alternativeStrategies = this.getAlternativeStrategies(suggestedStrategy, queryType, context);
+
+    return {
+      originalQuery: query,
+      normalizedQuery,
+      queryType,
+      confidence,
+      features,
+      suggestedStrategy,
+      alternativeStrategies,
+      estimatedComplexity: this.estimateComplexity(features, context)
+    };
+  }
+
+  /**
+   * Выполнение расширенного анализа через QueryAnalyzer
+   */
+  private async performAdvancedAnalysis(
+    query: string,
+    context: SearchContext,
+    userHistory?: QueryHistory[]
+  ): Promise<AdvancedQueryAnalysis | null> {
+    if (!this.queryAnalyzer) return null;
+
+    const cacheKey = this.generateAnalysisCacheKey(query, context);
+
+    // Проверяем кэш
+    if (this.advancedAnalysisCache.has(cacheKey)) {
+      return this.advancedAnalysisCache.get(cacheKey)!;
+    }
+
+    try {
+      const analysis = await this.queryAnalyzer.analyzeQuery(query, context);
+
+      // Кэшируем результат
+      this.advancedAnalysisCache.set(cacheKey, analysis);
 
       return analysis;
     } catch (error) {
-      throw new QueryAnalysisError(
-        `Failed to analyze query: ${error instanceof Error ? error.message : String(error)}`,
-        { query, context }
-      );
+      console.warn('Advanced query analysis failed, falling back to basic analysis:', error);
+      return null;
     }
+  }
+
+  /**
+   * Комбинирование базового и расширенного анализов
+   */
+  private combineAnalyses(
+    baseAnalysis: QueryAnalysis,
+    enhancedAnalysis: AdvancedQueryAnalysis | null,
+    context: SearchContext,
+    userContext?: { userId?: string; sessionId?: string }
+  ): QueryAnalysis {
+    if (!enhancedAnalysis) {
+      return baseAnalysis;
+    }
+
+    // Комбинируем уверенность с учетом весов
+    const combinedConfidence =
+      baseAnalysis.confidence * this.config.analysisWeights.baseAnalysis +
+      enhancedAnalysis.confidence * this.config.analysisWeights.advancedAnalysis;
+
+    // Выбираем лучшую стратегию на основе комбинированного анализа
+    const enhancedStrategy = this.selectEnhancedStrategy(
+      baseAnalysis,
+      enhancedAnalysis,
+      context,
+      userContext
+    );
+
+    // Комбинируем альтернативные стратегии
+    const combinedAlternatives = this.combineAlternativeStrategies(
+      baseAnalysis.alternativeStrategies,
+      enhancedAnalysis.alternativeStrategies
+    );
+
+    return {
+      originalQuery: baseAnalysis.originalQuery,
+      normalizedQuery: baseAnalysis.normalizedQuery,
+      queryType: enhancedAnalysis.queryType, // Используем результат расширенного анализа
+      confidence: combinedConfidence,
+      features: baseAnalysis.features,
+      suggestedStrategy: enhancedStrategy,
+      alternativeStrategies: combinedAlternatives,
+      estimatedComplexity: enhancedAnalysis.estimatedComplexity
+    };
   }
 
   /**
@@ -521,5 +716,300 @@ export class StrategyEngine {
     }
 
     return suggestions;
+  }
+
+  // === Методы интеграции с QueryAnalyzer ===
+
+  /**
+   * Выбор расширенной стратегии на основе комбинированного анализа
+   */
+  private selectEnhancedStrategy(
+    baseAnalysis: QueryAnalysis,
+    enhancedAnalysis: AdvancedQueryAnalysis,
+    context: SearchContext,
+    userContext?: { userId?: string; sessionId?: string }
+  ): SearchStrategy {
+    // Учитываем анализ намерений из расширенного анализа
+    if (enhancedAnalysis.intentAnalysis?.primaryIntent === 'compare' &&
+        context.indexCapabilities.hasEmbeddings) {
+      return SearchStrategy.SEMANTIC;
+    }
+
+    if (enhancedAnalysis.intentAnalysis?.primaryIntent === 'discover' &&
+        context.indexCapabilities.hasEmbeddings) {
+      return SearchStrategy.SEMANTIC;
+    }
+
+    // Учитываем специфичность запроса
+    if (enhancedAnalysis.intentAnalysis?.contextSignals.specificity === 'precise') {
+      return SearchStrategy.EXACT_MATCH;
+    }
+
+    // Учитываем срочность запроса
+    if (enhancedAnalysis.intentAnalysis?.contextSignals.urgency === 'high') {
+      // Предпочитаем быстрые стратегии
+      return baseAnalysis.suggestedStrategy === SearchStrategy.SEMANTIC
+        ? SearchStrategy.KEYWORD
+        : baseAnalysis.suggestedStrategy;
+    }
+
+    // Персонализация на основе истории пользователя
+    if (this.config.enablePersonalization && userContext?.userId) {
+      const personalizedStrategy = this.getPersonalizedStrategy(
+        userContext.userId,
+        enhancedAnalysis,
+        context
+      );
+      if (personalizedStrategy) {
+        return personalizedStrategy;
+      }
+    }
+
+    // Используем расширенную стратегию, если уверенность высокая
+    if (enhancedAnalysis.confidence > 0.8) {
+      return enhancedAnalysis.suggestedStrategy;
+    }
+
+    // Иначе комбинируем стратегии на основе весов
+    return this.combineStrategies(baseAnalysis.suggestedStrategy, enhancedAnalysis.suggestedStrategy);
+  }
+
+  /**
+   * Комбинирование альтернативных стратегий
+   */
+  private combineAlternativeStrategies(
+    baseAlternatives: SearchStrategy[],
+    enhancedAlternatives: SearchStrategy[]
+  ): SearchStrategy[] {
+    const combined = new Set([...baseAlternatives, ...enhancedAlternatives]);
+    return Array.from(combined).slice(0, this.config.maxAlternatives);
+  }
+
+  /**
+   * Получение персонализированной стратегии
+   */
+  private getPersonalizedStrategy(
+    userId: string,
+    analysis: AdvancedQueryAnalysis,
+    context: SearchContext
+  ): SearchStrategy | null {
+    const userHistory = this.userHistory.get(userId);
+    if (!userHistory || userHistory.length === 0) {
+      return null;
+    }
+
+    // Анализируем успешные стратегии пользователя
+    const strategySuccess = new Map<SearchStrategy, number>();
+    for (const historyItem of userHistory) {
+      if (historyItem.userInteraction === 'clicked') {
+        const current = strategySuccess.get(historyItem.strategy) || 0;
+        strategySuccess.set(historyItem.strategy, current + 1);
+      }
+    }
+
+    // Находим наиболее успешную стратегию
+    if (strategySuccess.size > 0) {
+      const sortedStrategies = Array.from(strategySuccess.entries())
+        .sort((a, b) => b[1] - a[1]);
+
+      const bestStrategy = sortedStrategies[0][0];
+
+      // Используем персонализированную стратегию только если у нее достаточно данных
+      if (sortedStrategies[0][1] >= 3) {
+        return bestStrategy;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Комбинирование двух стратегий
+   */
+  private combineStrategies(strategy1: SearchStrategy, strategy2: SearchStrategy): SearchStrategy {
+    // Приоритет семантическому поиску если доступен
+    if ((strategy1 === SearchStrategy.SEMANTIC || strategy2 === SearchStrategy.SEMANTIC)) {
+      return SearchStrategy.SEMANTIC;
+    }
+
+    // Приоритет точному поиску
+    if (strategy1 === SearchStrategy.EXACT_MATCH || strategy2 === SearchStrategy.EXACT_MATCH) {
+      return SearchStrategy.EXACT_MATCH;
+    }
+
+    // По умолчанию возвращаем первую стратегию
+    return strategy1;
+  }
+
+  /**
+   * Генерация ID запроса для аналитики
+   */
+  private generateQueryId(query: string): string {
+    const timestamp = Date.now().toString(36);
+    const hash = this.simpleHash(query).toString(36);
+    return `q_${timestamp}_${hash}`;
+  }
+
+  /**
+   * Генерация ключа кэша для расширенного анализа
+   */
+  private generateAnalysisCacheKey(query: string, context: SearchContext): string {
+    const contextKey = JSON.stringify({
+      collection: context.collectionName,
+      documentCount: Math.floor(context.documentCount / 1000), // Округляем для лучшего кэширования
+      capabilities: context.indexCapabilities
+    });
+    return `${query.toLowerCase()}_${this.simpleHash(contextKey)}`;
+  }
+
+  /**
+   * Конвертация базового анализа в расширенный формат для аналитики
+   */
+  private convertToEnhancedAnalysis(baseAnalysis: QueryAnalysis): AdvancedQueryAnalysis {
+    return {
+      ...baseAnalysis,
+      intentAnalysis: {
+        primaryIntent: 'search',
+        confidence: baseAnalysis.confidence,
+        secondaryIntents: [],
+        contextSignals: {
+          urgency: 'medium',
+          specificity: baseAnalysis.features.wordCount <= 2 ? 'broad' : 'specific',
+          temporality: 'timeless'
+        }
+      },
+      linguisticFeatures: {
+        language: 'unknown',
+        confidence: 0.5,
+        complexity: baseAnalysis.estimatedComplexity === 'low' ? 'simple'
+          : baseAnalysis.estimatedComplexity === 'medium' ? 'moderate'
+          : baseAnalysis.estimatedComplexity === 'high' ? 'complex'
+          : 'simple'
+      },
+      mlFeatures: {}
+    };
+  }
+
+  /**
+   * Простое хеширование для генерации ключей
+   */
+  private simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+  }
+
+  /**
+   * Обновление истории пользователя
+   */
+  updateUserHistory(userId: string, queryHistory: QueryHistory): void {
+    if (!this.config.enablePersonalization) return;
+
+    if (!this.userHistory.has(userId)) {
+      this.userHistory.set(userId, []);
+    }
+
+    const history = this.userHistory.get(userId)!;
+    history.push(queryHistory);
+
+    // Ограничиваем размер истории
+    if (history.length > 50) {
+      history.splice(0, history.length - 50);
+    }
+  }
+
+  /**
+   * Обновление статистики производительности стратегий
+   */
+  updateStrategyPerformance(
+    strategy: SearchStrategy,
+    responseTime: number,
+    resultCount: number,
+    userSatisfaction: number
+  ): void {
+    const stats = this.strategyPerformance.get(strategy) || {
+      totalUses: 0,
+      avgResponseTime: 0,
+      successRate: 0,
+      userSatisfaction: 0
+    };
+
+    stats.totalUses++;
+    stats.avgResponseTime = (stats.avgResponseTime * (stats.totalUses - 1) + responseTime) / stats.totalUses;
+    stats.successRate = (stats.successRate * (stats.totalUses - 1) + (resultCount > 0 ? 1 : 0)) / stats.totalUses;
+    stats.userSatisfaction = (stats.userSatisfaction * (stats.totalUses - 1) + userSatisfaction) / stats.totalUses;
+
+    this.strategyPerformance.set(strategy, stats);
+  }
+
+  /**
+   * Получение статистики производительности
+   */
+  getStrategyPerformanceStats() {
+    return new Map(this.strategyPerformance);
+  }
+
+  /**
+   * Получение рекомендаций по оптимизации на основе расширенной аналитики
+   */
+  getOptimizationRecommendations(): Array<{
+    recommendation: string;
+    impact: 'high' | 'medium' | 'low';
+    strategy?: SearchStrategy;
+  }> {
+    const recommendations: Array<{
+      recommendation: string;
+      impact: 'high' | 'medium' | 'low';
+      strategy?: SearchStrategy;
+    }> = [];
+
+    // Анализируем производительность стратегий
+    for (const [strategy, stats] of this.strategyPerformance) {
+      if (stats.avgResponseTime > 1000) {
+        recommendations.push({
+          recommendation: `Стратегия ${strategy} работает медленно (${stats.avgResponseTime.toFixed(0)}ms). Рассмотрите оптимизацию.`,
+          impact: 'high',
+          strategy
+        });
+      }
+
+      if (stats.successRate < 0.7) {
+        recommendations.push({
+          recommendation: `Стратегия ${strategy} имеет низкий успех (${(stats.successRate * 100).toFixed(1)}%). Проверьте конфигурацию.`,
+          impact: 'medium',
+          strategy
+        });
+      }
+
+      if (stats.userSatisfaction < 0.6) {
+        recommendations.push({
+          recommendation: `Пользователи не удовлетворены результатами стратегии ${strategy} (${(stats.userSatisfaction * 100).toFixed(1)}%).`,
+          impact: 'high',
+          strategy
+        });
+      }
+    }
+
+    return recommendations.sort((a, b) => {
+      const impactWeight = { high: 3, medium: 2, low: 1 };
+      return impactWeight[b.impact] - impactWeight[a.impact];
+    });
+  }
+
+  /**
+   * Очистка кэшей и статистики
+   */
+  clearCache(): void {
+    this.queryPatterns.clear();
+    this.advancedAnalysisCache.clear();
+    this.userHistory.clear();
+
+    if (this.queryAnalyzer) {
+      this.queryAnalyzer.clearCache();
+    }
   }
 }

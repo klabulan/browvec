@@ -504,6 +504,229 @@ export class Database implements SQLDatabase {
     }
   }
 
+  // ============================================================================================
+  // LLM Integration API (SCRUM-17)
+  // ============================================================================================
+
+  /**
+   * Enhance search query using LLM (SCRUM-17)
+   *
+   * @param query - The search query to enhance
+   * @param options - LLM provider configuration
+   * @returns Promise<EnhancedQueryResult> - Enhanced query with suggestions
+   *
+   * @example
+   * ```typescript
+   * const enhanced = await db.enhanceQuery('search docs', {
+   *   provider: 'openai',
+   *   model: 'gpt-4',
+   *   apiKey: 'sk-...'
+   * });
+   * console.log(enhanced.enhancedQuery); // "document search files"
+   * console.log(enhanced.suggestions);    // ["find documents", ...]
+   * ```
+   */
+  async enhanceQuery(
+    query: string,
+    options?: {
+      provider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+      model?: string;
+      apiKey?: string;
+      endpoint?: string;
+      maxSuggestions?: number;
+      includeIntent?: boolean;
+      temperature?: number;
+      timeout?: number;
+    }
+  ): Promise<import('./types/worker.js').EnhancedQueryResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.enhanceQuery({ query, options });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Query enhancement failed: ${message}`);
+    }
+  }
+
+  /**
+   * Summarize search results using LLM (SCRUM-17)
+   *
+   * @param results - Array of search results to summarize
+   * @param options - LLM provider configuration
+   * @returns Promise<ResultSummaryResult> - Summary with key points
+   *
+   * @example
+   * ```typescript
+   * const results = await db.search({ query: { text: 'documents' } });
+   * const summary = await db.summarizeResults(results.results, {
+   *   provider: 'anthropic',
+   *   model: 'claude-3-sonnet',
+   *   apiKey: 'sk-ant-...'
+   * });
+   * console.log(summary.summary);     // "The search results..."
+   * console.log(summary.keyPoints);   // ["Document management", ...]
+   * ```
+   */
+  async summarizeResults(
+    results: any[],
+    options?: {
+      provider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+      model?: string;
+      apiKey?: string;
+      endpoint?: string;
+      maxLength?: number;
+      includeKeyPoints?: boolean;
+      temperature?: number;
+      timeout?: number;
+    }
+  ): Promise<import('./types/worker.js').ResultSummaryResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.summarizeResults({ results, options });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Result summarization failed: ${message}`);
+    }
+  }
+
+  /**
+   * Combined search with LLM enhancements (SCRUM-17)
+   *
+   * Performs search with optional query enhancement and result summarization.
+   *
+   * @param query - The search query
+   * @param options - Search and LLM configuration
+   * @returns Promise<LLMSearchResponseResult> - Results with LLM enhancements
+   *
+   * @example
+   * ```typescript
+   * const smartSearch = await db.searchWithLLM('AI docs', {
+   *   enhanceQuery: true,
+   *   summarizeResults: true,
+   *   searchOptions: { limit: 20 },
+   *   llmOptions: {
+   *     provider: 'openai',
+   *     model: 'gpt-4',
+   *     apiKey: 'sk-...'
+   *   }
+   * });
+   * console.log(smartSearch.enhancedQuery);  // Enhanced query
+   * console.log(smartSearch.results);        // Search results
+   * console.log(smartSearch.summary);        // AI-generated summary
+   * ```
+   */
+  async searchWithLLM(
+    query: string,
+    options?: {
+      enhanceQuery?: boolean;
+      summarizeResults?: boolean;
+      searchOptions?: import('./types/search.js').TextSearchOptions;
+      llmOptions?: {
+        provider?: string;
+        model?: string;
+        apiKey?: string;
+        endpoint?: string;
+        temperature?: number;
+      };
+    }
+  ): Promise<import('./types/worker.js').LLMSearchResponseResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.searchWithLLM({ query, options });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`LLM search failed: ${message}`);
+    }
+  }
+
+  /**
+   * Generic LLM call with arbitrary prompt (SCRUM-17)
+   *
+   * Provides direct access to LLM providers for custom use cases beyond
+   * query enhancement or result summarization. This method accepts any
+   * prompt and returns the raw LLM response.
+   *
+   * @param prompt - The prompt to send to the LLM
+   * @param options - LLM provider configuration
+   * @returns Promise<CallLLMResult> - Raw LLM response with text and metadata
+   *
+   * @example
+   * ```typescript
+   * const result = await db.callLLM('Explain quantum computing in simple terms', {
+   *   provider: 'openai',
+   *   model: 'gpt-4',
+   *   apiKey: 'sk-...',
+   *   temperature: 0.7,
+   *   maxTokens: 500
+   * });
+   * console.log(result.text);           // LLM's response
+   * console.log(result.usage);          // Token usage stats
+   * console.log(result.processingTime); // Processing time in ms
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Custom use case: Generate product descriptions
+   * const product = { name: 'Widget Pro', features: ['Fast', 'Reliable'] };
+   * const prompt = `Generate a marketing description for: ${JSON.stringify(product)}`;
+   * const result = await db.callLLM(prompt, {
+   *   provider: 'anthropic',
+   *   model: 'claude-3-sonnet',
+   *   apiKey: process.env.ANTHROPIC_API_KEY
+   * });
+   * console.log(result.text); // Marketing description
+   * ```
+   */
+  async callLLM(
+    prompt: string,
+    options?: {
+      provider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+      model?: string;
+      apiKey?: string;
+      endpoint?: string;
+      temperature?: number;
+      maxTokens?: number;
+      timeout?: number;
+      systemPrompt?: string;
+    }
+  ): Promise<import('./types/worker.js').CallLLMResult> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    try {
+      return await this.workerRPC.callLLM({ prompt, options });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`LLM call failed: ${message}`);
+    }
+  }
+
   // Task 6.2: Internal Embedding Pipeline API
   // ============================================================================================
 
@@ -967,7 +1190,7 @@ export class Database implements SQLDatabase {
   /**
    * Initialize worker and open database connection
    */
-  private async _initialize(): Promise<void> {
+  async _initialize(): Promise<void> {
     if (this.isInitialized) {
       return;
     }
@@ -977,14 +1200,11 @@ export class Database implements SQLDatabase {
     }
 
     try {
-      // Open database
+      // Open database (vec extension is initialized automatically in handleOpen)
       await this.workerRPC.open({
         filename: this.state.filename,
         vfs: 'opfs'
       });
-
-      // Initialize vector extension
-      await this.workerRPC.initVecExtension();
 
       this.state.isOpen = true;
       this.isInitialized = true;

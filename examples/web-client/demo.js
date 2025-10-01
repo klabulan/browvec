@@ -36,6 +36,10 @@
 
 import { initLocalRetrieve, createProvider, validateProviderConfig } from '../../dist/localretrieve.mjs';
 
+// Expose LocalRetrieve API to window for E2E testing
+import * as LocalRetrieve from '../../dist/localretrieve.mjs';
+window.LocalRetrieve = LocalRetrieve;
+
 class LocalRetrieveDemo {
     constructor() {
         this.db = null;
@@ -43,6 +47,7 @@ class LocalRetrieveDemo {
         this.queryHistory = [];
         this.searchHistory = [];
         this.currentEmbedding = null;
+        this.allowAutoLoad = false; // Prevent automatic data loading
         this.embeddingConfig = {
             provider: 'transformers',
             openaiApiKey: '',
@@ -87,6 +92,7 @@ class LocalRetrieveDemo {
             vecWeight: document.getElementById('vec-weight'),
             vecWeightValue: document.getElementById('vec-weight-value'),
             searchLimit: document.getElementById('search-limit'),
+            enableAdvanced: document.getElementById('enable-advanced-processing'),
             searchBtn: document.getElementById('search-btn'),
             searchResults: document.getElementById('search-results'),
             searchStats: document.getElementById('search-stats'),
@@ -124,7 +130,24 @@ class LocalRetrieveDemo {
             queueProcessing: document.getElementById('queue-processing'),
             queueCompleted: document.getElementById('queue-completed'),
             queueFailed: document.getElementById('queue-failed'),
-            queueResults: document.getElementById('queue-results')
+            queueResults: document.getElementById('queue-results'),
+
+            // SCRUM-17: LLM Integration elements
+            llmProvider: document.getElementById('llm-provider'),
+            llmModel: document.getElementById('llm-model'),
+            llmEndpointGroup: document.getElementById('llm-endpoint-group'),
+            llmEndpoint: document.getElementById('llm-endpoint'),
+            llmApiKey: document.getElementById('llm-api-key'),
+            llmPrompt: document.getElementById('llm-prompt'),
+            llmTemperature: document.getElementById('llm-temperature'),
+            llmMaxTokens: document.getElementById('llm-max-tokens'),
+            callLLMBtn: document.getElementById('call-llm-btn'),
+            clearLLMBtn: document.getElementById('clear-llm-btn'),
+            llmResponseContainer: document.getElementById('llm-response-container'),
+            llmResponseText: document.getElementById('llm-response-text'),
+            llmResponseModel: document.getElementById('llm-response-model'),
+            llmResponseTokens: document.getElementById('llm-response-tokens'),
+            llmResponseTime: document.getElementById('llm-response-time')
         };
 
         this.initializeEventListeners();
@@ -133,7 +156,7 @@ class LocalRetrieveDemo {
 
     initializeEventListeners() {
         // Data management
-        this.elements.loadSampleBtn.addEventListener('click', () => this.loadSampleData());
+        this.elements.loadSampleBtn.addEventListener('click', () => this.loadSampleData(true));
         this.elements.clearDbBtn.addEventListener('click', () => this.clearDatabase());
         this.elements.recreateDbBtn.addEventListener('click', () => this.recreateDatabase());
         this.elements.importBtn.addEventListener('click', () => this.elements.importFile.click());
@@ -191,6 +214,11 @@ class LocalRetrieveDemo {
         // Embedding testing
         this.elements.generateEmbeddingBtn.addEventListener('click', () => this.generateEmbedding());
         this.elements.addToCollectionBtn.addEventListener('click', () => this.addToCollection());
+
+        // SCRUM-17: LLM Integration
+        this.elements.callLLMBtn.addEventListener('click', () => this.callLLM());
+        this.elements.clearLLMBtn.addEventListener('click', () => this.clearLLMResponse());
+        this.elements.llmProvider.addEventListener('change', () => this.updateLLMModelPlaceholder());
     }
 
     updateFtsWeight() {
@@ -291,6 +319,9 @@ class LocalRetrieveDemo {
 
             // Ensure schema is properly initialized first
             await this.ensureSchemaInitialized();
+
+            // Ensure default collection exists with embedding configuration
+            await this.createDefaultCollectionIfNeeded();
 
             // Clear existing data safely
             await this.clearExistingData();
@@ -524,6 +555,29 @@ class LocalRetrieveDemo {
         }
     }
 
+    async createDefaultCollectionIfNeeded() {
+        try {
+            // Use the SDK's createCollection method
+            await this.db.createCollection({
+                name: 'default',
+                embeddingConfig: {
+                    provider: 'transformers',
+                    model: 'Xenova/all-MiniLM-L6-v2',
+                    dimensions: 384
+                }
+            });
+            console.log('Default collection created with embedding configuration');
+        } catch (error) {
+            // If collection already exists, that's fine
+            if (error.message?.includes('already exists')) {
+                console.log('Default collection already exists');
+            } else {
+                console.error('Failed to create default collection:', error);
+                throw error;
+            }
+        }
+    }
+
     async handleDatabaseError() {
         try {
             this.setStatus('Attempting database recovery...', 'info');
@@ -720,30 +774,49 @@ class LocalRetrieveDemo {
                 }
             }
 
-            // Build search request
-            const searchRequest = {
-                query: {
-                    text: textQuery || undefined,
-                    vector: vector ? new Float32Array(vector) : undefined
-                },
+            // Check Advanced Query Processing setting
+            const enableAdvanced = this.elements.enableAdvanced?.checked || false;
+
+            console.log('Advanced Query Processing enabled:', enableAdvanced);
+
+            // Build search options using Phase 6 API
+            const searchOptions = {
+                mode: 'auto',
                 limit: parseInt(this.elements.searchLimit.value) || 10,
+                enableEmbedding: !!vector || enableAdvanced,
                 fusion: {
                     method: this.elements.fusionMethod.value,
                     weights: {
                         fts: parseFloat(this.elements.ftsWeight.value),
                         vector: parseFloat(this.elements.vecWeight.value)
                     }
-                }
+                },
+                collection: 'default'
             };
 
             // Log search request details
             console.log('Search request:', {
-                query: searchRequest.query,
-                limit: searchRequest.limit,
-                fusion: searchRequest.fusion
+                query: textQuery,
+                vector: vector ? 'provided' : 'none',
+                options: searchOptions
             });
 
-            // Perform search
+            // Use simple search API
+            const searchRequest = {
+                query: {
+                    text: textQuery || 'machine learning'
+                },
+                limit: parseInt(this.elements.searchLimit.value) || 10,
+                fusionMethod: this.elements.fusionMethod.value,
+                fusionWeights: {
+                    fts: parseFloat(this.elements.ftsWeight.value),
+                    vec: parseFloat(this.elements.vecWeight.value)
+                },
+                options: {
+                    enableEmbedding: enableAdvanced
+                }
+            };
+
             const results = await this.db.search(searchRequest);
 
             const searchTime = performance.now() - startTime;
@@ -1395,14 +1468,20 @@ class LocalRetrieveDemo {
         try {
             this.setLoading(true);
 
-            // This is a placeholder for collection creation
-            // In a real implementation, you would create a collection in the database
-            console.log('Creating collection:', { name, description });
+            // Use the SDK's createCollection method
+            await this.db.createCollection({
+                name: name,
+                embeddingConfig: {
+                    provider: 'transformers',
+                    model: 'Xenova/all-MiniLM-L6-v2',
+                    dimensions: 384
+                }
+            });
 
             this.setStatus(`Collection "${name}" created successfully`, 'success');
 
             // Clear form
-            this.elements.collectionName.value = 'default';
+            this.elements.collectionName.value = '';
             this.elements.collectionDescription.value = '';
 
         } catch (error) {
@@ -1724,6 +1803,442 @@ class LocalRetrieveDemo {
                 <div class="operation-details">Time: ${timestamp}</div>
             </div>
         `;
+    }
+
+    // SCRUM-17: LLM Integration Methods
+
+    /**
+     * Load API keys from config (mock for demo - in real app load from secure storage)
+     */
+    loadApiKeys() {
+        try {
+            // In a real application, this would load from secure storage
+            // For demo purposes, show instructions
+            const provider = this.elements.llmProvider.value;
+
+            alert(`To use ${provider} LLM integration:\n\n` +
+                  `1. Get your API key from the provider\n` +
+                  `2. Paste it in the API Key field\n` +
+                  `3. Click one of the test buttons\n\n` +
+                  `Note: Your API key is never stored, only used for this session.`);
+
+            this.setStatus(`Ready to test ${provider} LLM integration`, 'success');
+        } catch (error) {
+            console.error('Load keys error:', error);
+            this.setStatus(`Error: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Get LLM configuration from UI
+     */
+    getLLMConfig() {
+        const provider = this.elements.llmProvider.value;
+        const apiKey = this.elements.llmApiKey.value.trim();
+
+        if (!apiKey) {
+            throw new Error('API key is required. Please enter your API key.');
+        }
+
+        const config = {
+            provider,
+            apiKey,
+            timeout: 30000
+        };
+
+        // Provider-specific configurations
+        switch (provider) {
+            case 'openai':
+                config.model = 'gpt-4';
+                break;
+            case 'anthropic':
+                config.model = 'claude-3-sonnet-20240229';
+                break;
+            case 'openrouter':
+                config.model = 'openai/gpt-4';
+                config.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+                break;
+            case 'custom':
+                config.model = 'custom-model';
+                config.endpoint = 'https://your-endpoint.com/v1/chat/completions';
+                break;
+        }
+
+        return config;
+    }
+
+    /**
+     * Display LLM result in formatted way
+     */
+    displayLLMResult(element, result, type = 'success') {
+        const className = type === 'error' ? 'error' : 'success';
+
+        if (typeof result === 'string') {
+            element.className = `llm-results ${className}`;
+            element.textContent = result;
+            return;
+        }
+
+        element.className = `llm-results ${className}`;
+        element.innerHTML = '';
+
+        Object.entries(result).forEach(([key, value]) => {
+            const item = document.createElement('div');
+            item.className = 'llm-result-item';
+
+            const label = document.createElement('span');
+            label.className = 'llm-result-label';
+            label.textContent = `${key}:`;
+
+            const val = document.createElement('span');
+            val.className = 'llm-result-value';
+
+            if (Array.isArray(value)) {
+                val.textContent = JSON.stringify(value, null, 2);
+            } else if (typeof value === 'object') {
+                val.textContent = JSON.stringify(value, null, 2);
+            } else {
+                val.textContent = String(value);
+            }
+
+            item.appendChild(label);
+            item.appendChild(val);
+            element.appendChild(item);
+        });
+    }
+
+    /**
+     * Test query enhancement with LLM
+     */
+    async testEnhanceQuery() {
+        const resultsEl = this.elements.enhanceQueryResults;
+
+        try {
+            resultsEl.className = 'llm-results loading';
+            resultsEl.textContent = 'Enhancing query with LLM...';
+
+            const query = this.elements.enhanceQueryInput.value.trim();
+            if (!query) {
+                throw new Error('Please enter a query to enhance');
+            }
+
+            const config = this.getLLMConfig();
+            const startTime = performance.now();
+
+            this.setStatus(`Enhancing query with ${config.provider}...`, 'info');
+
+            const enhanced = await this.db.enhanceQuery(query, config);
+
+            const elapsedTime = performance.now() - startTime;
+
+            this.displayLLMResult(resultsEl, {
+                'Original Query': enhanced.originalQuery,
+                'Enhanced Query': enhanced.enhancedQuery,
+                'Suggestions': enhanced.suggestions,
+                'Intent': enhanced.intent || 'N/A',
+                'Confidence': enhanced.confidence,
+                'Processing Time': `${elapsedTime.toFixed(0)}ms`,
+                'Provider': `${config.provider} (${config.model})`
+            }, 'success');
+
+            this.setStatus(`Query enhanced successfully in ${elapsedTime.toFixed(0)}ms`, 'success');
+
+        } catch (error) {
+            console.error('Enhance query error:', error);
+            this.displayLLMResult(resultsEl, `Error: ${error.message}`, 'error');
+            this.setStatus(`Enhancement failed: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Test result summarization with LLM
+     */
+    async testSummarizeResults() {
+        const resultsEl = this.elements.summarizeResults;
+
+        try {
+            resultsEl.className = 'llm-results loading';
+            resultsEl.textContent = 'Searching and summarizing with LLM...';
+
+            const searchQuery = this.elements.summarizeSearchInput.value.trim();
+            if (!searchQuery) {
+                throw new Error('Please enter a search query');
+            }
+
+            const config = this.getLLMConfig();
+
+            this.setStatus(`Searching for "${searchQuery}"...`, 'info');
+
+            // First, perform a search
+            const searchResults = await this.db.searchText(searchQuery);
+
+            if (!searchResults.results || searchResults.results.length === 0) {
+                throw new Error('No search results found to summarize');
+            }
+
+            const startTime = performance.now();
+            this.setStatus(`Summarizing ${searchResults.results.length} results with ${config.provider}...`, 'info');
+
+            const summary = await this.db.summarizeResults(searchResults.results, config);
+
+            const elapsedTime = performance.now() - startTime;
+
+            this.displayLLMResult(resultsEl, {
+                'Summary': summary.summary,
+                'Key Points': summary.keyPoints,
+                'Themes': summary.themes,
+                'Results Count': searchResults.results.length,
+                'Confidence': summary.confidence,
+                'Processing Time': `${elapsedTime.toFixed(0)}ms`,
+                'Provider': `${config.provider} (${config.model})`
+            }, 'success');
+
+            this.setStatus(`Summarized ${searchResults.results.length} results in ${elapsedTime.toFixed(0)}ms`, 'success');
+
+        } catch (error) {
+            console.error('Summarize results error:', error);
+            this.displayLLMResult(resultsEl, `Error: ${error.message}`, 'error');
+            this.setStatus(`Summarization failed: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Test combined smart search (enhance + search + summarize)
+     */
+    async testSmartSearch() {
+        const resultsEl = this.elements.smartSearchResults;
+
+        try {
+            resultsEl.className = 'llm-results loading';
+            resultsEl.textContent = 'Performing smart search with LLM...';
+
+            const query = this.elements.smartSearchInput.value.trim();
+            if (!query) {
+                throw new Error('Please enter a search query');
+            }
+
+            const enhanceEnabled = this.elements.smartEnhance.checked;
+            const summarizeEnabled = this.elements.smartSummarize.checked;
+
+            if (!enhanceEnabled && !summarizeEnabled) {
+                throw new Error('Please enable at least one LLM feature (enhance or summarize)');
+            }
+
+            const config = this.getLLMConfig();
+            const startTime = performance.now();
+
+            this.setStatus(`Smart searching with ${config.provider}...`, 'info');
+
+            const smartSearch = await this.db.searchWithLLM(query, {
+                enhanceQuery: enhanceEnabled,
+                summarizeResults: summarizeEnabled,
+                searchOptions: { limit: 10 },
+                llmOptions: config
+            });
+
+            const elapsedTime = performance.now() - startTime;
+
+            const resultData = {
+                'Original Query': query,
+                'Results Found': smartSearch.results.length,
+                'Total Time': `${elapsedTime.toFixed(0)}ms`
+            };
+
+            if (smartSearch.enhancedQuery) {
+                resultData['Enhanced Query'] = smartSearch.enhancedQuery.enhancedQuery;
+                resultData['Suggestions'] = smartSearch.enhancedQuery.suggestions;
+                resultData['Enhancement Time'] = `${smartSearch.enhancedQuery.processingTime}ms`;
+            }
+
+            if (smartSearch.summary) {
+                resultData['Summary'] = smartSearch.summary.summary;
+                resultData['Key Points'] = smartSearch.summary.keyPoints;
+                resultData['Summarization Time'] = `${smartSearch.summary.processingTime}ms`;
+            }
+
+            resultData['Search Time'] = `${smartSearch.searchTime}ms`;
+            resultData['LLM Time'] = `${smartSearch.llmTime}ms`;
+            resultData['Provider'] = `${config.provider} (${config.model})`;
+
+            this.displayLLMResult(resultsEl, resultData, 'success');
+
+            this.setStatus(`Smart search completed in ${elapsedTime.toFixed(0)}ms`, 'success');
+
+        } catch (error) {
+            console.error('Smart search error:', error);
+            this.displayLLMResult(resultsEl, `Error: ${error.message}`, 'error');
+            this.setStatus(`Smart search failed: ${error.message}`, 'error');
+        }
+    }
+
+    // =============================================================================
+    // Pure LLM Call Methods (SCRUM-17)
+    // =============================================================================
+
+    /**
+     * Detect provider from API key prefix
+     */
+    detectProviderFromApiKey(apiKey) {
+        if (!apiKey) return null;
+
+        // OpenRouter keys: sk-or-v1-...
+        if (apiKey.startsWith('sk-or-v1-')) {
+            return 'openrouter';
+        }
+        // Anthropic keys: sk-ant-...
+        if (apiKey.startsWith('sk-ant-')) {
+            return 'anthropic';
+        }
+        // OpenAI keys: sk-...
+        if (apiKey.startsWith('sk-')) {
+            return 'openai';
+        }
+
+        return null;
+    }
+
+    /**
+     * Update model placeholder and UI based on selected provider
+     */
+    updateLLMModelPlaceholder() {
+        const provider = this.elements.llmProvider.value;
+        const modelInput = this.elements.llmModel;
+
+        const placeholders = {
+            'openai': 'gpt-4, gpt-4-turbo, gpt-3.5-turbo',
+            'anthropic': 'claude-3-opus, claude-3-sonnet, claude-3-haiku',
+            'openrouter': 'gpt-4, claude-3-opus, mixtral-8x7b, etc.',
+            'custom': 'model-name'
+        };
+
+        const defaultModels = {
+            'openai': 'gpt-4',
+            'anthropic': 'claude-3-sonnet',
+            'openrouter': 'gpt-4',
+            'custom': 'gpt-4'
+        };
+
+        modelInput.placeholder = placeholders[provider] || 'model-name';
+        modelInput.value = defaultModels[provider] || 'gpt-4';
+
+        // Show endpoint field only for custom provider
+        if (provider === 'custom') {
+            this.elements.llmEndpointGroup.style.display = 'block';
+        } else {
+            this.elements.llmEndpointGroup.style.display = 'none';
+        }
+    }
+
+    /**
+     * Call LLM with the provided prompt
+     */
+    async callLLM() {
+        if (!this.db) {
+            alert('Database not initialized');
+            return;
+        }
+
+        let provider = this.elements.llmProvider.value;
+        const model = this.elements.llmModel.value.trim();
+        const apiKey = this.elements.llmApiKey.value.trim();
+        const endpoint = this.elements.llmEndpoint.value.trim();
+        const prompt = this.elements.llmPrompt.value.trim();
+        const temperature = parseFloat(this.elements.llmTemperature.value);
+        const maxTokens = parseInt(this.elements.llmMaxTokens.value);
+
+        if (!prompt) {
+            alert('Please enter a prompt');
+            return;
+        }
+
+        if (!apiKey) {
+            alert('Please enter your API key');
+            return;
+        }
+
+        if (!model) {
+            alert('Please enter a model name');
+            return;
+        }
+
+        // Auto-detect provider from API key if possible
+        const detectedProvider = this.detectProviderFromApiKey(apiKey);
+        if (detectedProvider && detectedProvider !== provider) {
+            console.log(`Auto-detected provider '${detectedProvider}' from API key (selected: '${provider}')`);
+            provider = detectedProvider;
+            this.setStatus(`Auto-detected provider: ${provider}`, 'info');
+        }
+
+        // Validate endpoint for custom provider
+        if (provider === 'custom' && !endpoint) {
+            alert('Please enter an endpoint URL for custom provider');
+            return;
+        }
+
+        try {
+            this.setLoading(true);
+            this.elements.callLLMBtn.disabled = true;
+            this.elements.callLLMBtn.textContent = 'Calling LLM...';
+
+            const startTime = Date.now();
+
+            const options = {
+                provider,
+                model,
+                apiKey,
+                temperature,
+                maxTokens,
+                timeout: 30000
+            };
+
+            // Set endpoint for OpenRouter and custom providers
+            if (provider === 'openrouter') {
+                options.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+            } else if (provider === 'custom' && endpoint) {
+                options.endpoint = endpoint;
+            }
+
+            const result = await this.db.callLLM(prompt, options);
+
+            const elapsed = Date.now() - startTime;
+
+            // Display response
+            this.elements.llmResponseContainer.style.display = 'block';
+            this.elements.llmResponseText.textContent = result.text;
+            this.elements.llmResponseModel.textContent = `${result.provider}/${result.model}`;
+
+            if (result.usage) {
+                this.elements.llmResponseTokens.textContent =
+                    `${result.usage.totalTokens} (${result.usage.promptTokens}+${result.usage.completionTokens})`;
+            } else {
+                this.elements.llmResponseTokens.textContent = 'N/A';
+            }
+
+            this.elements.llmResponseTime.textContent = `${result.processingTime}ms (${elapsed}ms total)`;
+
+            this.setStatus(`LLM call completed successfully in ${result.processingTime}ms`, 'success');
+
+        } catch (error) {
+            console.error('LLM call failed:', error);
+            alert(`LLM call failed: ${error.message}`);
+            this.setStatus(`LLM call failed: ${error.message}`, 'error');
+        } finally {
+            this.setLoading(false);
+            this.elements.callLLMBtn.disabled = false;
+            this.elements.callLLMBtn.textContent = 'Call LLM';
+        }
+    }
+
+    /**
+     * Clear LLM response display
+     */
+    clearLLMResponse() {
+        this.elements.llmResponseContainer.style.display = 'none';
+        this.elements.llmResponseText.textContent = '';
+        this.elements.llmResponseModel.textContent = '-';
+        this.elements.llmResponseTokens.textContent = '-';
+        this.elements.llmResponseTime.textContent = '-';
+        this.setStatus('LLM response cleared', 'info');
     }
 }
 

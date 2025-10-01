@@ -56,8 +56,9 @@ export class OPFSManager {
         return ':memory:';
       }
 
-      // Create a unique in-memory filename that we'll track for OPFS syncing
-      const tempDbName = `:opfs-${Date.now()}-${Math.random().toString(36).substr(2, 9)}:`;
+      // Use standard in-memory database (SQLite doesn't support custom :name: format)
+      // Note: Only ":memory:" is valid, custom names like ":opfs-xxx:" cause "unable to open database file"
+      const tempDbName = ':memory:';
 
       // Store the OPFS path for later syncing
       this.opfsPath = dbPath;

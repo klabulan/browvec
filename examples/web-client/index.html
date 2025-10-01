@@ -223,6 +223,68 @@
                 </div>
             </div>
 
+            <!-- LLM Integration (SCRUM-17) -->
+            <div class="section">
+                <h3>LLM Integration <span class="badge">SCRUM-17</span></h3>
+                <div class="llm-integration">
+                    <div class="input-group">
+                        <label for="llm-provider">LLM Provider:</label>
+                        <select id="llm-provider">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="custom">Custom Endpoint (OpenAI-compatible)</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="llm-model">Model:</label>
+                        <input type="text" id="llm-model" placeholder="gpt-4, claude-3-sonnet, etc." value="gpt-4">
+                    </div>
+
+                    <div class="input-group" id="llm-endpoint-group" style="display: none;">
+                        <label for="llm-endpoint">Endpoint URL:</label>
+                        <input type="text" id="llm-endpoint" placeholder="https://your-api.com/v1/chat/completions">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="llm-api-key">API Key:</label>
+                        <input type="password" id="llm-api-key" placeholder="Your API key (not stored)">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="llm-prompt">Prompt:</label>
+                        <textarea id="llm-prompt" placeholder="Enter your prompt..." rows="4">Explain quantum computing in simple terms suitable for a 10-year-old.</textarea>
+                    </div>
+
+                    <div class="llm-controls">
+                        <div class="input-group inline">
+                            <label for="llm-temperature">Temperature:</label>
+                            <input type="number" id="llm-temperature" min="0" max="2" step="0.1" value="0.7" style="width: 80px;">
+                        </div>
+                        <div class="input-group inline">
+                            <label for="llm-max-tokens">Max Tokens:</label>
+                            <input type="number" id="llm-max-tokens" min="50" max="4000" step="50" value="500" style="width: 100px;">
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="call-llm-btn" class="btn primary">Call LLM</button>
+                        <button id="clear-llm-btn" class="btn secondary">Clear Response</button>
+                    </div>
+
+                    <div class="llm-response" id="llm-response-container" style="display: none;">
+                        <h4>Response</h4>
+                        <div id="llm-response-text" class="response-text"></div>
+                        <div class="llm-metadata">
+                            <span class="metadata-item">Model: <strong id="llm-response-model">-</strong></span>
+                            <span class="metadata-item">Tokens: <strong id="llm-response-tokens">-</strong></span>
+                            <span class="metadata-item">Time: <strong id="llm-response-time">-</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Embedding Testing -->
             <div class="section">
                 <h3>Embedding Testing</h3>
@@ -287,6 +349,68 @@ SELECT * FROM fts_default WHERE fts_default MATCH 'machine learning';">SELECT * 
                 </div>
                 <div id="sql-stats" class="query-stats"></div>
             </div>
+
+            <!-- LLM Testing (SCRUM-17) -->
+            <div class="section">
+                <h3>🤖 LLM Integration Testing</h3>
+                <div class="llm-test">
+                    <!-- Provider Configuration -->
+                    <div class="input-group">
+                        <label for="llm-provider">Provider:</label>
+                        <select id="llm-provider" class="provider-select">
+                            <option value="openai">OpenAI (GPT-4)</option>
+                            <option value="openrouter" selected>OpenRouter</option>
+                            <option value="anthropic">Anthropic (Claude)</option>
+                            <option value="custom">Custom Endpoint</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="llm-api-key">API Key:</label>
+                        <input type="password" id="llm-api-key" placeholder="Enter your API key..." />
+                        <button id="load-keys-btn" class="btn small">Load from Config</button>
+                    </div>
+
+                    <!-- Query Enhancement Test -->
+                    <div class="llm-section">
+                        <h4>Query Enhancement</h4>
+                        <div class="input-group">
+                            <label for="enhance-query-input">Query:</label>
+                            <input type="text" id="enhance-query-input" placeholder="search AI docs" value="search AI docs" />
+                        </div>
+                        <button id="enhance-query-btn" class="btn primary">Enhance Query</button>
+                        <div id="enhance-query-results" class="llm-results"></div>
+                    </div>
+
+                    <!-- Result Summarization Test -->
+                    <div class="llm-section">
+                        <h4>Result Summarization</h4>
+                        <div class="input-group">
+                            <label for="summarize-search-input">Search Query:</label>
+                            <input type="text" id="summarize-search-input" placeholder="javascript" value="javascript" />
+                        </div>
+                        <button id="summarize-results-btn" class="btn primary">Search & Summarize</button>
+                        <div id="summarize-results" class="llm-results"></div>
+                    </div>
+
+                    <!-- Combined Smart Search Test -->
+                    <div class="llm-section">
+                        <h4>Smart Search (Combined)</h4>
+                        <div class="input-group">
+                            <label for="smart-search-input">Query:</label>
+                            <input type="text" id="smart-search-input" placeholder="AI documentation" value="AI documentation" />
+                        </div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="smart-enhance" checked /> Enhance Query
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="smart-summarize" checked /> Summarize Results
+                        </label>
+                        <button id="smart-search-btn" class="btn primary">Smart Search</button>
+                        <div id="smart-search-results" class="llm-results"></div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <!-- Fourth Panel: Hybrid Search -->
@@ -332,6 +456,14 @@ SELECT * FROM fts_default WHERE fts_default MATCH 'machine learning';">SELECT * 
                             <label for="search-limit">Result Limit:</label>
                             <input type="number" id="search-limit" min="1" max="50" value="10">
                         </div>
+
+                        <!-- Advanced Search Options -->
+                        <div class="param-group">
+                            <label>
+                                <input type="checkbox" id="enable-advanced-processing">
+                                Enable Advanced Query Processing
+                            </label>
+                        </div>
                     </div>
 
                     <button id="search-btn" class="btn primary">Search</button>
@@ -345,6 +477,147 @@ SELECT * FROM fts_default WHERE fts_default MATCH 'machine learning';">SELECT * 
                     <div class="results-placeholder">No search performed yet</div>
                 </div>
                 <div id="search-stats" class="query-stats"></div>
+            </div>
+        </section>
+
+        <!-- Fifth Panel: Performance Testing -->
+        <section class="panel fifth-panel">
+            <h2>Performance Testing <span class="badge">Advanced</span></h2>
+
+            <!-- Performance Test Controls -->
+            <div class="section">
+                <h3>Performance Test Controls</h3>
+                <div class="performance-controls">
+                    <div class="test-options">
+                        <div class="input-group">
+                            <label for="test-query-count">Test Query Count:</label>
+                            <select id="test-query-count">
+                                <option value="10">Quick (10 queries)</option>
+                                <option value="20" selected>Standard (20 queries)</option>
+                                <option value="50">Comprehensive (50 queries)</option>
+                                <option value="100">Extensive (100 queries)</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="test-doc-count">Test Document Count:</label>
+                            <select id="test-doc-count">
+                                <option value="50">Small (50 docs)</option>
+                                <option value="100" selected>Medium (100 docs)</option>
+                                <option value="500">Large (500 docs)</option>
+                                <option value="1000">Extra Large (1000 docs)</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="latency-limit">Max Additional Latency (ms):</label>
+                            <input type="number" id="latency-limit" min="50" max="500" value="100" step="10">
+                        </div>
+
+                        <div class="test-flags">
+                            <label>
+                                <input type="checkbox" id="detailed-metrics" checked>
+                                Detailed Component Metrics
+                            </label>
+                            <label>
+                                <input type="checkbox" id="test-caching" checked>
+                                Test Caching Performance
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="quick-perf-test-btn" class="btn primary">Quick Test</button>
+                        <button id="comprehensive-perf-test-btn" class="btn secondary">Comprehensive Test</button>
+                        <button id="compare-search-btn" class="btn info">Compare Search Methods</button>
+                        <button id="realtime-demo-btn" class="btn accent">Real-time Demo</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Results -->
+            <div class="section">
+                <h3>Performance Test Results</h3>
+                <div id="performance-results" class="results-container">
+                    <div class="results-placeholder">No performance tests run yet</div>
+                </div>
+
+                <!-- Performance Metrics Display -->
+                <div id="performance-metrics" class="performance-metrics" style="display: none;">
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <span class="metric-label">Test Status:</span>
+                            <span id="test-status" class="metric-value">-</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Baseline Latency:</span>
+                            <span id="baseline-latency" class="metric-value">-</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Enhanced Latency:</span>
+                            <span id="enhanced-latency" class="metric-value">-</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Additional Latency:</span>
+                            <span id="additional-latency" class="metric-value">-</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">95th Percentile:</span>
+                            <span id="p95-latency" class="metric-value">-</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Cache Hit Rate:</span>
+                            <span id="cache-hit-rate" class="metric-value">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Component Breakdown Chart Placeholder -->
+                    <div id="component-breakdown" class="component-breakdown" style="display: none;">
+                        <h4>Component Performance Breakdown</h4>
+                        <div class="breakdown-bars">
+                            <div class="breakdown-item">
+                                <span class="breakdown-label">Query Analysis:</span>
+                                <div class="breakdown-bar">
+                                    <div class="breakdown-fill" id="analysis-bar"></div>
+                                    <span class="breakdown-value" id="analysis-time">-</span>
+                                </div>
+                            </div>
+                            <div class="breakdown-item">
+                                <span class="breakdown-label">Search Execution:</span>
+                                <div class="breakdown-bar">
+                                    <div class="breakdown-fill" id="search-bar"></div>
+                                    <span class="breakdown-value" id="search-time">-</span>
+                                </div>
+                            </div>
+                            <div class="breakdown-item">
+                                <span class="breakdown-label">Result Optimization:</span>
+                                <div class="breakdown-bar">
+                                    <div class="breakdown-fill" id="optimization-bar"></div>
+                                    <span class="breakdown-value" id="optimization-time">-</span>
+                                </div>
+                            </div>
+                            <div class="breakdown-item">
+                                <span class="breakdown-label">Analytics Tracking:</span>
+                                <div class="breakdown-bar">
+                                    <div class="breakdown-fill" id="analytics-bar"></div>
+                                    <span class="breakdown-value" id="analytics-time">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Progress -->
+            <div id="performance-progress" class="performance-progress" style="display: none;">
+                <div class="progress-header">
+                    <h4>Running Performance Tests...</h4>
+                    <span id="progress-status">Initializing...</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="perf-progress-fill"></div>
+                    <span class="progress-text" id="perf-progress-text">0%</span>
+                </div>
             </div>
         </section>
     </main>
@@ -366,5 +639,6 @@ SELECT * FROM fts_default WHERE fts_default MATCH 'machine learning';">SELECT * 
     <!-- Scripts -->
     <script src="test-data.js"></script>
     <script src="demo.js" type="module"></script>
+    <script src="performance-demo.js" type="module"></script>
 </body>
 </html>

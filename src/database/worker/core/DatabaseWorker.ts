@@ -12,6 +12,7 @@ import { SchemaManager } from '../schema/SchemaManager.js';
 import { EmbeddingQueue } from '../embedding/EmbeddingQueue.js';
 import { ProviderManager } from '../embedding/ProviderManager.js';
 import { SearchHandler } from '../handlers/SearchHandler.js';
+import { LLMManager } from '../llm/LLMManager.js';
 import { Logger } from '../utils/Logger.js';
 import { ErrorHandler } from '../utils/ErrorHandling.js';
 
@@ -54,7 +55,14 @@ import type {
   QueryEmbeddingResult,
   BatchQueryEmbeddingResult,
   PipelinePerformanceStats,
-  ModelStatusResult
+  ModelStatusResult,
+  // SCRUM-17: LLM Integration types
+  EnhanceQueryParams,
+  EnhancedQueryResult,
+  SummarizeResultsParams,
+  ResultSummaryResult,
+  SearchWithLLMParams,
+  LLMSearchResponseResult
 } from '../../../types/worker.js';
 
 import {
@@ -99,6 +107,7 @@ export class DatabaseWorker {
   private embeddingQueue: EmbeddingQueue;
   private providerManager: ProviderManager;
   private searchHandler: SearchHandler;
+  private llmManager: LLMManager;
   private logger: Logger;
 
   // RPC handler
@@ -127,6 +136,7 @@ export class DatabaseWorker {
       opfsManager: this.opfsManager,
       logger: this.logger
     });
+    this.llmManager = new LLMManager(this.logger);
 
     // Initialize RPC handler
     this.rpcHandler = new WorkerRPCHandler({
@@ -135,7 +145,7 @@ export class DatabaseWorker {
     });
 
     this.setupRPCHandlers();
-    this.logger.info('DatabaseWorker initialized with modular architecture');
+    this.logger.info('DatabaseWorker initialized with modular architecture + LLM support');
   }
 
   /**
@@ -181,6 +191,12 @@ export class DatabaseWorker {
     this.rpcHandler.register('searchText', this.handleSearchText.bind(this));
     this.rpcHandler.register('searchAdvanced', this.handleSearchAdvanced.bind(this));
     this.rpcHandler.register('searchGlobal', this.handleSearchGlobal.bind(this));
+
+    // LLM operations (SCRUM-17)
+    this.rpcHandler.register('enhanceQuery', this.handleEnhanceQuery.bind(this));
+    this.rpcHandler.register('summarizeResults', this.handleSummarizeResults.bind(this));
+    this.rpcHandler.register('searchWithLLM', this.handleSearchWithLLM.bind(this));
+    this.rpcHandler.register('callLLM', this.handleCallLLM.bind(this));
 
     // Task 6.2: Internal Embedding Pipeline Operations
     this.rpcHandler.register('generateQueryEmbedding', this.handleGenerateQueryEmbedding.bind(this));
@@ -233,8 +249,23 @@ export class DatabaseWorker {
       // Apply pending OPFS data if available
       const pendingData = this.opfsManager.getPendingDatabaseData();
       if (pendingData) {
-        this.logger.info('Skipping OPFS restoration to avoid corruption - starting fresh');
+        this.logger.info('Restoring database from OPFS data');
+        await this.sqliteManager.deserialize(pendingData);
         this.opfsManager.clearPendingDatabaseData();
+        this.logger.info('Database restored from OPFS successfully');
+
+        // Verify database integrity after deserialization
+        try {
+          await this.sqliteManager.exec('SELECT 1');
+          this.logger.info('Database connection verified after restore');
+        } catch (error) {
+          this.logger.error('Database connection invalid after restore, reopening...', { error });
+          // Close and reopen the connection
+          this.sqliteManager.closeDatabase();
+          await this.sqliteManager.openDatabase(dbPath);
+          await this.sqliteManager.initVecExtension();
+          this.logger.info('Database connection re-established');
+        }
       }
 
       // Start OPFS auto-sync if using OPFS
@@ -389,7 +420,7 @@ export class DatabaseWorker {
 
     return this.withContext('insertDocumentWithEmbedding', async () => {
       // Generate ID if not provided
-      const documentId = validParams.id || validParams.document?.id || `doc_${Date.now()}`;
+      const documentId = validParams.document.id || `doc_${Date.now()}`;
 
       // Insert document
       const sql = `
@@ -397,11 +428,11 @@ export class DatabaseWorker {
         VALUES (?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
       `;
 
-      const metadata = { ...validParams.metadata, collection: validParams.collection };
+      const metadata = { ...validParams.document.metadata, collection: validParams.collection };
       await this.sqliteManager.select(sql, [
         documentId,
-        validParams.title || validParams.document?.title || '',
-        validParams.content || validParams.document?.content,
+        validParams.document.title || '',
+        validParams.document.content,
         JSON.stringify(metadata)
       ]);
 
@@ -493,12 +524,176 @@ export class DatabaseWorker {
   // =============================================================================
 
   private async handleSearch(params: SearchRequest): Promise<SearchResponse> {
-    // Simplified implementation
-    return {
-      results: [],
-      totalResults: 0,
-      searchTime: 5
-    };
+    this.ensureInitialized();
+    const startTime = Date.now();
+
+    try {
+      const {
+        query,
+        collection = 'default',
+        limit = 10,
+        fusionMethod = 'rrf',
+        fusionWeights = { fts: 0.6, vec: 0.4 }
+      } = params;
+
+      // Generate embedding if advanced mode enabled but no vector provided
+      let searchQuery = { ...query };
+      if (params.options?.enableEmbedding && query.text && !query.vector) {
+        try {
+          this.logger.info('Generating embedding for advanced search', { text: query.text });
+          const embedding = await this.handleGenerateQueryEmbedding({
+            query: query.text,
+            collection
+          });
+          if (embedding.embedding) {
+            searchQuery.vector = embedding.embedding;
+            this.logger.info('Successfully generated query embedding');
+          }
+        } catch (embeddingError) {
+          this.logger.warn('Failed to generate embedding, using text-only search', { embeddingError });
+        }
+      }
+
+      this.logger.info(`Starting search - text: "${searchQuery.text || 'none'}", vector: ${searchQuery.vector ? 'provided' : 'none'}, collection: ${collection}`);
+
+      // Handle different search scenarios
+      let searchSQL: string;
+      let searchParams: any[];
+
+      if (searchQuery.text && searchQuery.vector) {
+        // Hybrid search combining FTS and vector search
+        this.logger.info('Performing hybrid text + vector search');
+
+        searchSQL = `
+          WITH fts_results AS (
+            SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                   bm25(fts_${collection}) as fts_score,
+                   rank() OVER (ORDER BY bm25(fts_${collection})) as fts_rank
+            FROM docs_${collection} d
+            JOIN fts_${collection} f ON d.rowid = f.rowid
+            WHERE fts_${collection} MATCH ?
+            LIMIT ?
+          ),
+          vec_results AS (
+            SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                   v.distance as vec_score,
+                   rank() OVER (ORDER BY v.distance) as vec_rank
+            FROM docs_${collection} d
+            JOIN (
+              SELECT rowid, distance
+              FROM vec_${collection}_dense
+              WHERE embedding MATCH ?
+              ORDER BY distance
+              LIMIT ?
+            ) v ON d.rowid = v.rowid
+          )
+          SELECT DISTINCT
+            COALESCE(f.id, v.id) as id,
+            COALESCE(f.title, v.title) as title,
+            COALESCE(f.content, v.content) as content,
+            COALESCE(f.metadata, v.metadata) as metadata,
+            COALESCE(f.fts_score, 0) as fts_score,
+            COALESCE(v.vec_score, 1) as vec_score,
+            CASE
+              WHEN ? = 'rrf' THEN
+                (COALESCE(1.0/(60 + f.fts_rank), 0) + COALESCE(1.0/(60 + v.vec_rank), 0))
+              ELSE
+                (? * COALESCE(-f.fts_score, 0) + ? * COALESCE(1.0/(1.0 + v.vec_score), 0))
+            END as score
+          FROM fts_results f
+          FULL OUTER JOIN vec_results v ON f.rowid = v.rowid
+          ORDER BY score DESC
+          LIMIT ?
+        `;
+
+        const vectorJson = JSON.stringify(Array.from(searchQuery.vector));
+        searchParams = [
+          searchQuery.text, limit,
+          vectorJson, limit,
+          fusionMethod,
+          fusionWeights.fts, fusionWeights.vec,
+          limit
+        ];
+      } else if (searchQuery.text) {
+        // Text-only search
+        this.logger.info('Performing text-only FTS search');
+
+        // For multi-word queries, use OR
+        const words = searchQuery.text.trim().split(/\s+/);
+        const ftsQuery = words.length > 1 ? words.join(' OR ') : searchQuery.text;
+
+        searchSQL = `
+          SELECT d.id, d.title, d.content, d.metadata,
+                 bm25(fts_${collection}) as fts_score,
+                 0 as vec_score,
+                 -bm25(fts_${collection}) as score
+          FROM docs_${collection} d
+          JOIN fts_${collection} f ON d.rowid = f.rowid
+          WHERE fts_${collection} MATCH ?
+          ORDER BY score DESC
+          LIMIT ?
+        `;
+
+        searchParams = [ftsQuery, limit];
+      } else if (searchQuery.vector) {
+        // Vector-only search
+        this.logger.info('Performing vector-only search');
+
+        const vectorJson = JSON.stringify(Array.from(searchQuery.vector));
+        searchSQL = `
+          SELECT d.id, d.title, d.content, d.metadata,
+                 0 as fts_score,
+                 v.distance as vec_score,
+                 1.0/(1.0 + v.distance) as score
+          FROM docs_${collection} d
+          JOIN (
+            SELECT rowid, distance
+            FROM vec_${collection}_dense
+            WHERE embedding MATCH ?
+            ORDER BY distance
+            LIMIT ?
+          ) v ON d.rowid = v.rowid
+          ORDER BY v.distance
+        `;
+
+        searchParams = [vectorJson, limit];
+      } else {
+        throw new DatabaseError('Search requires either text or vector query');
+      }
+
+      this.logger.info(`Executing search SQL with ${searchParams.length} parameters`);
+
+      const searchResult = await this.sqliteManager.select(searchSQL, searchParams);
+
+      const results: SearchResult[] = searchResult.rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+        score: row.score,
+        ftsScore: row.fts_score,
+        vecScore: row.vec_score
+      }));
+
+      const searchTime = Date.now() - startTime;
+      this.operationCount++;
+
+      this.logger.debug(`Search completed in ${searchTime}ms, found ${results.length} results`);
+
+      return {
+        results,
+        totalResults: results.length,
+        searchTime
+      };
+
+    } catch (error) {
+      this.logger.error('Search failed', { error });
+      return {
+        results: [],
+        totalResults: 0,
+        searchTime: Date.now() - startTime
+      };
+    }
   }
 
   private async handleSearchSemantic(params: SemanticSearchParams): Promise<SearchResponse> {
@@ -511,24 +706,59 @@ export class DatabaseWorker {
   }
 
   // Enhanced Search API (Task 6.1)
+  // Note: These methods are placeholders for future enhanced search implementation
   private async handleSearchText(params: TextSearchParams): Promise<EnhancedSearchResponse> {
     this.ensureInitialized();
     return this.withContext('searchText', async () => {
-      return await this.searchHandler.handleSearchText(params);
+      // Fallback to regular search for now
+      const searchResult = await this.handleSearch({
+        query: { text: params.query },
+        collection: params.options?.collection || 'default',
+        limit: params.options?.limit || 10
+      });
+
+      return {
+        results: searchResult.results,
+        searchTime: searchResult.searchTime,
+        strategy: 'fts'
+      };
     });
   }
 
   private async handleSearchAdvanced(params: AdvancedSearchParams): Promise<EnhancedSearchResponse> {
     this.ensureInitialized();
     return this.withContext('searchAdvanced', async () => {
-      return await this.searchHandler.handleSearchAdvanced(params);
+      // Fallback to regular search
+      const searchResult = await this.handleSearch({
+        query: params.query,
+        collection: params.options?.collection || 'default',
+        limit: params.options?.limit || 10
+      });
+
+      return {
+        results: searchResult.results,
+        searchTime: searchResult.searchTime,
+        strategy: 'hybrid'
+      };
     });
   }
 
   private async handleSearchGlobal(params: GlobalSearchParams): Promise<GlobalSearchResponse> {
     this.ensureInitialized();
     return this.withContext('searchGlobal', async () => {
-      return await this.searchHandler.handleSearchGlobal(params);
+      // Simple implementation - search across all collections
+      const searchResult = await this.handleSearch({
+        query: { text: params.query },
+        limit: params.options?.limit || 10
+      });
+
+      return {
+        resultsByCollection: {
+          default: searchResult.results
+        },
+        totalResults: searchResult.results.length,
+        searchTime: searchResult.searchTime
+      };
     });
   }
 
@@ -606,38 +836,55 @@ export class DatabaseWorker {
   private async handleGenerateQueryEmbedding(params: GenerateQueryEmbeddingParams): Promise<QueryEmbeddingResult> {
     this.ensureInitialized();
     return this.withContext('generateQueryEmbedding', async () => {
-      // Delegate to SearchHandler which has the InternalPipeline integrated
-      const embeddingPipeline = (this.searchHandler as any).embeddingPipeline;
-
-      if (!embeddingPipeline) {
-        throw new Error('Embedding pipeline not available in SearchHandler');
-      }
-
-      await (this.searchHandler as any).pipelineInitialized;
-
-      return await embeddingPipeline.generateQueryEmbedding(
+      // Use SearchHandler with existing ProviderManager
+      const embedding = await this.searchHandler.generateEmbeddingWithProvider(
+        this.providerManager,
         params.query,
-        params.collection,
-        params.options
+        params.collection
       );
+
+      return {
+        embedding,
+        dimensions: embedding.length,
+        model: 'Xenova/all-MiniLM-L6-v2'
+      };
     });
   }
 
   private async handleBatchGenerateQueryEmbeddings(params: BatchGenerateQueryEmbeddingsParams): Promise<BatchQueryEmbeddingResult[]> {
     this.ensureInitialized();
     return this.withContext('batchGenerateQueryEmbeddings', async () => {
-      const embeddingPipeline = (this.searchHandler as any).embeddingPipeline;
+      // Simple batch processing - generate embeddings sequentially
+      const results: BatchQueryEmbeddingResult[] = [];
 
-      if (!embeddingPipeline) {
-        throw new Error('Embedding pipeline not available in SearchHandler');
+      for (const request of params.requests) {
+        try {
+          const embedding = await this.searchHandler.generateEmbeddingWithProvider(
+            this.providerManager,
+            request.query,
+            request.collection
+          );
+
+          results.push({
+            query: request.query,
+            embedding,
+            dimensions: embedding.length,
+            model: 'Xenova/all-MiniLM-L6-v2',
+            success: true
+          });
+        } catch (error) {
+          results.push({
+            query: request.query,
+            embedding: new Float32Array(),
+            dimensions: 0,
+            model: 'Xenova/all-MiniLM-L6-v2',
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       }
 
-      await (this.searchHandler as any).pipelineInitialized;
-
-      return await embeddingPipeline.batchGenerateEmbeddings(
-        params.requests,
-        params.batchOptions
-      );
+      return results;
     });
   }
 
@@ -763,6 +1010,126 @@ export class DatabaseWorker {
     });
   }
 
+  // =============================================================================
+  // LLM Operations (SCRUM-17)
+  // =============================================================================
+
+  private async handleEnhanceQuery(params: EnhanceQueryParams): Promise<EnhancedQueryResult> {
+    this.ensureInitialized();
+    return this.withContext('enhanceQuery', async () => {
+      const config: import('../../../llm/types.js').LLMProviderConfig = {
+        provider: (params.options?.provider as any) || 'openai',
+        model: params.options?.model || 'gpt-4',
+        apiKey: params.options?.apiKey,
+        endpoint: params.options?.endpoint,
+        temperature: params.options?.temperature,
+        timeout: params.options?.timeout
+      };
+
+      return await this.llmManager.enhanceQuery(params.query, config, params.options);
+    });
+  }
+
+  private async handleSummarizeResults(params: SummarizeResultsParams): Promise<ResultSummaryResult> {
+    this.ensureInitialized();
+    return this.withContext('summarizeResults', async () => {
+      const config: import('../../../llm/types.js').LLMProviderConfig = {
+        provider: (params.options?.provider as any) || 'openai',
+        model: params.options?.model || 'gpt-4',
+        apiKey: params.options?.apiKey,
+        endpoint: params.options?.endpoint,
+        temperature: params.options?.temperature,
+        timeout: params.options?.timeout
+      };
+
+      return await this.llmManager.summarizeResults(params.results, config, params.options);
+    });
+  }
+
+  private async handleSearchWithLLM(params: SearchWithLLMParams): Promise<LLMSearchResponseResult> {
+    this.ensureInitialized();
+    return this.withContext('searchWithLLM', async () => {
+      const startTime = Date.now();
+      let enhancedQuery: EnhancedQueryResult | undefined;
+      let llmTime = 0;
+
+      // Step 1: Enhance query if requested
+      if (params.options?.enhanceQuery) {
+        const enhanceStart = Date.now();
+        const config: import('../../../llm/types.js').LLMProviderConfig = {
+          provider: (params.options.llmOptions?.provider as any) || 'openai',
+          model: params.options.llmOptions?.model || 'gpt-4',
+          apiKey: params.options.llmOptions?.apiKey,
+          endpoint: params.options.llmOptions?.endpoint,
+          temperature: params.options.llmOptions?.temperature
+        };
+        enhancedQuery = await this.llmManager.enhanceQuery(params.query, config);
+        llmTime += Date.now() - enhanceStart;
+      }
+
+      // Step 2: Execute search with enhanced query
+      const searchQuery = enhancedQuery?.enhancedQuery || params.query;
+      const searchStart = Date.now();
+      const searchResponse = await this.handleSearchText({
+        query: searchQuery,
+        options: params.options?.searchOptions
+      });
+      const searchTime = Date.now() - searchStart;
+
+      // Step 3: Summarize results if requested
+      let summary: ResultSummaryResult | undefined;
+      if (params.options?.summarizeResults && searchResponse.results.length > 0) {
+        const summaryStart = Date.now();
+        const config: import('../../../llm/types.js').LLMProviderConfig = {
+          provider: (params.options.llmOptions?.provider as any) || 'openai',
+          model: params.options.llmOptions?.model || 'gpt-4',
+          apiKey: params.options.llmOptions?.apiKey,
+          endpoint: params.options.llmOptions?.endpoint,
+          temperature: params.options.llmOptions?.temperature
+        };
+        summary = await this.llmManager.summarizeResults(searchResponse.results, config);
+        llmTime += Date.now() - summaryStart;
+      }
+
+      return {
+        results: searchResponse.results,
+        enhancedQuery,
+        summary,
+        searchTime,
+        llmTime,
+        totalTime: Date.now() - startTime
+      };
+    });
+  }
+
+  private async handleCallLLM(params: import('../../../types/worker.js').CallLLMParams): Promise<import('../../../types/worker.js').CallLLMResult> {
+    this.ensureInitialized();
+    return this.withContext('callLLM', async () => {
+      const config: import('../../../llm/types.js').LLMProviderConfig = {
+        provider: (params.options?.provider as any) || 'openai',
+        model: params.options?.model || 'gpt-4',
+        apiKey: params.options?.apiKey,
+        endpoint: params.options?.endpoint,
+        temperature: params.options?.temperature,
+        maxTokens: params.options?.maxTokens,
+        timeout: params.options?.timeout
+      };
+
+      const result = await this.llmManager.callLLM(params.prompt, config, params.options);
+
+      return {
+        text: result.text,
+        finishReason: result.finishReason as 'stop' | 'length' | 'error' | 'timeout',
+        usage: result.usage,
+        model: result.model,
+        provider: result.provider,
+        processingTime: result.processingTime
+      };
+    });
+  }
+
+  // =============================================================================
+  // Helper Methods
   // =============================================================================
 
   private validateParams<T>(

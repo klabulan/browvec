@@ -308,6 +308,23 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('clearEmbeddingQueue', params);
   }
 
+  // SCRUM-17: LLM Integration RPC methods
+  async enhanceQuery(params: Parameters<DBWorkerAPI['enhanceQuery']>[0]) {
+    return this.call('enhanceQuery', params);
+  }
+
+  async summarizeResults(params: Parameters<DBWorkerAPI['summarizeResults']>[0]) {
+    return this.call('summarizeResults', params);
+  }
+
+  async searchWithLLM(params: Parameters<DBWorkerAPI['searchWithLLM']>[0]) {
+    return this.call('searchWithLLM', params);
+  }
+
+  async callLLM(params: Parameters<DBWorkerAPI['callLLM']>[0]) {
+    return this.call('callLLM', params);
+  }
+
   // Task 6.2: Internal Embedding Pipeline RPC methods
   async generateQueryEmbedding(params: Parameters<DBWorkerAPI["generateQueryEmbedding"]>[0]) {
     return this.call("generateQueryEmbedding", params);
