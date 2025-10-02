@@ -30,8 +30,13 @@
       "WebFetch(domain:js.langchain.com)",
       "Bash(findstr:*)",
       "Bash(npm run dev:vite:*)",
-      "Bash(test:*)"
-    ],
+      "Bash(test:*)",
+      "Bash(md5sum:*)",
+            "Bash(certutil:*)",
+                  "Bash(git add:*)",
+                        "Bash(npm install:*)",
+                              "Bash(git commit:*)"
+                                ],
     "deny": [],
     "ask": []
   }

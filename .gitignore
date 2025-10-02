@@ -150,3 +150,5 @@ test-results.xml
 
 # Docker
 .dockerignore
+.claude/settings.local.json
+
