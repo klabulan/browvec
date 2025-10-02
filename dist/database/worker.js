@@ -1490,7 +1490,9 @@ function Z(n) {
   return typeof n == "object" && n !== null && typeof n.name == "string" && (n.dimensions === void 0 || typeof n.dimensions == "number") && (n.config === void 0 || typeof n.config == "object" && n.config !== null);
 }
 function ee(n) {
-  return typeof n == "object" && n !== null && typeof n.collection == "string" && typeof n.id == "string" && typeof n.content == "string" && (n.title === void 0 || typeof n.title == "string") && (n.metadata === void 0 || typeof n.metadata == "object" && n.metadata !== null) && (n.embedding === void 0 || ae(n.embedding)) && (n.skipEmbedding === void 0 || typeof n.skipEmbedding == "boolean");
+  return typeof n == "object" && n !== null && typeof n.collection == "string" && // Validate nested document object
+  typeof n.document == "object" && n.document !== null && (n.document.id === void 0 || typeof n.document.id == "string") && typeof n.document.content == "string" && (n.document.title === void 0 || typeof n.document.title == "string") && (n.document.metadata === void 0 || typeof n.document.metadata == "object" && n.document.metadata !== null) && // Validate optional options object
+  (n.options === void 0 || typeof n.options == "object" && n.options !== null);
 }
 function te(n) {
   return typeof n == "object" && n !== null && (n.data instanceof Uint8Array || n.data instanceof ArrayBuffer) && (n.overwrite === void 0 || typeof n.overwrite == "boolean");
@@ -1513,18 +1515,15 @@ function oe(n) {
   return n === void 0 || typeof n == "object" && n !== null && (n.collection === void 0 || typeof n.collection == "string") && (n.status === void 0 || typeof n.status == "string");
 }
 function ae(n) {
-  return n instanceof Float32Array;
-}
-function le(n) {
   return typeof n == "string" && n.length > 0 && n.length <= 255 && /^[a-zA-Z0-9_-]+$/.test(n);
 }
-function ce(n) {
+function le(n) {
   return typeof n == "string" && n.length > 0 && n.length <= 255;
 }
-function de(n) {
+function ce(n) {
   return typeof n == "number" && Number.isInteger(n) && n > 0 && n <= 1e4;
 }
-function he(n) {
+function de(n) {
   return typeof n == "number" && n >= 0 && n <= 1;
 }
 class T {
@@ -1540,7 +1539,7 @@ class T {
    * Validate collection name with additional business rules
    */
   static validateCollectionName(e, t) {
-    if (!le(e))
+    if (!ae(e))
       throw new Error(`Invalid collection name for ${t}: must be a non-empty alphanumeric string with underscores/hyphens, max 255 characters`);
     if (["sqlite_master", "sqlite_temp_master", "sqlite_sequence"].includes(e.toLowerCase()))
       throw new Error(`Collection name '${e}' is reserved`);
@@ -1550,7 +1549,7 @@ class T {
    * Validate document ID with additional business rules
    */
   static validateDocumentId(e, t) {
-    if (!ce(e))
+    if (!le(e))
       throw new Error(`Invalid document ID for ${t}: must be a non-empty string, max 255 characters`);
     return e;
   }
@@ -1590,7 +1589,7 @@ class T {
   static validateLimit(e, t, i = 10) {
     if (e === void 0)
       return i;
-    if (!de(e))
+    if (!ce(e))
       throw new Error(`Invalid limit for ${t}: must be a positive integer between 1 and 10000`);
     return e;
   }
@@ -1599,13 +1598,13 @@ class T {
    */
   static validateThreshold(e, t) {
     if (e !== void 0) {
-      if (!he(e))
+      if (!de(e))
         throw new Error(`Invalid threshold for ${t}: must be a number between 0 and 1`);
       return e;
     }
   }
 }
-class ue {
+class he {
   constructor(e) {
     this.sqliteManager = e.sqliteManager, this.schemaManager = e.schemaManager, this.opfsManager = e.opfsManager, this.logger = e.logger;
   }
@@ -1755,7 +1754,7 @@ class ue {
     }
   }
 }
-class ge extends ue {
+class ue extends he {
   getComponentName() {
     return "SearchHandler";
   }
@@ -1807,7 +1806,7 @@ class w extends y {
     super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, w.prototype);
   }
 }
-function me(n) {
+function ge(n) {
   return `You are a search query expert. Analyze and enhance this search query.
 
 Original query: "${n}"
@@ -1826,7 +1825,7 @@ Format response as JSON:
   "confidence": 0.85
 }`;
 }
-function fe(n) {
+function me(n) {
   return `You are a search result summarizer. Analyze these search results and provide a concise summary.
 
 Search Results:
@@ -1952,18 +1951,18 @@ class P {
    * Public API: Enhance query
    */
   async enhanceQuery(e, t) {
-    const i = me(e);
+    const i = ge(e);
     return await this.executeRequestWithRetry(i, t);
   }
   /**
    * Public API: Summarize results
    */
   async summarizeResults(e, t) {
-    const i = fe(e);
+    const i = me(e);
     return await this.executeRequestWithRetry(i, t);
   }
 }
-class pe extends P {
+class fe extends P {
   /**
    * Build OpenAI API endpoint URL
    */
@@ -2030,7 +2029,7 @@ class pe extends P {
     }
   }
 }
-class ye extends P {
+class pe extends P {
   /**
    * Build Anthropic API endpoint URL
    */
@@ -2094,7 +2093,7 @@ class ye extends P {
     }
   }
 }
-class Ee extends P {
+class ye extends P {
   /**
    * Validate custom provider configuration
    */
@@ -2174,7 +2173,7 @@ class Ee extends P {
     }
   }
 }
-class be {
+class Ee {
   constructor(e) {
     this.providerCache = /* @__PURE__ */ new Map(), this.logger = e;
   }
@@ -2192,12 +2191,12 @@ class be {
   createProvider(e) {
     switch (e.provider) {
       case "openai":
-        return new pe(e, this.logger);
+        return new fe(e, this.logger);
       case "anthropic":
-        return new ye(e, this.logger);
+        return new pe(e, this.logger);
       case "openrouter":
       case "custom":
-        return new Ee(e, this.logger);
+        return new ye(e, this.logger);
       default:
         throw new y(
           `Unknown provider: ${e.provider}`,
@@ -2496,17 +2495,17 @@ class p {
     return new p({ component: e, level: t });
   }
 }
-class we {
+class be {
   constructor() {
     this.isInitialized = !1, this.startTime = Date.now(), this.logger = new p({
       level: "debug",
       component: "DatabaseWorker"
-    }), this.sqliteManager = new Q(this.logger), this.opfsManager = new G(this.sqliteManager, this.logger), this.schemaManager = new W(this.sqliteManager, this.logger), this.embeddingQueue = new B(this.sqliteManager, this.logger), this.providerManager = new V(this.sqliteManager, this.logger), this.searchHandler = new ge({
+    }), this.sqliteManager = new Q(this.logger), this.opfsManager = new G(this.sqliteManager, this.logger), this.schemaManager = new W(this.sqliteManager, this.logger), this.embeddingQueue = new B(this.sqliteManager, this.logger), this.providerManager = new V(this.sqliteManager, this.logger), this.searchHandler = new ue({
       sqliteManager: this.sqliteManager,
       schemaManager: this.schemaManager,
       opfsManager: this.opfsManager,
       logger: this.logger
-    }), this.llmManager = new be(this.logger), this.rpcHandler = new x({
+    }), this.llmManager = new Ee(this.logger), this.rpcHandler = new x({
       logLevel: "debug",
       operationTimeout: 3e4
     }), this.setupRPCHandlers(), this.logger.info("DatabaseWorker initialized with modular architecture + LLM support");
@@ -3149,7 +3148,7 @@ class we {
     return S.withContext(e, "DatabaseWorker", t);
   }
 }
-new we();
+new be();
 self.addEventListener("error", (n) => {
   console.error("[Worker] Unhandled error:", n.error);
 });
@@ -3157,6 +3156,6 @@ self.addEventListener("unhandledrejection", (n) => {
   console.error("[Worker] Unhandled promise rejection:", n.reason);
 });
 export {
-  we as DatabaseWorker
+  be as DatabaseWorker
 };
 //# sourceMappingURL=worker.js.map

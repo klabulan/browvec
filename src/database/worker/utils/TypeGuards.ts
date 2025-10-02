@@ -122,12 +122,15 @@ export function isInsertDocumentWithEmbeddingParams(params: any): params is Inse
   return typeof params === 'object' &&
          params !== null &&
          typeof params.collection === 'string' &&
-         typeof params.id === 'string' &&
-         typeof params.content === 'string' &&
-         (params.title === undefined || typeof params.title === 'string') &&
-         (params.metadata === undefined || (typeof params.metadata === 'object' && params.metadata !== null)) &&
-         (params.embedding === undefined || isFloat32Array(params.embedding)) &&
-         (params.skipEmbedding === undefined || typeof params.skipEmbedding === 'boolean');
+         // Validate nested document object
+         typeof params.document === 'object' &&
+         params.document !== null &&
+         (params.document.id === undefined || typeof params.document.id === 'string') &&
+         typeof params.document.content === 'string' &&
+         (params.document.title === undefined || typeof params.document.title === 'string') &&
+         (params.document.metadata === undefined || (typeof params.document.metadata === 'object' && params.document.metadata !== null)) &&
+         // Validate optional options object
+         (params.options === undefined || (typeof params.options === 'object' && params.options !== null));
 }
 
 /**
