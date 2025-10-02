@@ -51,6 +51,40 @@ npm install localretrieve
 </script>
 ```
 
+### Verify Installation
+
+After installing, verify that all required files are present:
+
+```bash
+npm run verify
+```
+
+You should see:
+```
+✅ dist/localretrieve.mjs
+✅ dist/sqlite3.mjs
+✅ dist/sqlite3.wasm
+✅ dist/database/worker.js
+```
+
+If any files are missing, you may need to build from source (see [Contributing](#-contributing)).
+
+### Create Deployment Bundle
+
+To create a ready-to-deploy bundle for your web application:
+
+```bash
+npm run bundle
+```
+
+This creates a `bundle/` directory with all necessary files and a comprehensive deployment guide. Simply copy the bundle contents to your static files directory:
+
+```bash
+cp -r node_modules/localretrieve/bundle/* public/lib/localretrieve/
+```
+
+See `bundle/README.md` for detailed integration instructions.
+
 ### Requirements
 
 - **Modern Browser**: Chrome 86+, Firefox 79+, Safari 15+, or Edge 85+
@@ -786,14 +820,29 @@ npm install
 # 4. Build WASM + SDK (uses emsdk/ for compilation)
 npm run build
 
-# 5. Start development server
+# 5. Verify installation (ensures all files are present)
+npm run verify
+
+# 6. Start development server
 npm run dev:vite
 
-# 6. Run tests
+# 7. Run tests
 npm run test:all
+
+# 8. Create deployment bundle (optional)
+npm run bundle
 ```
 
 **Note**: The Emscripten SDK must be cloned to `./emsdk/` in the project root. The build script will automatically detect and use it.
+
+**Available Scripts**:
+- `npm run build` - Build WASM and TypeScript SDK
+- `npm run verify` - Verify all required files are present
+- `npm run bundle` - Create deployment bundle in `bundle/` directory
+- `npm run dev:vite` - Start development server
+- `npm run test` - Run unit tests
+- `npm run test:e2e` - Run Playwright integration tests
+- `npm run test:all` - Run all tests
 
 ## 📄 License
 
