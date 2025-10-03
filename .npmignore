@@ -1,0 +1,55 @@
+# .npmignore
+# When .npmignore exists, npm uses it INSTEAD of .gitignore for packaging
+# This ensures WASM files are included in npm installs from GitHub
+
+# Development files
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Source files (TypeScript source not needed in package)
+src/
+tests/
+test-*.html
+test-*.mjs
+
+# Build system
+emsdk/
+ext/
+.build/
+scripts/build-wasm.sh
+scripts/dev-server.sh
+
+# Documentation (keep README.md)
+CLAUDE.md
+PERSONA.md
+tasks/
+doc/
+
+# Test results
+test-results/
+playwright-report/
+coverage/
+*.log
+
+# Environment
+.env*
+.llm-api-keys.json
+
+# Generated bundle (users generate this themselves)
+bundle/
+
+# Examples and public folder
+examples/
+public/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IMPORTANT: Include dist/ with ALL files including WASM
+# (No exclusions - everything in dist/ should be packaged)
