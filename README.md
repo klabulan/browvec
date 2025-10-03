@@ -472,22 +472,156 @@ const custom = await db.enhanceQuery('query', {
 
 ### Combined Smart Search
 
+The `searchWithLLM` method combines search with optional query enhancement and result summarization in a single call:
+
 ```typescript
-// One call: enhance query + search + summarize results
-const smartSearch = await db.searchWithLLM('AI docs', {
-  enhanceQuery: true,
+// Example: Full-featured smart search with OpenRouter
+const smartSearch = await db.searchWithLLM('machine learning tutorials', {
+  enhanceQuery: true,              // Improve the query with LLM
+  summarizeResults: true,          // Generate AI summary of results
+  searchOptions: {
+    limit: 20,
+    minScore: 0.5,
+    collection: 'default'
+  },
+  llmOptions: {
+    provider: 'openrouter',
+    model: 'openai/gpt-4',
+    apiKey: 'sk-or-v1-...',
+    temperature: 0.7
+  }
+});
+
+// Response structure
+console.log(smartSearch.results);            // SearchResult[]
+console.log(smartSearch.enhancedQuery);      // Query enhancement details
+console.log(smartSearch.summary);            // AI-generated summary
+console.log(smartSearch.searchTime);         // Time for search (ms)
+console.log(smartSearch.llmTime);            // Time for LLM calls (ms)
+console.log(smartSearch.totalTime);          // Total time (ms)
+```
+
+#### Response Structure
+
+When `summarizeResults: true`:
+
+```typescript
+{
+  results: SearchResult[],           // Search results array
+  summary: {
+    summary: string,                 // Main summary text
+    keyPoints: string[],             // Key points extracted from results
+    themes: string[],                // Identified themes
+    confidence: number,              // Confidence score (0-1)
+    provider: string,                // LLM provider used
+    model: string,                   // Model name
+    processingTime: number           // Processing time in ms
+  },
+  enhancedQuery?: {                  // Present when enhanceQuery=true
+    originalQuery: string,
+    enhancedQuery: string,
+    suggestions: string[],
+    intent?: string,
+    confidence: number,
+    provider: string,
+    model: string,
+    processingTime: number
+  },
+  searchTime: number,
+  llmTime: number,
+  totalTime: number
+}
+```
+
+#### Search Options
+
+All options for `searchWithLLM`:
+
+```typescript
+interface SearchWithLLMOptions {
+  // LLM features
+  enhanceQuery?: boolean;          // Use LLM to improve query (default: false)
+  summarizeResults?: boolean;      // Generate AI summary (default: false)
+
+  // Search configuration
+  searchOptions?: {
+    limit?: number;                // Max results (default: 10)
+    minScore?: number;             // Minimum relevance score (0-1)
+    collection?: string;           // Collection name (default: 'default')
+    offset?: number;               // Skip N results (pagination)
+  };
+
+  // LLM provider configuration
+  llmOptions?: {
+    provider?: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+    model?: string;                // Model name
+    apiKey?: string;               // API key (required)
+    endpoint?: string;             // Custom endpoint (optional)
+    temperature?: number;          // 0-1, creativity (default: 0.7)
+    maxTokens?: number;            // Max tokens (default: 500)
+    timeout?: number;              // Timeout in ms (default: 10000)
+  };
+}
+```
+
+#### Use Cases
+
+**1. Search with summary only:**
+```typescript
+const result = await db.searchWithLLM('python tutorials', {
   summarizeResults: true,
-  searchOptions: { limit: 20 },
+  searchOptions: { limit: 15 },
+  llmOptions: {
+    provider: 'openrouter',
+    model: 'anthropic/claude-3-sonnet',
+    apiKey: 'sk-or-v1-...'
+  }
+});
+
+console.log(result.summary.summary);       // "The results show various Python learning resources..."
+console.log(result.summary.keyPoints);     // ["Beginner tutorials", "Advanced topics", ...]
+console.log(result.summary.themes);        // ["Programming", "Education", "Web development"]
+```
+
+**2. Query enhancement only:**
+```typescript
+const result = await db.searchWithLLM('find ML docs', {
+  enhanceQuery: true,
   llmOptions: {
     provider: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-3.5-turbo',
     apiKey: 'sk-...'
   }
 });
 
-console.log(smartSearch.enhancedQuery);  // Enhanced query
-console.log(smartSearch.results);        // Search results
-console.log(smartSearch.summary);        // AI summary
+console.log(result.enhancedQuery.enhancedQuery);  // "machine learning documentation"
+console.log(result.enhancedQuery.suggestions);     // ["ML tutorials", "deep learning guides", ...]
+```
+
+**3. Full smart search (both features):**
+```typescript
+const result = await db.searchWithLLM('AI', {
+  enhanceQuery: true,
+  summarizeResults: true,
+  searchOptions: { limit: 20, minScore: 0.6 },
+  llmOptions: {
+    provider: 'openrouter',
+    model: 'openrouter/auto',     // Auto-select best model
+    apiKey: 'sk-or-v1-...'
+  }
+});
+
+// Original query enhanced to better search query
+console.log(result.enhancedQuery.enhancedQuery);
+
+// Search results
+result.results.forEach(r => {
+  console.log(`${r.title}: ${r.score}`);
+});
+
+// AI summary of all results
+console.log(result.summary.summary);
+console.log(`Processed in ${result.totalTime}ms`);
 ```
 
 ### Generic LLM Calls
