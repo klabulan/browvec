@@ -380,11 +380,19 @@ await db.clearEmbeddingQueue({
 
 ## 🤖 LLM Integration
 
+LocalRetrieve supports multiple LLM providers for query enhancement and result summarization:
+
+- **OpenAI** - GPT-4, GPT-3.5-turbo
+- **Anthropic** - Claude 3 (Opus, Sonnet, Haiku)
+- **OpenRouter** - 100+ models (GPT-4, Claude, Llama, Mixtral, Gemini, and more)
+- **Custom** - Any OpenAI-compatible endpoint
+
 ### Query Enhancement
 
 Improve search queries using LLM:
 
 ```typescript
+// Using OpenAI
 const enhanced = await db.enhanceQuery('find docs', {
   provider: 'openai',
   model: 'gpt-4',
@@ -405,9 +413,10 @@ Summarize search results with AI:
 ```typescript
 const results = await db.search({ query: { text: 'machine learning' } });
 
+// Using Anthropic Claude
 const summary = await db.summarizeResults(results.results, {
   provider: 'anthropic',
-  model: 'claude-3-sonnet',
+  model: 'claude-3-sonnet-20240229',
   apiKey: 'sk-ant-...',
   maxLength: 500
 });
@@ -416,6 +425,45 @@ console.log(summary.summary);      // "The search results cover..."
 console.log(summary.keyPoints);    // ["Neural networks", "Deep learning", ...]
 console.log(summary.themes);       // ["AI", "algorithms", "training"]
 ```
+
+### OpenRouter Integration
+
+Access 100+ models through one API with OpenRouter:
+
+```typescript
+// Query enhancement with OpenRouter
+const enhanced = await db.enhanceQuery('AI tutorials', {
+  provider: 'openrouter',
+  model: 'openai/gpt-4',              // or 'anthropic/claude-3-opus'
+  apiKey: 'sk-or-v1-...',             // Get at https://openrouter.ai/keys
+  endpoint: 'https://openrouter.ai/api/v1/chat/completions'
+});
+
+// Use auto-routing (OpenRouter picks best model)
+const result = await db.callLLM('Summarize quantum computing', {
+  provider: 'openrouter',
+  model: 'openrouter/auto',
+  apiKey: 'sk-or-v1-...'
+});
+
+// Access to models: GPT-4, Claude, Llama 3, Mixtral, Gemini, and more
+```
+
+**Popular OpenRouter models:**
+- `openai/gpt-4` - GPT-4 via OpenRouter
+- `anthropic/claude-3-opus` - Claude 3 Opus
+- `meta-llama/llama-3-70b-instruct` - Meta's Llama 3
+- `mistralai/mixtral-8x7b-instruct` - Mistral Mixtral
+- `google/gemini-pro` - Google Gemini
+- `openrouter/auto` - Auto-select best model
+
+### Getting API Keys
+
+- **OpenAI**: https://platform.openai.com/api-keys
+- **Anthropic**: https://console.anthropic.com/settings/keys
+- **OpenRouter**: https://openrouter.ai/keys (recommended - access to all models with one key)
+
+**Security Note**: API keys are never stored by LocalRetrieve - they're only passed at runtime and kept in memory.
 
 ### Combined Smart Search
 

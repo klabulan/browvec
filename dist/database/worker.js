@@ -1,5 +1,5 @@
-import { D as h, b as M, O as L, E as _, p as D, t as x } from "../ProviderFactory-BqrsaSK-.mjs";
-const v = 0, $ = 100, N = 101, F = 1, z = 2, H = 3, U = 4, k = 5, O = -1;
+import { D as h, b as M, O as I, E as _, p as D, t as x } from "../ProviderFactory-BqrsaSK-.mjs";
+const v = 0, $ = 100, N = 101, F = 1, z = 2, H = 3, k = 4, U = 5, O = -1;
 class Q {
   constructor(e) {
     this.logger = e, this.sqlite3 = null, this.dbPtr = 0, this.operationCount = 0;
@@ -160,8 +160,8 @@ class Q {
       for (; this.sqlite3._sqlite3_step(a) === $; ) {
         const l = this.sqlite3._sqlite3_column_count(a), d = {};
         for (let u = 0; u < l; u++) {
-          const m = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(a, u)), E = this.sqlite3._sqlite3_column_type(a, u);
-          d[m] = this.extractColumnValue(a, u, E);
+          const m = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(a, u)), b = this.sqlite3._sqlite3_column_type(a, u);
+          d[m] = this.extractColumnValue(a, u, b);
         }
         c.push(d);
       }
@@ -209,12 +209,12 @@ class Q {
         return this.sqlite3._sqlite3_column_double(e, t);
       case H:
         return this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_text(e, t));
-      case U:
+      case k:
         const s = this.sqlite3._sqlite3_column_blob(e, t), r = this.sqlite3._sqlite3_column_bytes(e, t), o = new Uint8Array(r);
         for (let a = 0; a < r; a++)
           o[a] = this.sqlite3.getValue(s + a, "i8");
         return o;
-      case k:
+      case U:
       default:
         return null;
     }
@@ -351,7 +351,7 @@ class G {
         throw new Error("Empty database file");
       this.pendingDatabaseData = c, this.log("info", `Loaded ${c.length} bytes from OPFS: ${e}`);
     } catch (t) {
-      const i = new L(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
+      const i = new I(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
       throw this.handleOPFSError(i, "load"), i;
     }
   }
@@ -456,7 +456,7 @@ class G {
     }
     if (t.available < e) {
       const i = (t.available / 1048576).toFixed(2), s = (e / (1024 * 1024)).toFixed(2);
-      throw new L(
+      throw new I(
         `Insufficient storage space. Available: ${i}MB, Required: ${s}MB. Please clear browser data or use database.export() to backup your data.`
       );
     }
@@ -1262,7 +1262,7 @@ class q extends Error {
     };
   }
 }
-class S {
+class T {
   static {
     this.errorHistory = [];
   }
@@ -1318,7 +1318,7 @@ class S {
       recoverable: !1,
       userMessage: "Vector search functionality is not available",
       suggestedAction: "Check if sqlite-vec extension is properly loaded"
-    } : e instanceof L ? {
+    } : e instanceof I ? {
       category: "opfs",
       severity: "medium",
       recoverable: !0,
@@ -1469,17 +1469,17 @@ class S {
 function j(n) {
   return n == null || typeof n == "string" || typeof n == "number" || n instanceof Uint8Array || n instanceof Float32Array;
 }
-function I(n) {
+function P(n) {
   return Array.isArray(n) && n.every(j);
 }
 function X(n) {
   return typeof n == "object" && n !== null && typeof n.filename == "string" && (n.path === void 0 || typeof n.path == "string") && (n.vfs === void 0 || n.vfs === "opfs" || n.vfs === "opfs-sahpool") && (n.pragmas === void 0 || typeof n.pragmas == "object" && n.pragmas !== null);
 }
 function K(n) {
-  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || I(n.params));
+  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || P(n.params));
 }
 function J(n) {
-  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || I(n.params));
+  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || P(n.params));
 }
 function Y(n) {
   return typeof n == "object" && n !== null && typeof n.tableName == "string" && Array.isArray(n.data) && n.data.every(
@@ -1526,7 +1526,7 @@ function ce(n) {
 function de(n) {
   return typeof n == "number" && n >= 0 && n <= 1;
 }
-class T {
+class S {
   /**
    * Validate and sanitize parameters for a worker method
    */
@@ -1558,7 +1558,7 @@ class T {
    */
   static validateSQLParams(e, t) {
     if (e !== void 0) {
-      if (!I(e))
+      if (!P(e))
         throw new Error(`Invalid SQL parameters for ${t}: must be an array of SQL values`);
       return Array.isArray(e) ? e.forEach((i, s) => {
         if (typeof i == "string" && i.length > 1e5)
@@ -1612,7 +1612,7 @@ class he {
    * Execute an operation with error handling and context
    */
   async withContext(e, t, i) {
-    return S.withContext(
+    return T.withContext(
       e,
       this.getComponentName(),
       t,
@@ -1623,7 +1623,7 @@ class he {
    * Execute an operation with retry logic
    */
   async withRetry(e, t = 3, i = 1e3) {
-    return S.withRetry(e, {
+    return T.withRetry(e, {
       strategy: "retry",
       maxRetries: t,
       retryDelay: i,
@@ -1636,7 +1636,7 @@ class he {
    * Validate parameters using type guards
    */
   validateParams(e, t, i) {
-    return T.validate(e, t, `${this.getComponentName()}.${i}`);
+    return S.validate(e, t, `${this.getComponentName()}.${i}`);
   }
   /**
    * Ensure database is initialized before operations
@@ -1668,19 +1668,19 @@ class he {
    * Create standardized error response for RPC
    */
   createErrorResponse(e, t) {
-    return S.createErrorResponse(e, t);
+    return T.createErrorResponse(e, t);
   }
   /**
    * Check if error is recoverable
    */
   isRecoverableError(e) {
-    return S.isRecoverable(e);
+    return T.isRecoverable(e);
   }
   /**
    * Create user-friendly error message
    */
   createUserMessage(e) {
-    return S.createUserMessage(e);
+    return T.createUserMessage(e);
   }
   /**
    * Sanitize sensitive data from parameters for logging
@@ -1698,25 +1698,25 @@ class he {
    * Validate collection name with business rules
    */
   validateCollectionName(e, t) {
-    return T.validateCollectionName(e, `${this.getComponentName()}.${t}`);
+    return S.validateCollectionName(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Validate document ID with business rules
    */
   validateDocumentId(e, t) {
-    return T.validateDocumentId(e, `${this.getComponentName()}.${t}`);
+    return S.validateDocumentId(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Validate search limit parameter
    */
   validateLimit(e, t, i = 10) {
-    return T.validateLimit(e, `${this.getComponentName()}.${t}`, i);
+    return S.validateLimit(e, `${this.getComponentName()}.${t}`, i);
   }
   /**
    * Validate search threshold parameter
    */
   validateThreshold(e, t) {
-    return T.validateThreshold(e, `${this.getComponentName()}.${t}`);
+    return S.validateThreshold(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Convert Float32Array to database-compatible blob
@@ -1786,9 +1786,9 @@ class y extends Error {
     super(e), this.code = t, this.statusCode = i, this.provider = s, this.details = r, this.name = "LLMError", Object.setPrototypeOf(this, y.prototype);
   }
 }
-class b extends y {
+class w extends y {
   constructor(e, t) {
-    super(e, "INVALID_CONFIG", void 0, void 0, t), this.name = "LLMConfigError", Object.setPrototypeOf(this, b.prototype);
+    super(e, "INVALID_CONFIG", void 0, void 0, t), this.name = "LLMConfigError", Object.setPrototypeOf(this, w.prototype);
   }
 }
 class C extends y {
@@ -1801,9 +1801,9 @@ class R extends y {
     super(`LLM request timeout after ${t}ms`, "TIMEOUT", void 0, e), this.name = "LLMTimeoutError", Object.setPrototypeOf(this, R.prototype);
   }
 }
-class w extends y {
+class E extends y {
   constructor(e, t, i) {
-    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, w.prototype);
+    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, E.prototype);
   }
 }
 function ge(n) {
@@ -1850,7 +1850,7 @@ Format response as JSON:
   "confidence": 0.9
 }`;
 }
-class P {
+class L {
   constructor(e, t) {
     this.config = e, this.logger = t, this.validateConfig();
   }
@@ -1859,11 +1859,11 @@ class P {
    */
   validateConfig() {
     if (!this.config.provider)
-      throw new b("Provider is required");
+      throw new w("Provider is required");
     if (!this.config.model)
-      throw new b("Model is required");
+      throw new w("Model is required");
     if (!this.config.apiKey && this.config.provider !== "custom")
-      throw new b(`API key required for provider: ${this.config.provider}`);
+      throw new w(`API key required for provider: ${this.config.provider}`);
   }
   /**
    * Execute HTTP request to LLM API
@@ -1886,12 +1886,12 @@ class P {
         signal: c
       });
       if (clearTimeout(l), !d.ok) {
-        const E = await d.json().catch(() => ({}));
+        const b = await d.json().catch(() => ({}));
         throw new C(
-          E.error?.message || d.statusText,
+          b.error?.message || d.statusText,
           d.status,
           this.config.provider,
-          E
+          b
         );
       }
       const u = await d.json(), m = this.parseResponse(u);
@@ -1921,7 +1921,7 @@ class P {
       try {
         return await this.executeRequest(e, t);
       } catch (o) {
-        if (s = o, o instanceof b || o instanceof R || o instanceof C && o.statusCode && o.statusCode < 500)
+        if (s = o, o instanceof w || o instanceof R || o instanceof C && o.statusCode && o.statusCode < 500)
           throw o;
         if (r < i) {
           const a = Math.pow(2, r) * 1e3;
@@ -1962,7 +1962,7 @@ class P {
     return await this.executeRequestWithRetry(i, t);
   }
 }
-class fe extends P {
+class fe extends L {
   /**
    * Build OpenAI API endpoint URL
    */
@@ -2021,7 +2021,7 @@ class fe extends P {
         provider: "openai"
       };
     } catch (t) {
-      throw new w(
+      throw new E(
         `Failed to parse OpenAI response: ${t.message}`,
         "openai",
         { data: e, error: t.message }
@@ -2029,7 +2029,7 @@ class fe extends P {
     }
   }
 }
-class pe extends P {
+class pe extends L {
   /**
    * Build Anthropic API endpoint URL
    */
@@ -2085,7 +2085,7 @@ class pe extends P {
         provider: "anthropic"
       };
     } catch (t) {
-      throw new w(
+      throw new E(
         `Failed to parse Anthropic response: ${t.message}`,
         "anthropic",
         { data: e, error: t.message }
@@ -2093,13 +2093,84 @@ class pe extends P {
     }
   }
 }
-class ye extends P {
+class ye extends L {
+  /**
+   * Build OpenRouter API endpoint URL
+   */
+  buildRequestURL() {
+    return this.config.endpoint || "https://openrouter.ai/api/v1/chat/completions";
+  }
+  /**
+   * Build OpenRouter request headers
+   * Includes optional HTTP-Referer and X-Title for usage tracking
+   */
+  buildRequestHeaders() {
+    const e = {
+      Authorization: `Bearer ${this.config.apiKey}`,
+      ...this.config.headers
+    };
+    return e["HTTP-Referer"] || (e["HTTP-Referer"] = typeof window < "u" ? window.location.origin : "https://localretrieve.dev"), e["X-Title"] || (e["X-Title"] = "LocalRetrieve"), e;
+  }
+  /**
+   * Build OpenRouter request body (OpenAI-compatible format)
+   */
+  buildRequestBody(e, t) {
+    return {
+      model: this.config.model,
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful search assistant. Always respond with valid JSON."
+        },
+        {
+          role: "user",
+          content: e
+        }
+      ],
+      temperature: t?.temperature ?? this.config.temperature ?? 0.7,
+      max_tokens: t?.maxTokens ?? this.config.maxTokens ?? 500,
+      // OpenRouter supports response_format for compatible models
+      response_format: { type: "json_object" }
+    };
+  }
+  /**
+   * Parse OpenRouter API response
+   * OpenRouter uses OpenAI-compatible response format
+   */
+  parseResponse(e) {
+    try {
+      if (!e.choices || !e.choices[0])
+        throw new Error("Invalid response structure: missing choices");
+      const t = e.choices[0], i = t.message?.content;
+      if (!i)
+        throw new Error("Invalid response structure: missing message content");
+      return {
+        text: i,
+        finishReason: t.finish_reason === "stop" ? "stop" : "length",
+        usage: e.usage ? {
+          promptTokens: e.usage.prompt_tokens,
+          completionTokens: e.usage.completion_tokens,
+          totalTokens: e.usage.total_tokens
+        } : void 0,
+        model: e.model || this.config.model,
+        provider: "openrouter"
+      };
+    } catch (t) {
+      throw new E(
+        `Failed to parse OpenRouter response: ${t.message}`,
+        "openrouter",
+        { data: e, error: t.message }
+      );
+    }
+  }
+}
+class Ee extends L {
   /**
    * Validate custom provider configuration
    */
   validateConfig() {
     if (super.validateConfig(), !this.config.endpoint)
-      throw new b("Endpoint is required for custom provider");
+      throw new w("Endpoint is required for custom provider");
   }
   /**
    * Build custom API endpoint URL
@@ -2165,7 +2236,7 @@ class ye extends P {
         provider: "custom"
       };
     } catch (t) {
-      throw new w(
+      throw new E(
         `Failed to parse custom provider response: ${t.message}`,
         "custom",
         { data: e, error: t.message }
@@ -2173,7 +2244,7 @@ class ye extends P {
     }
   }
 }
-class Ee {
+class be {
   constructor(e) {
     this.providerCache = /* @__PURE__ */ new Map(), this.logger = e;
   }
@@ -2195,8 +2266,9 @@ class Ee {
       case "anthropic":
         return new pe(e, this.logger);
       case "openrouter":
-      case "custom":
         return new ye(e, this.logger);
+      case "custom":
+        return new Ee(e, this.logger);
       default:
         throw new y(
           `Unknown provider: ${e.provider}`,
@@ -2267,7 +2339,7 @@ class Ee {
         error: o.message,
         query: e,
         provider: t.provider
-      }), o instanceof SyntaxError ? new w(
+      }), o instanceof SyntaxError ? new E(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2299,7 +2371,7 @@ class Ee {
         error: o.message,
         resultCount: e.length,
         provider: t.provider
-      }), o instanceof SyntaxError ? new w(
+      }), o instanceof SyntaxError ? new E(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2495,7 +2567,7 @@ class p {
     return new p({ component: e, level: t });
   }
 }
-class be {
+class we {
   constructor() {
     this.isInitialized = !1, this.startTime = Date.now(), this.logger = new p({
       level: "debug",
@@ -2505,7 +2577,7 @@ class be {
       schemaManager: this.schemaManager,
       opfsManager: this.opfsManager,
       logger: this.logger
-    }), this.llmManager = new Ee(this.logger), this.rpcHandler = new x({
+    }), this.llmManager = new be(this.logger), this.rpcHandler = new x({
       logLevel: "debug",
       operationTimeout: 3e4
     }), this.setupRPCHandlers(), this.logger.info("DatabaseWorker initialized with modular architecture + LLM support");
@@ -2803,11 +2875,11 @@ class be {
         score: g.score,
         ftsScore: g.fts_score,
         vecScore: g.vec_score
-      })), E = Date.now() - t;
-      return this.operationCount++, this.logger.debug(`Search completed in ${E}ms, found ${m.length} results`), {
+      })), b = Date.now() - t;
+      return this.operationCount++, this.logger.debug(`Search completed in ${b}ms, found ${m.length} results`), {
         results: m,
         totalResults: m.length,
-        searchTime: E
+        searchTime: b
       };
     } catch (i) {
       return this.logger.error("Search failed", { error: i }), {
@@ -3145,10 +3217,10 @@ class be {
       throw new Error("Database not initialized - call open() first");
   }
   async withContext(e, t) {
-    return S.withContext(e, "DatabaseWorker", t);
+    return T.withContext(e, "DatabaseWorker", t);
   }
 }
-new be();
+new we();
 self.addEventListener("error", (n) => {
   console.error("[Worker] Unhandled error:", n.error);
 });
@@ -3156,6 +3228,6 @@ self.addEventListener("unhandledrejection", (n) => {
   console.error("[Worker] Unhandled promise rejection:", n.reason);
 });
 export {
-  be as DatabaseWorker
+  we as DatabaseWorker
 };
 //# sourceMappingURL=worker.js.map

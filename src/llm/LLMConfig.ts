@@ -29,7 +29,24 @@ export const LLM_MODELS = {
     'claude-3-haiku-20240307'
   ],
   openrouter: [
-    'auto'  // OpenRouter handles model selection
+    // OpenAI models via OpenRouter
+    'openai/gpt-4',
+    'openai/gpt-4-turbo',
+    'openai/gpt-3.5-turbo',
+    // Anthropic models via OpenRouter
+    'anthropic/claude-3-opus',
+    'anthropic/claude-3-sonnet',
+    'anthropic/claude-3-haiku',
+    // Meta models
+    'meta-llama/llama-3-70b-instruct',
+    'meta-llama/llama-3-8b-instruct',
+    // Mistral models
+    'mistralai/mixtral-8x7b-instruct',
+    'mistralai/mistral-7b-instruct',
+    // Google models
+    'google/gemini-pro',
+    // Auto-routing (OpenRouter selects best model)
+    'openrouter/auto'
   ],
   custom: [
     'default'

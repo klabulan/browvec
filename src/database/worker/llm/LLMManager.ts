@@ -9,6 +9,7 @@ import type { Logger } from '../utils/Logger.js';
 import { BaseLLMProvider } from '../../../llm/providers/BaseLLMProvider.js';
 import { OpenAIProvider } from '../../../llm/providers/OpenAIProvider.js';
 import { AnthropicProvider } from '../../../llm/providers/AnthropicProvider.js';
+import { OpenRouterProvider } from '../../../llm/providers/OpenRouterProvider.js';
 import { CustomProvider } from '../../../llm/providers/CustomProvider.js';
 import type { LLMProviderConfig, EnhancedQuery, ResultSummary } from '../../../llm/types.js';
 import { LLMError, LLMParseError } from '../../../llm/errors.js';
@@ -51,6 +52,8 @@ export class LLMManager {
         return new AnthropicProvider(config, this.logger);
 
       case 'openrouter':
+        return new OpenRouterProvider(config, this.logger);
+
       case 'custom':
         return new CustomProvider(config, this.logger);
 
