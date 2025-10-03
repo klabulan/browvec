@@ -431,12 +431,11 @@ console.log(summary.themes);       // ["AI", "algorithms", "training"]
 Access 100+ models through one API with OpenRouter:
 
 ```typescript
-// Query enhancement with OpenRouter
+// Query enhancement with OpenRouter (endpoint is optional - has default)
 const enhanced = await db.enhanceQuery('AI tutorials', {
   provider: 'openrouter',
   model: 'openai/gpt-4',              // or 'anthropic/claude-3-opus'
-  apiKey: 'sk-or-v1-...',             // Get at https://openrouter.ai/keys
-  endpoint: 'https://openrouter.ai/api/v1/chat/completions'
+  apiKey: 'sk-or-v1-...'              // Get at https://openrouter.ai/keys
 });
 
 // Use auto-routing (OpenRouter picks best model)
@@ -446,7 +445,13 @@ const result = await db.callLLM('Summarize quantum computing', {
   apiKey: 'sk-or-v1-...'
 });
 
-// Access to models: GPT-4, Claude, Llama 3, Mixtral, Gemini, and more
+// Custom endpoint (optional - defaults to https://openrouter.ai/api/v1/chat/completions)
+const custom = await db.enhanceQuery('query', {
+  provider: 'openrouter',
+  model: 'openai/gpt-4',
+  apiKey: 'sk-or-v1-...',
+  endpoint: 'https://custom-openrouter-proxy.com/v1/chat/completions'
+});
 ```
 
 **Popular OpenRouter models:**
