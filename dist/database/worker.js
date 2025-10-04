@@ -1,5 +1,5 @@
 import { D as h, b as M, O as I, E as _, p as D, t as x } from "../ProviderFactory-BqrsaSK-.mjs";
-const v = 0, $ = 100, N = 101, F = 1, z = 2, H = 3, k = 4, U = 5, O = -1;
+const v = 0, O = 100, N = 101, F = 1, z = 2, H = 3, k = 4, U = 5, $ = -1;
 class Q {
   constructor(e) {
     this.logger = e, this.sqlite3 = null, this.dbPtr = 0, this.operationCount = 0;
@@ -107,7 +107,7 @@ class Q {
             this.bindParameter(o, l + 1, t[c[l]]);
         }
       const a = this.sqlite3._sqlite3_step(o);
-      if (a !== N && a !== $) {
+      if (a !== N && a !== O) {
         const c = this.sqlite3._sqlite3_errmsg(this.dbPtr), l = this.sqlite3.UTF8ToString(c);
         throw this.log("error", `SQL execution failed: ${e} - Error: ${l}`), new h(`SQL execution failed: ${l}`);
       }
@@ -157,11 +157,11 @@ class Q {
     }
     const c = [];
     try {
-      for (; this.sqlite3._sqlite3_step(a) === $; ) {
+      for (; this.sqlite3._sqlite3_step(a) === O; ) {
         const l = this.sqlite3._sqlite3_column_count(a), d = {};
         for (let u = 0; u < l; u++) {
-          const m = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(a, u)), b = this.sqlite3._sqlite3_column_type(a, u);
-          d[m] = this.extractColumnValue(a, u, b);
+          const m = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(a, u)), E = this.sqlite3._sqlite3_column_type(a, u);
+          d[m] = this.extractColumnValue(a, u, E);
         }
         c.push(d);
       }
@@ -182,7 +182,7 @@ class Q {
       Number.isInteger(i) ? this.sqlite3._sqlite3_bind_int(e, t, i) : this.sqlite3._sqlite3_bind_double(e, t, i);
     else if (typeof i == "string") {
       const s = this.sqlite3._malloc(i.length + 1);
-      this.sqlite3.stringToUTF8(i, s, i.length + 1), this.sqlite3._sqlite3_bind_text(e, t, s, -1, O), this.sqlite3._free(s);
+      this.sqlite3.stringToUTF8(i, s, i.length + 1), this.sqlite3._sqlite3_bind_text(e, t, s, -1, $), this.sqlite3._free(s);
     } else if (i instanceof Uint8Array) {
       const s = this.sqlite3._malloc(i.length);
       if (this.sqlite3.writeArrayToMemory)
@@ -190,7 +190,7 @@ class Q {
       else
         for (let r = 0; r < i.length; r++)
           this.sqlite3.setValue(s + r, i[r], "i8");
-      this.sqlite3._sqlite3_bind_blob(e, t, s, i.length, O), this.sqlite3._free(s);
+      this.sqlite3._sqlite3_bind_blob(e, t, s, i.length, $), this.sqlite3._free(s);
     } else if (i instanceof Float32Array) {
       const s = new Uint8Array(i.buffer);
       this.bindParameter(e, t, s);
@@ -507,7 +507,7 @@ class G {
     this.logger ? this.logger.log(e, t) : console.log(`[OPFSManager] ${e.toUpperCase()}: ${t}`);
   }
 }
-const f = 2;
+const b = 3;
 class W {
   constructor(e, t) {
     this.sqliteManager = e, this.logger = t;
@@ -524,17 +524,17 @@ class W {
         const i = await this.sqliteManager.select("SELECT MAX(schema_version) as version FROM collections");
         i.rows.length > 0 && i.rows[0].version !== null && (e = i.rows[0].version, this.log("info", `Current schema version: ${e}`));
         const s = await this.sqliteManager.select("SELECT COUNT(*) as count FROM docs_default");
-        if (t = s.rows.length > 0 && s.rows[0].count > 0, e === f && t) {
+        if (t = s.rows.length > 0 && s.rows[0].count > 0, e === b && t) {
           this.log("info", "Schema is up-to-date, skipping initialization");
           return;
         }
       } catch {
         this.log("debug", "Schema tables do not exist yet, proceeding with initialization");
       }
-      if (e > 0 && e < f) {
-        await this.migrateSchema(e), this.log("info", `Schema migrated from version ${e} to ${f}`);
-        return;
-      }
+      if (e > 0 && e < b)
+        throw new h(
+          `Database schema v${e} detected. Schema v3 requires database recreation. Please export your data, clear the database (db.clearAsync()), and reimport.`
+        );
       await this.validateAndCleanupSchema(), await this.createSchema(), this.log("info", "Schema initialized successfully");
     } catch (e) {
       throw new h(`Schema initialization failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -544,9 +544,9 @@ class W {
    * Migrate schema from older version to current version
    */
   async migrateSchema(e) {
-    this.log("info", `Migrating schema from version ${e} to version ${f}`);
+    this.log("info", `Migrating schema from version ${e} to version ${b}`);
     try {
-      e === 1 && await this.migrateFromV1ToV2(), this.log("info", `Successfully migrated from schema version ${e} to ${f}`);
+      this.log("info", `Successfully migrated from schema version ${e} to ${b}`);
     } catch (t) {
       throw new h(`Schema migration failed: ${t instanceof Error ? t.message : String(t)}`);
     }
@@ -582,7 +582,7 @@ class W {
       CREATE INDEX IF NOT EXISTS idx_embedding_queue_priority ON embedding_queue(priority DESC);
       CREATE INDEX IF NOT EXISTS idx_embedding_queue_created ON embedding_queue(created_at);
     `), await this.sqliteManager.exec(`
-      UPDATE collections SET schema_version = ${f}, updated_at = strftime('%s', 'now')
+      UPDATE collections SET schema_version = 2, updated_at = strftime('%s', 'now')
     `);
   }
   /**
@@ -629,15 +629,19 @@ class W {
    */
   async createSchema() {
     await this.sqliteManager.exec(`
-      -- Base documents table
+      -- Base documents table (v3 schema with separate collection column)
       CREATE TABLE IF NOT EXISTS docs_default (
         id TEXT PRIMARY KEY,
         title TEXT,
         content TEXT NOT NULL,
+        collection TEXT NOT NULL DEFAULT 'default',
         metadata JSON,
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now'))
       );
+
+      -- Index for efficient collection filtering
+      CREATE INDEX IF NOT EXISTS idx_docs_collection ON docs_default(collection);
 
       -- Full-text search table
       CREATE VIRTUAL TABLE IF NOT EXISTS fts_default USING fts5(
@@ -656,7 +660,7 @@ class W {
         name TEXT PRIMARY KEY,
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-        schema_version INTEGER DEFAULT ${f},
+        schema_version INTEGER DEFAULT ${b},
         config JSON,
         embedding_provider TEXT DEFAULT 'local',
         embedding_dimensions INTEGER DEFAULT 384,
@@ -704,7 +708,7 @@ class W {
       if (t.rows.length === 0)
         throw new h(`Collection '${e}' not found`);
       const i = t.rows[0], s = await this.sqliteManager.select(
-        "SELECT COUNT(*) as count FROM docs_default WHERE json_extract(metadata, '$.collection') = ?",
+        "SELECT COUNT(*) as count FROM docs_default WHERE collection = ?",
         [e]
       );
       let r;
@@ -748,14 +752,14 @@ class W {
         [
           e,
           JSON.stringify(r),
-          f,
+          b,
           o,
           o
         ]
       );
       await this.sqliteManager.exec(
         `INSERT INTO collections (name, config, schema_version, created_at, updated_at)
-         VALUES ('${e}', '${JSON.stringify(r)}', ${f}, ${o}, ${o})`
+         VALUES ('${e}', '${JSON.stringify(r)}', ${b}, ${o}, ${o})`
       ), this.log("info", `Collection '${e}' created with ${t} dimensions`);
     } catch (s) {
       throw new h(`Failed to create collection: ${s instanceof Error ? s.message : String(s)}`);
@@ -1006,7 +1010,7 @@ class B {
    */
   async storeEmbedding(e, t, i) {
     const s = await this.sqliteManager.select(
-      "SELECT rowid FROM docs_default WHERE id = ? AND json_extract(metadata, '$.collection') = ?",
+      "SELECT rowid FROM docs_default WHERE id = ? AND collection = ?",
       [t, e]
     );
     if (s.rows.length === 0)
@@ -1781,29 +1785,29 @@ class ue extends he {
     }
   }
 }
-class y extends Error {
+class p extends Error {
   constructor(e, t, i, s, r) {
-    super(e), this.code = t, this.statusCode = i, this.provider = s, this.details = r, this.name = "LLMError", Object.setPrototypeOf(this, y.prototype);
+    super(e), this.code = t, this.statusCode = i, this.provider = s, this.details = r, this.name = "LLMError", Object.setPrototypeOf(this, p.prototype);
   }
 }
-class w extends y {
+class w extends p {
   constructor(e, t) {
     super(e, "INVALID_CONFIG", void 0, void 0, t), this.name = "LLMConfigError", Object.setPrototypeOf(this, w.prototype);
   }
 }
-class C extends y {
+class C extends p {
   constructor(e, t, i, s) {
     super(e, "PROVIDER_ERROR", t, i, s), this.name = "LLMProviderError", Object.setPrototypeOf(this, C.prototype);
   }
 }
-class R extends y {
+class R extends p {
   constructor(e, t) {
     super(`LLM request timeout after ${t}ms`, "TIMEOUT", void 0, e), this.name = "LLMTimeoutError", Object.setPrototypeOf(this, R.prototype);
   }
 }
-class E extends y {
+class y extends p {
   constructor(e, t, i) {
-    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, E.prototype);
+    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, y.prototype);
   }
 }
 function ge(n) {
@@ -1886,12 +1890,12 @@ class L {
         signal: c
       });
       if (clearTimeout(l), !d.ok) {
-        const b = await d.json().catch(() => ({}));
+        const E = await d.json().catch(() => ({}));
         throw new C(
-          b.error?.message || d.statusText,
+          E.error?.message || d.statusText,
           d.status,
           this.config.provider,
-          b
+          E
         );
       }
       const u = await d.json(), m = this.parseResponse(u);
@@ -1902,7 +1906,7 @@ class L {
         textLength: m.text.length
       }), m;
     } catch (d) {
-      throw clearTimeout(l), d.name === "AbortError" ? new R(this.config.provider, o) : d instanceof y ? d : new y(
+      throw clearTimeout(l), d.name === "AbortError" ? new R(this.config.provider, o) : d instanceof p ? d : new p(
         `LLM request failed: ${d.message}`,
         "NETWORK_ERROR",
         void 0,
@@ -2021,7 +2025,7 @@ class fe extends L {
         provider: "openai"
       };
     } catch (t) {
-      throw new E(
+      throw new y(
         `Failed to parse OpenAI response: ${t.message}`,
         "openai",
         { data: e, error: t.message }
@@ -2085,7 +2089,7 @@ class pe extends L {
         provider: "anthropic"
       };
     } catch (t) {
-      throw new E(
+      throw new y(
         `Failed to parse Anthropic response: ${t.message}`,
         "anthropic",
         { data: e, error: t.message }
@@ -2156,7 +2160,7 @@ class ye extends L {
         provider: "openrouter"
       };
     } catch (t) {
-      throw new E(
+      throw new y(
         `Failed to parse OpenRouter response: ${t.message}`,
         "openrouter",
         { data: e, error: t.message }
@@ -2236,7 +2240,7 @@ class Ee extends L {
         provider: "custom"
       };
     } catch (t) {
-      throw new E(
+      throw new y(
         `Failed to parse custom provider response: ${t.message}`,
         "custom",
         { data: e, error: t.message }
@@ -2270,7 +2274,7 @@ class be {
       case "custom":
         return new Ee(e, this.logger);
       default:
-        throw new y(
+        throw new p(
           `Unknown provider: ${e.provider}`,
           "INVALID_CONFIG",
           void 0,
@@ -2339,7 +2343,7 @@ class be {
         error: o.message,
         query: e,
         provider: t.provider
-      }), o instanceof SyntaxError ? new E(
+      }), o instanceof SyntaxError ? new y(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2371,7 +2375,7 @@ class be {
         error: o.message,
         resultCount: e.length,
         provider: t.provider
-      }), o instanceof SyntaxError ? new E(
+      }), o instanceof SyntaxError ? new y(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2394,7 +2398,7 @@ class be {
     };
   }
 }
-class p {
+class f {
   constructor(e = {}) {
     this.logHistory = [], this.maxHistorySize = 1e3, this.config = {
       level: e.level || "info",
@@ -2470,7 +2474,7 @@ class p {
    */
   shouldLog(e) {
     const t = e;
-    return p.LEVEL_PRIORITY[t] >= p.LEVEL_PRIORITY[this.config.level];
+    return f.LEVEL_PRIORITY[t] >= f.LEVEL_PRIORITY[this.config.level];
   }
   /**
    * Add log entry to history buffer
@@ -2490,8 +2494,8 @@ class p {
     e.component && t.push(`[${e.component}]`);
     const i = e.level.toUpperCase();
     if (this.config.enableColors && typeof window > "u") {
-      const r = p.LEVEL_COLORS[e.level];
-      t.push(`${r}${i}${p.RESET_COLOR}`);
+      const r = f.LEVEL_COLORS[e.level];
+      t.push(`${r}${i}${f.RESET_COLOR}`);
     } else
       t.push(i);
     t.push(e.message);
@@ -2539,7 +2543,7 @@ class p {
    * Create a child logger with a specific component name
    */
   child(e) {
-    return new p({
+    return new f({
       ...this.config,
       component: e
     });
@@ -2558,18 +2562,18 @@ class p {
    */
   mapStringToLogLevel(e) {
     const t = e.toLowerCase();
-    return t in p.LEVEL_PRIORITY ? t : "info";
+    return t in f.LEVEL_PRIORITY ? t : "info";
   }
   /**
    * Static method to create a default logger instance
    */
   static create(e, t = "info") {
-    return new p({ component: e, level: t });
+    return new f({ component: e, level: t });
   }
 }
 class we {
   constructor() {
-    this.isInitialized = !1, this.startTime = Date.now(), this.logger = new p({
+    this.isInitialized = !1, this.startTime = Date.now(), this.logger = new f({
       level: "debug",
       component: "DatabaseWorker"
     }), this.sqliteManager = new Q(this.logger), this.opfsManager = new G(this.sqliteManager, this.logger), this.schemaManager = new W(this.sqliteManager, this.logger), this.embeddingQueue = new B(this.sqliteManager, this.logger), this.providerManager = new V(this.sqliteManager, this.logger), this.searchHandler = new ue({
@@ -2692,16 +2696,52 @@ class we {
   async handleInsertDocumentWithEmbedding(e) {
     const t = this.validateParams(e, ee, "handleInsertDocumentWithEmbedding");
     return this.ensureInitialized(), this.withContext("insertDocumentWithEmbedding", async () => {
-      const i = t.document.id || `doc_${Date.now()}`, s = `
-        INSERT OR REPLACE INTO docs_default (id, title, content, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
-      `, r = { ...t.document.metadata, collection: t.collection };
-      return await this.sqliteManager.select(s, [
-        i,
-        t.document.title || "",
-        t.document.content,
-        JSON.stringify(r)
-      ]), { id: i, embeddingGenerated: !1 };
+      const { validateDocument: i, generateDocumentId: s, sanitizeDocumentId: r } = await import("../Validation-Dai9aPfn.mjs"), { DocumentInsertError: o } = await import("../Errors-CBeo1Lsn.mjs");
+      i(t.document, t.collection);
+      const a = t.document.id ? r(t.document.id) : s(), c = t.document.metadata || {}, l = `
+        INSERT OR REPLACE INTO docs_default (id, title, content, collection, metadata, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+      `;
+      try {
+        await this.sqliteManager.exec(l, [
+          a,
+          t.document.title || "",
+          t.document.content || "",
+          t.collection,
+          // ✅ Separate column for collection
+          JSON.stringify(c)
+          // ✅ Pure user metadata
+        ]);
+      } catch (m) {
+        throw new o(
+          `Failed to insert document into collection '${t.collection}'`,
+          {
+            collection: t.collection,
+            documentId: a,
+            providedFields: Object.keys(t.document),
+            originalError: m instanceof Error ? m : void 0,
+            suggestion: "Check that document structure matches schema and ID is unique"
+          }
+        );
+      }
+      if (((await this.sqliteManager.select(
+        "SELECT COUNT(*) as count FROM docs_default WHERE id = ? AND collection = ?",
+        [a, t.collection]
+      )).rows[0]?.count || 0) === 0)
+        throw new o(
+          `Document insertion verification failed: id='${a}' was not found in database`,
+          {
+            collection: t.collection,
+            documentId: a,
+            providedFields: Object.keys(t.document),
+            suggestion: `This may be caused by:
+  1) Unique constraint violation (duplicate ID)
+  2) Database connection issue
+  3) Transaction rollback
+Check database logs for details.`
+          }
+        );
+      return this.logger.info(`Document inserted successfully: ${a} in collection ${t.collection}`), { id: a, embeddingGenerated: !1 };
     });
   }
   async handleGenerateEmbedding(e) {
@@ -2875,11 +2915,11 @@ class we {
         score: g.score,
         ftsScore: g.fts_score,
         vecScore: g.vec_score
-      })), b = Date.now() - t;
-      return this.operationCount++, this.logger.debug(`Search completed in ${b}ms, found ${m.length} results`), {
+      })), E = Date.now() - t;
+      return this.operationCount++, this.logger.debug(`Search completed in ${E}ms, found ${m.length} results`), {
         results: m,
         totalResults: m.length,
-        searchTime: b
+        searchTime: E
       };
     } catch (i) {
       return this.logger.error("Search failed", { error: i }), {

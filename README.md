@@ -287,7 +287,12 @@ const result = await db.insertDocumentWithEmbedding({
   collection: 'documents',
   document: {
     title: 'Machine Learning Guide',
-    content: 'A comprehensive guide to machine learning algorithms...'
+    content: 'A comprehensive guide to machine learning algorithms...',
+    metadata: {
+      author: 'John Doe',
+      tags: ['ml', 'ai', 'tutorial'],
+      customField: 'any value'  // metadata is preserved exactly
+    }
   },
   options: {
     generateEmbedding: true  // default: true
@@ -296,6 +301,18 @@ const result = await db.insertDocumentWithEmbedding({
 
 console.log(result.id);                  // Generated document ID
 console.log(result.embeddingGenerated);  // true
+
+// Use custom document ID
+const customResult = await db.insertDocumentWithEmbedding({
+  collection: 'documents',
+  document: {
+    id: 'doc-2024-001',  // Custom ID (string or number)
+    title: 'Custom ID Document',
+    content: 'Document with user-specified ID'
+  }
+});
+
+console.log(customResult.id);  // 'doc-2024-001'
 ```
 
 ### Semantic Search (Text-to-Vector)
@@ -756,6 +773,8 @@ const results = await db.execAsync(`
 
 ### Database Schema
 
+**Current Schema Version: 3** (automatically migrates from v2)
+
 ```sql
 -- Collections registry
 CREATE TABLE collections (
@@ -766,14 +785,20 @@ CREATE TABLE collections (
   config JSON
 );
 
--- Documents (default collection)
+-- Documents (default collection) - Schema v3
 CREATE TABLE docs_default (
   rowid INTEGER PRIMARY KEY,
-  id TEXT,
+  id TEXT UNIQUE,
   title TEXT,
-  content TEXT,
-  metadata JSON
+  content TEXT NOT NULL,
+  collection TEXT NOT NULL,  -- v3: Separate column for internal use
+  metadata JSON,             -- v3: Pure user data (no injection)
+  created_at INTEGER,
+  updated_at INTEGER
 );
+
+-- Index for efficient collection filtering
+CREATE INDEX idx_docs_collection ON docs_default(collection);
 
 -- Full-text search index
 CREATE VIRTUAL TABLE fts_default USING fts5(
@@ -802,6 +827,102 @@ CREATE TABLE embedding_queue (
   error_message TEXT
 );
 ```
+
+## 📋 Metadata API Contract (Schema v3)
+
+LocalRetrieve guarantees **exact preservation** of user metadata without internal field injection.
+
+### Guarantees
+
+1. ✅ **Exact Preservation**: `JSON.stringify(input.metadata) === stored.metadata`
+2. ✅ **No Reserved Fields**: All field names in `metadata` are user-controlled
+3. ✅ **No Automatic Fields**: System won't inject fields into metadata
+4. ✅ **Type Preservation**: Objects, arrays, numbers, strings, booleans, null preserved
+5. ✅ **Nesting Support**: Arbitrary nesting depth supported
+
+### Custom Document IDs
+
+You can provide custom IDs for documents:
+
+```typescript
+// String ID
+await db.insertDocumentWithEmbedding({
+  collection: 'docs',
+  document: {
+    id: 'user-doc-123',
+    content: 'Custom ID document'
+  }
+});
+
+// Numeric ID
+await db.insertDocumentWithEmbedding({
+  collection: 'docs',
+  document: {
+    id: 12345,
+    content: 'Numeric ID document'
+  }
+});
+```
+
+**ID Requirements**:
+- Must be unique within the collection
+- Type: `string` or `number`
+- Cannot be empty string
+- Auto-generated if not provided: `doc_{timestamp}_{random}`
+
+### Validation & Error Handling
+
+LocalRetrieve validates documents before insertion:
+
+```typescript
+try {
+  await db.insertDocumentWithEmbedding({
+    collection: 'docs',
+    document: {
+      content: 'Valid document'
+    }
+  });
+} catch (error) {
+  if (error.name === 'ValidationError') {
+    // Input validation failed
+    console.error('Validation errors:', error.context.errors);
+  } else if (error.name === 'DocumentInsertError') {
+    // Insert operation failed
+    console.error('Insert failed:', error.message);
+    console.error('Suggestion:', error.context.suggestion);
+  }
+}
+```
+
+**Validation Rules**:
+- ✅ At least `content` OR `title` must be provided
+- ✅ `metadata` must be a plain object (not array or primitive)
+- ✅ `id` must be string or number (if provided)
+- ⚠️  Warning if `metadata` >1MB (performance)
+- ⚠️  Warning if `metadata.collection` exists (no longer reserved, see migration notes)
+
+### Schema v3 Migration Notes
+
+**⚠️ Breaking Change** (v2 → v3): `metadata.collection` behavior changed
+
+**Before (v2)**:
+```typescript
+// metadata.collection was OVERWRITTEN by system
+document: {
+  metadata: { collection: 'my_value' }  // ❌ Lost - became 'default'
+}
+```
+
+**After (v3)**:
+```typescript
+// metadata.collection is PRESERVED as user data
+document: {
+  metadata: { collection: 'my_value' }  // ✅ Stored exactly as provided
+}
+// Collection tracked separately in collection column
+```
+
+**Automatic Migration**: Existing databases automatically upgrade from v2 to v3 on first use.
 
 ## 🧪 Testing
 

@@ -6,8 +6,18 @@
  * - Hybrid search (FTS5 + vector search with fusion)
  * - Data management (insert, bulk insert, export/import)
  * - Real-time search with performance metrics
+ * - **Schema v3**: Separate collection column with metadata preservation
+ * - **Custom Document IDs**: User-specified IDs (string or number)
+ * - **Input Validation**: Pre-insert validation with clear error messages
  * - **Phase 5: Embedding Queue Management** - Background processing system
  * - Cross-browser compatibility testing
+ *
+ * Schema v3 Features (TASK-001):
+ * - Metadata API Contract: Exact preservation of user metadata
+ * - No reserved fields: metadata.collection is user-controlled
+ * - Custom document IDs: Specify your own IDs or auto-generate
+ * - Input validation: ValidationError and DocumentInsertError handling
+ * - Post-insert verification: Ensures documents are actually inserted
  *
  * Phase 5 Queue Management Features:
  * - Enqueue documents for background embedding generation
@@ -22,7 +32,7 @@
  * - OPFS persistence ensures data survives browser restarts
  * - RPC communication between main thread and worker
  * - Modular worker architecture with dedicated queue management
- * - Schema v2 with embedding_queue table for background processing
+ * - Schema v3 with collection column and metadata preservation
  * - Comprehensive error handling and user feedback
  *
  * Demo UI Components:
@@ -445,7 +455,10 @@ class LocalRetrieveDemo {
 
             // Create fresh database with temporary name first, then move to main location
             const tempDbName = `opfs:/localretrieve-demo/demo-temp-${Date.now()}.db`;
-            this.db = await initLocalRetrieve(tempDbName);
+            const config = {
+                workerUrl: '/dist/database/worker.js'
+            };
+            this.db = await initLocalRetrieve(tempDbName, config);
 
             // Force initialize the schema
             await this.db.initializeSchema();
@@ -1558,21 +1571,55 @@ class LocalRetrieveDemo {
         try {
             this.setLoading(true);
 
-            // This is a placeholder for adding embedding to collection
-            // In a real implementation, you would store this in your database
-            console.log('Adding to collection:', {
+            // Schema v3: Demonstrate custom ID and metadata preservation
+            const customId = `embed-${Date.now()}`;
+
+            // Insert document with embedding using Schema v3 features
+            const result = await this.db.insertDocumentWithEmbedding({
                 collection: collectionName,
-                text: this.currentEmbedding.text,
-                embedding: this.currentEmbedding.embedding,
-                metadata: {
-                    provider: this.currentEmbedding.provider,
-                    model: this.currentEmbedding.model,
-                    dimensions: this.currentEmbedding.dimensions,
-                    generatedAt: this.currentEmbedding.generatedAt
+                document: {
+                    id: customId,  // Custom ID (Schema v3)
+                    title: `Embedding Test: ${new Date().toLocaleString()}`,
+                    content: this.currentEmbedding.text,
+                    metadata: {
+                        // Metadata is preserved exactly - no field injection
+                        provider: this.currentEmbedding.provider,
+                        model: this.currentEmbedding.model,
+                        dimensions: this.currentEmbedding.dimensions,
+                        generatedAt: this.currentEmbedding.generatedAt,
+                        embeddingSource: 'manual-generation',
+                        // You can even use 'collection' as a field name now (Schema v3)
+                        collectionType: 'test-embeddings',
+                        customData: {
+                            nested: {
+                                deeply: 'preserved'
+                            }
+                        }
+                    }
+                },
+                options: {
+                    generateEmbedding: false  // We already have the embedding
                 }
             });
 
-            this.setStatus(`Embedding added to collection "${collectionName}" successfully`, 'success');
+            console.log('✅ Document inserted with custom ID:', customId);
+            console.log('Insert result:', result);
+
+            // Store the embedding vector in the vector table
+            // (This would normally be done by the embedding pipeline)
+            await this.db.runAsync(
+                'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
+                [
+                    result.id,
+                    `[${Array.from(this.currentEmbedding.embedding).join(',')}]`
+                ]
+            );
+
+            this.setStatus(
+                `✅ Embedding added to collection "${collectionName}" with ID: ${customId}\n` +
+                `📋 All metadata fields preserved exactly (Schema v3)`,
+                'success'
+            );
 
             // Clear current embedding
             this.currentEmbedding = null;
@@ -1581,7 +1628,17 @@ class LocalRetrieveDemo {
 
         } catch (error) {
             console.error('Failed to add to collection:', error);
-            this.setStatus(`Failed to add to collection: ${error.message}`, 'error');
+
+            // Handle Schema v3 validation errors
+            if (error.name === 'ValidationError') {
+                this.setStatus(`Validation failed: ${error.message}`, 'error');
+                console.error('Validation context:', error.context);
+            } else if (error.name === 'DocumentInsertError') {
+                this.setStatus(`Insert failed: ${error.message}`, 'error');
+                console.error('Insert context:', error.context);
+            } else {
+                this.setStatus(`Failed to add to collection: ${error.message}`, 'error');
+            }
         } finally {
             this.setLoading(false);
         }
@@ -1641,27 +1698,32 @@ class LocalRetrieveDemo {
             this.setLoading(true);
 
             if (this.db && typeof this.db.enqueueEmbedding === 'function') {
-                const documentId = `doc-${Date.now()}`;
+                // Generate custom document ID (Schema v3 feature)
+                const documentId = `queue-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
-                // First, insert the document using the proper Database API
+                // Insert document with metadata preservation (Schema v3)
+                // metadata is preserved exactly - no field injection
                 const insertResult = await this.db.insertDocumentWithEmbedding({
                     collection: collection,
-                    id: documentId,
-                    title: 'Queued Document',
-                    content: textContent,
-                    metadata: { source: 'queue' },
                     document: {
-                        id: documentId,
+                        id: documentId,  // Custom ID
                         title: 'Queued Document',
                         content: textContent,
-                        metadata: { source: 'queue' }
+                        metadata: {
+                            source: 'queue',
+                            priority: priority,
+                            enqueuedAt: new Date().toISOString(),
+                            // These fields are preserved exactly - no system injection
+                            customField: 'user-defined value'
+                        }
                     },
                     options: {
                         generateEmbedding: false // We'll use the queue for this
                     }
                 });
 
-                console.log(`Document ${documentId} inserted via insertDocumentWithEmbedding:`, insertResult);
+                console.log(`✅ Document inserted with custom ID: ${documentId}`);
+                console.log('Insert result:', insertResult);
 
                 // Then enqueue the embedding
                 const queueId = await this.db.enqueueEmbedding({
@@ -1671,7 +1733,12 @@ class LocalRetrieveDemo {
                     priority: priority
                 });
 
-                this.displayQueueResult(`Document created and embedding enqueued successfully with ID: ${queueId}`, 'success');
+                this.displayQueueResult(
+                    `✅ Document created with ID: ${documentId}\n` +
+                    `✅ Embedding enqueued with queue ID: ${queueId}\n` +
+                    `📋 Metadata preserved exactly (no field injection)`,
+                    'success'
+                );
                 this.setStatus('Document created and embedding enqueued for processing', 'success');
 
                 // Auto-update queue status
@@ -1682,8 +1749,26 @@ class LocalRetrieveDemo {
 
         } catch (error) {
             console.error('Failed to enqueue embedding:', error);
-            this.setStatus(`Failed to enqueue embedding: ${error.message}`, 'error');
-            this.displayQueueResult(`Error: ${error.message}`, 'error');
+
+            // Handle validation errors (Schema v3 feature)
+            if (error.name === 'ValidationError') {
+                this.setStatus(`Validation failed: ${error.message}`, 'error');
+                this.displayQueueResult(
+                    `❌ Validation Error:\n${error.message}\n\n` +
+                    `Errors:\n${error.context?.errors?.map(e => `  • ${e}`).join('\n') || 'Unknown'}`,
+                    'error'
+                );
+            } else if (error.name === 'DocumentInsertError') {
+                this.setStatus(`Insert failed: ${error.message}`, 'error');
+                this.displayQueueResult(
+                    `❌ Insert Error:\n${error.message}\n\n` +
+                    `Suggestion: ${error.context?.suggestion || 'Check document structure'}`,
+                    'error'
+                );
+            } else {
+                this.setStatus(`Failed to enqueue embedding: ${error.message}`, 'error');
+                this.displayQueueResult(`❌ Error: ${error.message}`, 'error');
+            }
         } finally {
             this.setLoading(false);
         }
@@ -1856,7 +1941,7 @@ class LocalRetrieveDemo {
                 break;
             case 'openrouter':
                 config.model = 'openai/gpt-4';
-                config.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+                // endpoint is optional - has default value
                 break;
             case 'custom':
                 config.model = 'custom-model';
@@ -2191,10 +2276,8 @@ class LocalRetrieveDemo {
                 timeout: 30000
             };
 
-            // Set endpoint for OpenRouter and custom providers
-            if (provider === 'openrouter') {
-                options.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-            } else if (provider === 'custom' && endpoint) {
+            // Set endpoint for custom providers (OpenRouter has default)
+            if (provider === 'custom' && endpoint) {
                 options.endpoint = endpoint;
             }
 

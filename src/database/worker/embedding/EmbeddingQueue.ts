@@ -386,9 +386,9 @@ export class EmbeddingQueue {
    * Store embedding in vector table
    */
   private async storeEmbedding(collection: string, documentId: string, embedding: Float32Array): Promise<void> {
-    // Get the rowid for the document
+    // Get the rowid for the document (using collection column in schema v3+)
     const docResult = await this.sqliteManager.select(
-      `SELECT rowid FROM docs_default WHERE id = ? AND json_extract(metadata, '$.collection') = ?`,
+      `SELECT rowid FROM docs_default WHERE id = ? AND collection = ?`,
       [documentId, collection]
     );
 

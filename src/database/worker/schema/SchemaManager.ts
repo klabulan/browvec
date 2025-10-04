@@ -12,7 +12,7 @@ import { DatabaseError } from '../../../types/worker.js';
 /**
  * Database schema version
  */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * SchemaManager handles all database schema operations
@@ -67,9 +67,10 @@ export class SchemaManager {
 
       // Handle schema migrations if we have an older version
       if (currentSchemaVersion > 0 && currentSchemaVersion < CURRENT_SCHEMA_VERSION) {
-        await this.migrateSchema(currentSchemaVersion);
-        this.log('info', `Schema migrated from version ${currentSchemaVersion} to ${CURRENT_SCHEMA_VERSION}`);
-        return;
+        throw new DatabaseError(
+          `Database schema v${currentSchemaVersion} detected. Schema v3 requires database recreation. ` +
+          `Please export your data, clear the database (db.clearAsync()), and reimport.`
+        );
       }
 
       // Check if schema already exists (from restored database)
@@ -91,9 +92,7 @@ export class SchemaManager {
     this.log('info', `Migrating schema from version ${currentVersion} to version ${CURRENT_SCHEMA_VERSION}`);
 
     try {
-      if (currentVersion === 1) {
-        await this.migrateFromV1ToV2();
-      }
+
       // Add future migrations here as needed
 
       this.log('info', `Successfully migrated from schema version ${currentVersion} to ${CURRENT_SCHEMA_VERSION}`);
@@ -141,11 +140,12 @@ export class SchemaManager {
       CREATE INDEX IF NOT EXISTS idx_embedding_queue_created ON embedding_queue(created_at);
     `);
 
-    // Update schema version
+    // Update schema version to 2
     await this.sqliteManager.exec(`
-      UPDATE collections SET schema_version = ${CURRENT_SCHEMA_VERSION}, updated_at = strftime('%s', 'now')
+      UPDATE collections SET schema_version = 2, updated_at = strftime('%s', 'now')
     `);
   }
+
 
   /**
    * Validate existing schema and cleanup incomplete installations
@@ -212,15 +212,19 @@ export class SchemaManager {
    */
   private async createSchema(): Promise<void> {
     await this.sqliteManager.exec(`
-      -- Base documents table
+      -- Base documents table (v3 schema with separate collection column)
       CREATE TABLE IF NOT EXISTS docs_default (
         id TEXT PRIMARY KEY,
         title TEXT,
         content TEXT NOT NULL,
+        collection TEXT NOT NULL DEFAULT 'default',
         metadata JSON,
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now'))
       );
+
+      -- Index for efficient collection filtering
+      CREATE INDEX IF NOT EXISTS idx_docs_collection ON docs_default(collection);
 
       -- Full-text search table
       CREATE VIRTUAL TABLE IF NOT EXISTS fts_default USING fts5(
@@ -292,9 +296,9 @@ export class SchemaManager {
 
       const collection = collectionResult.rows[0];
 
-      // Get document count
+      // Get document count (using collection column in v3+)
       const countResult = await this.sqliteManager.select(
-        `SELECT COUNT(*) as count FROM docs_default WHERE json_extract(metadata, '$.collection') = ?`,
+        `SELECT COUNT(*) as count FROM docs_default WHERE collection = ?`,
         [name]
       );
 

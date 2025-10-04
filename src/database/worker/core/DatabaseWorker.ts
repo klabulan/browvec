@@ -414,28 +414,78 @@ export class DatabaseWorker {
   }
 
   private async handleInsertDocumentWithEmbedding(params: InsertDocumentWithEmbeddingParams): Promise<{ id: string; embeddingGenerated: boolean }> {
-    // Simplified implementation
     const validParams = this.validateParams(params, isInsertDocumentWithEmbeddingParams, 'handleInsertDocumentWithEmbedding');
     this.ensureInitialized();
 
     return this.withContext('insertDocumentWithEmbedding', async () => {
-      // Generate ID if not provided
-      const documentId = validParams.document.id || `doc_${Date.now()}`;
+      // STEP 1: Validate document structure
+      const { validateDocument, generateDocumentId, sanitizeDocumentId } = await import('../utils/Validation.js');
+      const { DocumentInsertError } = await import('../utils/Errors.js');
 
-      // Insert document
+      validateDocument(validParams.document, validParams.collection);
+
+      // STEP 2: Generate or sanitize document ID
+      const documentId = validParams.document.id
+        ? sanitizeDocumentId(validParams.document.id)
+        : generateDocumentId();
+
+      // STEP 3: Prepare user metadata (NO INJECTION - pure user data)
+      const userMetadata = validParams.document.metadata || {};
+
+      // STEP 4: Insert document with collection in separate column
       const sql = `
-        INSERT OR REPLACE INTO docs_default (id, title, content, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+        INSERT OR REPLACE INTO docs_default (id, title, content, collection, metadata, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
       `;
 
-      const metadata = { ...validParams.document.metadata, collection: validParams.collection };
-      await this.sqliteManager.select(sql, [
-        documentId,
-        validParams.document.title || '',
-        validParams.document.content,
-        JSON.stringify(metadata)
-      ]);
+      try {
+        await this.sqliteManager.exec(sql, [
+          documentId,
+          validParams.document.title || '',
+          validParams.document.content || '',
+          validParams.collection,           // ✅ Separate column for collection
+          JSON.stringify(userMetadata)       // ✅ Pure user metadata
+        ]);
+      } catch (error) {
+        throw new DocumentInsertError(
+          `Failed to insert document into collection '${validParams.collection}'`,
+          {
+            collection: validParams.collection,
+            documentId,
+            providedFields: Object.keys(validParams.document),
+            originalError: error instanceof Error ? error : undefined,
+            suggestion: 'Check that document structure matches schema and ID is unique'
+          }
+        );
+      }
 
+      // STEP 5: Verify insertion (post-insert verification)
+      const verifyResult = await this.sqliteManager.select(
+        'SELECT COUNT(*) as count FROM docs_default WHERE id = ? AND collection = ?',
+        [documentId, validParams.collection]
+      );
+
+      const insertedCount = verifyResult.rows[0]?.count || 0;
+      if (insertedCount === 0) {
+        throw new DocumentInsertError(
+          `Document insertion verification failed: id='${documentId}' was not found in database`,
+          {
+            collection: validParams.collection,
+            documentId,
+            providedFields: Object.keys(validParams.document),
+            suggestion:
+              'This may be caused by:\n' +
+              '  1) Unique constraint violation (duplicate ID)\n' +
+              '  2) Database connection issue\n' +
+              '  3) Transaction rollback\n' +
+              'Check database logs for details.'
+          }
+        );
+      }
+
+      this.logger.info(`Document inserted successfully: ${documentId} in collection ${validParams.collection}`);
+
+      // STEP 6: Return accurate result
       return { id: documentId, embeddingGenerated: false };
     });
   }

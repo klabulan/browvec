@@ -203,7 +203,7 @@ emcc \
   ../../sqlite3.c \
   sqlite_wasm_extra_init.c \
   -o sqlite3.mjs \
-  -sENVIRONMENT=web \
+  -sENVIRONMENT=web,worker \
   -sMODULARIZE=1 \
   -sEXPORT_ES6=1 \
   -sALLOW_MEMORY_GROWTH=1 \

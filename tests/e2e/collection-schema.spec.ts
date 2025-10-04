@@ -6,11 +6,15 @@ import { test, expect } from '@playwright/test';
  * Tests Phase 5 collection schema functionality:
  * - Enhanced collections table with embedding configuration
  * - Embedding queue table and operations
- * - Schema migration from v1 to v2
+ * - Schema v3 with collection column (TASK-001)
  * - Collection-based embedding management
  * - Queue management operations
  * - Cross-browser compatibility
  * - Performance benchmarks
+ *
+ * Note: Schema v3 introduced in TASK-001 adds collection column to docs_default
+ * and separates metadata from internal fields. See schema-v3.spec.ts for
+ * detailed Schema v3 feature tests.
  */
 
 test.describe('Collection Schema Phase 5', () => {
@@ -25,19 +29,19 @@ test.describe('Collection Schema Phase 5', () => {
   });
 
   test.describe('Schema Migration and Initialization', () => {
-    test('should initialize v2 schema with all required tables', async ({ page }) => {
+    test('should initialize v3 schema with all required tables and columns', async ({ page }) => {
       const result = await page.evaluate(async () => {
         try {
           // @ts-ignore - LocalRetrieve is loaded globally in demo
-          const db = new LocalRetrieve.Database('opfs:/test-schema-v2.db');
+          const db = new LocalRetrieve.Database('opfs:/test-schema-v3.db');
 
           // Clear any existing database
           await db.clear();
 
-          // Initialize should create v2 schema
+          // Initialize should create v3 schema
           await db.initLocalRetrieve();
 
-          // Check for all required v2 tables
+          // Check for all required tables
           const tables = await db.exec(`
             SELECT name FROM sqlite_master
             WHERE type='table'
@@ -46,12 +50,19 @@ test.describe('Collection Schema Phase 5', () => {
 
           const tableNames = tables.map((row: any) => row.name);
 
-          // Check collections table has v2 schema
+          // Check docs_default table has v3 schema (collection column)
+          const docsSchema = await db.exec(`
+            PRAGMA table_info(docs_default)
+          `);
+
+          const docsColumns = docsSchema.map((row: any) => row.name);
+
+          // Check collections table schema
           const collectionsSchema = await db.exec(`
             PRAGMA table_info(collections)
           `);
 
-          const columnNames = collectionsSchema.map((row: any) => row.name);
+          const collectionsColumns = collectionsSchema.map((row: any) => row.name);
 
           await db.close();
 
@@ -65,13 +76,15 @@ test.describe('Collection Schema Phase 5', () => {
               'collections',
               'embedding_queue'
             ].every(table => tableNames.includes(table)),
-            collectionsColumns: columnNames,
-            hasV2Columns: [
+            docsColumns: docsColumns,
+            hasCollectionColumn: docsColumns.includes('collection'),
+            collectionsColumns: collectionsColumns,
+            hasCollectionsV2Columns: [
               'embedding_provider',
               'embedding_dimensions',
               'embedding_status',
               'processing_status'
-            ].every(col => columnNames.includes(col))
+            ].every(col => collectionsColumns.includes(col))
           };
         } catch (error) {
           return {
@@ -83,20 +96,21 @@ test.describe('Collection Schema Phase 5', () => {
 
       expect(result.success).toBe(true);
       expect(result.hasAllRequiredTables).toBe(true);
-      expect(result.hasV2Columns).toBe(true);
+      expect(result.hasCollectionColumn).toBe(true);
+      expect(result.hasCollectionsV2Columns).toBe(true);
       expect(result.tables).toHaveLength(5);
     });
 
-    test('should migrate existing v1 database to v2', async ({ page }) => {
+    test('should support schema migrations (v1→v2→v3)', async ({ page }) => {
       const result = await page.evaluate(async () => {
         try {
           // @ts-ignore - LocalRetrieve is loaded globally in demo
-          const db = new LocalRetrieve.Database('opfs:/test-migration.db');
+          const db = new LocalRetrieve.Database('opfs:/test-migration-chain.db');
 
           // Clear database first
           await db.clear();
 
-          // Simulate v1 schema by creating minimal collections table
+          // Simulate v1 schema (basic collections table, no embedding fields)
           await db.exec(`
             CREATE TABLE collections (
               name TEXT PRIMARY KEY,
@@ -107,23 +121,48 @@ test.describe('Collection Schema Phase 5', () => {
             )
           `);
 
+          // Simulate v2 schema (docs without collection column)
+          await db.exec(`
+            CREATE TABLE docs_default (
+              rowid INTEGER PRIMARY KEY,
+              id TEXT UNIQUE,
+              title TEXT,
+              content TEXT NOT NULL,
+              metadata JSON,
+              created_at INTEGER,
+              updated_at INTEGER
+            )
+          `);
+
           await db.exec(`
             INSERT INTO collections (name, config)
             VALUES ('default', '{"vectorDim": 384}')
           `);
 
-          // Close and reopen to trigger migration
+          // Insert v2-style document (collection in metadata)
+          await db.exec(`
+            INSERT INTO docs_default (id, content, metadata)
+            VALUES ('v2-doc', 'content', '{"collection": "default", "data": "test"}')
+          `);
+
+          // Close and reopen to trigger migrations
           await db.close();
 
-          const db2 = new LocalRetrieve.Database('opfs:/test-migration.db');
+          const db2 = new LocalRetrieve.Database('opfs:/test-migration-chain.db');
           await db2.initLocalRetrieve();
 
-          // Check if migration occurred
-          const schema = await db2.exec(`
+          // Check if migrations occurred
+          const collectionsSchema = await db2.exec(`
             PRAGMA table_info(collections)
           `);
 
-          const columnNames = schema.map((row: any) => row.name);
+          const collectionsColumns = collectionsSchema.map((row: any) => row.name);
+
+          const docsSchema = await db2.exec(`
+            PRAGMA table_info(docs_default)
+          `);
+
+          const docsColumns = docsSchema.map((row: any) => row.name);
 
           // Check embedding_queue table exists
           const queueExists = await db2.exec(`
@@ -131,18 +170,25 @@ test.describe('Collection Schema Phase 5', () => {
             WHERE type='table' AND name='embedding_queue'
           `);
 
+          // Verify v2→v3 migration cleaned metadata
+          const migratedDoc = await db2.exec(`
+            SELECT collection, metadata FROM docs_default WHERE id = 'v2-doc'
+          `);
+
           await db2.close();
 
           return {
             success: true,
-            hasV2Columns: [
+            hasCollectionsV2Columns: [
               'embedding_provider',
               'embedding_dimensions',
               'embedding_status',
               'processing_status'
-            ].every(col => columnNames.includes(col)),
+            ].every(col => collectionsColumns.includes(col)),
+            hasDocsV3CollectionColumn: docsColumns.includes('collection'),
             hasQueueTable: queueExists[0]?.count === 1,
-            allColumns: columnNames
+            migratedCollectionValue: migratedDoc[0]?.collection,
+            migratedMetadata: migratedDoc[0]?.metadata
           };
         } catch (error) {
           return {
@@ -153,8 +199,14 @@ test.describe('Collection Schema Phase 5', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.hasV2Columns).toBe(true);
+      expect(result.hasCollectionsV2Columns).toBe(true);
+      expect(result.hasDocsV3CollectionColumn).toBe(true);
       expect(result.hasQueueTable).toBe(true);
+      expect(result.migratedCollectionValue).toBe('default');
+      // Metadata should no longer contain collection field
+      const metadata = JSON.parse(result.migratedMetadata);
+      expect(metadata.collection).toBeUndefined();
+      expect(metadata.data).toBe('test');
     });
   });
 
