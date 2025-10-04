@@ -348,7 +348,7 @@ export interface SearchWithLLMParams {
   options?: {
     enhanceQuery?: boolean;
     summarizeResults?: boolean;
-    searchOptions?: TextSearchOptions;
+    searchOptions?: import('./search.js').TextSearchOptions;
     llmOptions?: {
       provider?: string;
       model?: string;

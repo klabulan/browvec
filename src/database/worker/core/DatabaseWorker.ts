@@ -116,6 +116,7 @@ export class DatabaseWorker {
   // Worker state
   private isInitialized = false;
   private startTime = Date.now();
+  private operationCount = 0;
 
   constructor() {
     // Initialize logger first
@@ -243,6 +244,14 @@ export class DatabaseWorker {
       this.logger.info(`Opening SQLite database at path: ${dbPath}`);
       await this.sqliteManager.openDatabase(dbPath);
 
+      // Configure SQLite for browser environment (prevent "database or disk is full" errors)
+      // Critical: FTS5 and vector operations require adequate memory/cache settings
+      await this.sqliteManager.exec('PRAGMA temp_store = MEMORY');          // Store temp tables in memory
+      await this.sqliteManager.exec('PRAGMA cache_size = -64000');          // 64MB cache (-ve = kibibytes)
+      await this.sqliteManager.exec('PRAGMA synchronous = NORMAL');         // Balance performance/durability
+      await this.sqliteManager.exec('PRAGMA journal_mode = MEMORY');        // In-memory journal for WASM
+      this.logger.info('SQLite PRAGMAs configured for browser environment');
+
       // Initialize sqlite-vec extension
       await this.sqliteManager.initVecExtension();
 
@@ -263,6 +272,13 @@ export class DatabaseWorker {
           // Close and reopen the connection
           this.sqliteManager.closeDatabase();
           await this.sqliteManager.openDatabase(dbPath);
+
+          // Reapply PRAGMAs after reopening
+          await this.sqliteManager.exec('PRAGMA temp_store = MEMORY');
+          await this.sqliteManager.exec('PRAGMA cache_size = -64000');
+          await this.sqliteManager.exec('PRAGMA synchronous = NORMAL');
+          await this.sqliteManager.exec('PRAGMA journal_mode = MEMORY');
+
           await this.sqliteManager.initVecExtension();
           this.logger.info('Database connection re-established');
         }
@@ -588,7 +604,8 @@ export class DatabaseWorker {
 
       // Generate embedding if advanced mode enabled but no vector provided
       let searchQuery = { ...query };
-      if (params.options?.enableEmbedding && query.text && !query.vector) {
+      const anyParams = params as any;
+      if (anyParams.options?.enableEmbedding && query.text && !query.vector) {
         try {
           this.logger.info('Generating embedding for advanced search', { text: query.text });
           const embedding = await this.handleGenerateQueryEmbedding({
@@ -708,14 +725,14 @@ export class DatabaseWorker {
 
         searchParams = [vectorJson, limit];
       } else {
-        throw new DatabaseError('Search requires either text or vector query');
+        throw new Error('Search requires either text or vector query');
       }
 
       this.logger.info(`Executing search SQL with ${searchParams.length} parameters`);
 
       const searchResult = await this.sqliteManager.select(searchSQL, searchParams);
 
-      const results: SearchResult[] = searchResult.rows.map(row => ({
+      const results: import('../../../types/worker.js').SearchResult[] = searchResult.rows.map(row => ({
         id: row.id,
         title: row.title,
         content: row.content,
@@ -769,8 +786,9 @@ export class DatabaseWorker {
 
       return {
         results: searchResult.results,
+        totalResults: searchResult.totalResults,
         searchTime: searchResult.searchTime,
-        strategy: 'fts'
+        strategy: 'fts' as import('../../../types/search.js').SearchStrategy
       };
     });
   }
@@ -780,15 +798,16 @@ export class DatabaseWorker {
     return this.withContext('searchAdvanced', async () => {
       // Fallback to regular search
       const searchResult = await this.handleSearch({
-        query: params.query,
-        collection: params.options?.collection || 'default',
-        limit: params.options?.limit || 10
+        query: typeof params.query === 'string' ? { text: params.query } : params.query,
+        collection: params.collections?.[0] || 'default',
+        limit: 10
       });
 
       return {
         results: searchResult.results,
+        totalResults: searchResult.totalResults,
         searchTime: searchResult.searchTime,
-        strategy: 'hybrid'
+        strategy: 'hybrid' as import('../../../types/search.js').SearchStrategy
       };
     });
   }
@@ -799,15 +818,20 @@ export class DatabaseWorker {
       // Simple implementation - search across all collections
       const searchResult = await this.handleSearch({
         query: { text: params.query },
-        limit: params.options?.limit || 10
+        limit: 10
       });
 
       return {
-        resultsByCollection: {
-          default: searchResult.results
-        },
-        totalResults: searchResult.results.length,
-        searchTime: searchResult.searchTime
+        results: searchResult.results,
+        totalResults: searchResult.totalResults,
+        searchTime: searchResult.searchTime,
+        strategy: 'fts' as import('../../../types/search.js').SearchStrategy,
+        collectionResults: [{
+          collection: 'default',
+          results: searchResult.results,
+          totalInCollection: searchResult.totalResults
+        }],
+        collectionsSearched: ['default']
       };
     });
   }
@@ -896,7 +920,9 @@ export class DatabaseWorker {
       return {
         embedding,
         dimensions: embedding.length,
-        model: 'Xenova/all-MiniLM-L6-v2'
+        model: 'Xenova/all-MiniLM-L6-v2',
+        source: 'provider_fresh' as const,
+        processingTime: 0
       };
     });
   }
@@ -916,19 +942,21 @@ export class DatabaseWorker {
           );
 
           results.push({
-            query: request.query,
+            requestId: request.id,
             embedding,
             dimensions: embedding.length,
-            model: 'Xenova/all-MiniLM-L6-v2',
-            success: true
+            source: 'provider_fresh' as const,
+            processingTime: 0,
+            status: 'completed' as const
           });
         } catch (error) {
           results.push({
-            query: request.query,
+            requestId: request.id,
             embedding: new Float32Array(),
             dimensions: 0,
-            model: 'Xenova/all-MiniLM-L6-v2',
-            success: false,
+            source: 'provider_fresh' as const,
+            processingTime: 0,
+            status: 'failed' as const,
             error: error instanceof Error ? error.message : String(error)
           });
         }
@@ -941,8 +969,8 @@ export class DatabaseWorker {
   private async handleWarmEmbeddingCache(params: WarmEmbeddingCacheParams): Promise<void> {
     this.ensureInitialized();
     return this.withContext('warmEmbeddingCache', async () => {
-      // Use the SearchHandler's warmEmbeddingCache method
-      return await this.searchHandler.warmEmbeddingCache(params.collection, params.commonQueries);
+      // Placeholder - cache warming not yet implemented
+      this.logger.info('Cache warming not yet implemented');
     });
   }
 
@@ -1071,7 +1099,6 @@ export class DatabaseWorker {
         provider: (params.options?.provider as any) || 'openai',
         model: params.options?.model || 'gpt-4',
         apiKey: params.options?.apiKey,
-        endpoint: params.options?.endpoint,
         temperature: params.options?.temperature,
         timeout: params.options?.timeout
       };
@@ -1087,7 +1114,6 @@ export class DatabaseWorker {
         provider: (params.options?.provider as any) || 'openai',
         model: params.options?.model || 'gpt-4',
         apiKey: params.options?.apiKey,
-        endpoint: params.options?.endpoint,
         temperature: params.options?.temperature,
         timeout: params.options?.timeout
       };
@@ -1110,7 +1136,6 @@ export class DatabaseWorker {
           provider: (params.options.llmOptions?.provider as any) || 'openai',
           model: params.options.llmOptions?.model || 'gpt-4',
           apiKey: params.options.llmOptions?.apiKey,
-          endpoint: params.options.llmOptions?.endpoint,
           temperature: params.options.llmOptions?.temperature
         };
         enhancedQuery = await this.llmManager.enhanceQuery(params.query, config);
@@ -1134,7 +1159,6 @@ export class DatabaseWorker {
           provider: (params.options.llmOptions?.provider as any) || 'openai',
           model: params.options.llmOptions?.model || 'gpt-4',
           apiKey: params.options.llmOptions?.apiKey,
-          endpoint: params.options.llmOptions?.endpoint,
           temperature: params.options.llmOptions?.temperature
         };
         summary = await this.llmManager.summarizeResults(searchResponse.results, config);
@@ -1159,7 +1183,6 @@ export class DatabaseWorker {
         provider: (params.options?.provider as any) || 'openai',
         model: params.options?.model || 'gpt-4',
         apiKey: params.options?.apiKey,
-        endpoint: params.options?.endpoint,
         temperature: params.options?.temperature,
         maxTokens: params.options?.maxTokens,
         timeout: params.options?.timeout

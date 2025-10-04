@@ -25,7 +25,9 @@ export class SearchHandler extends BaseHandler {
    */
   async generateEmbeddingWithProvider(providerManager: any, query: string, collection: string = 'default'): Promise<Float32Array> {
     try {
-      this.logger.info('Generating query embedding', { query: query.substring(0, 50), collection });
+      if (this.logger) {
+        this.logger.log('info', `Generating query embedding: ${query.substring(0, 50)}`);
+      }
 
       const provider = await providerManager.getProvider(collection);
       if (!provider) {
@@ -34,15 +36,16 @@ export class SearchHandler extends BaseHandler {
 
       const embedding = await provider.generateEmbedding(query);
 
-      this.logger.info('Query embedding generated successfully', {
-        query: query.substring(0, 50),
-        dimensions: embedding.length
-      });
+      if (this.logger) {
+        this.logger.log('info', `Query embedding generated successfully, dimensions: ${embedding.length}`);
+      }
 
       return embedding;
 
     } catch (error) {
-      this.logger.error('Failed to generate query embedding', { query, error });
+      if (this.logger) {
+        this.logger.log('error', `Failed to generate query embedding: ${error instanceof Error ? error.message : String(error)}`);
+      }
       throw error;
     }
   }

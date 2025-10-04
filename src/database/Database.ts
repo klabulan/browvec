@@ -538,7 +538,7 @@ export class Database implements SQLDatabase {
       temperature?: number;
       timeout?: number;
     }
-  ): Promise<import('./types/worker.js').EnhancedQueryResult> {
+  ): Promise<import('../types/worker.js').EnhancedQueryResult> {
     if (!this.state.isOpen) {
       throw new DatabaseError('Database is not open');
     }
@@ -586,7 +586,7 @@ export class Database implements SQLDatabase {
       temperature?: number;
       timeout?: number;
     }
-  ): Promise<import('./types/worker.js').ResultSummaryResult> {
+  ): Promise<import('../types/worker.js').ResultSummaryResult> {
     if (!this.state.isOpen) {
       throw new DatabaseError('Database is not open');
     }
@@ -634,7 +634,7 @@ export class Database implements SQLDatabase {
     options?: {
       enhanceQuery?: boolean;
       summarizeResults?: boolean;
-      searchOptions?: import('./types/search.js').TextSearchOptions;
+      searchOptions?: import('../types/search.js').TextSearchOptions;
       llmOptions?: {
         provider?: string;
         model?: string;
@@ -643,7 +643,7 @@ export class Database implements SQLDatabase {
         temperature?: number;
       };
     }
-  ): Promise<import('./types/worker.js').LLMSearchResponseResult> {
+  ): Promise<import('../types/worker.js').LLMSearchResponseResult> {
     if (!this.state.isOpen) {
       throw new DatabaseError('Database is not open');
     }
@@ -710,7 +710,7 @@ export class Database implements SQLDatabase {
       timeout?: number;
       systemPrompt?: string;
     }
-  ): Promise<import('./types/worker.js').CallLLMResult> {
+  ): Promise<import('../types/worker.js').CallLLMResult> {
     if (!this.state.isOpen) {
       throw new DatabaseError('Database is not open');
     }

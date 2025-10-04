@@ -51,7 +51,7 @@ export function validateDocument(
     // REQ-3.3: Check for reserved metadata fields (WARNING, not error)
     // As of schema v3, metadata.collection is no longer used internally,
     // but we warn users who may be upgrading from v2
-    if (document.metadata?.collection !== undefined) {
+    if (document.metadata && !Array.isArray(document.metadata) && (document.metadata as any).collection !== undefined) {
       errors.push(
         "⚠️  NOTE: metadata.collection is no longer used internally (as of schema v3). " +
         "This field will be stored as-is in your metadata. " +

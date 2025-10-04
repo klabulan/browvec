@@ -1,6 +1,6 @@
-import { D as h, b as M, O as I, E as _, p as D, t as x } from "../ProviderFactory-BqrsaSK-.mjs";
-const v = 0, O = 100, N = 101, F = 1, z = 2, H = 3, k = 4, U = 5, $ = -1;
-class Q {
+import { D as h, b as L, O as I, E as _, p as x, t as N } from "../ProviderFactory-BqrsaSK-.mjs";
+const v = 0, A = 100, F = 101, z = 1, H = 2, k = 3, U = 4, Q = 5, $ = -1;
+class G {
   constructor(e) {
     this.logger = e, this.sqlite3 = null, this.dbPtr = 0, this.operationCount = 0;
   }
@@ -57,10 +57,10 @@ class Q {
     if (!this.sqlite3 || !this.dbPtr)
       throw new h("Database not initialized");
     if (!this.sqlite3._sqlite3_vec_init_manual)
-      throw new M("sqlite-vec extension not available");
+      throw new L("sqlite-vec extension not available");
     const e = this.sqlite3._sqlite3_vec_init_manual(this.dbPtr);
     if (e !== v)
-      throw this.log("error", `sqlite-vec initialization failed with code: ${e}`), new M(`Failed to initialize sqlite-vec extension (code: ${e})`);
+      throw this.log("error", `sqlite-vec initialization failed with code: ${e}`), new L(`Failed to initialize sqlite-vec extension (code: ${e})`);
     this.log("info", "sqlite-vec extension initialized successfully");
     try {
       const t = await this.select("SELECT vec_f32('[1.0, 2.0, 3.0]') as test_vector");
@@ -78,9 +78,9 @@ class Q {
     if (this.operationCount++, !t || t.length === 0) {
       const a = this.sqlite3._malloc(e.length + 1);
       this.sqlite3.stringToUTF8(e, a, e.length + 1);
-      const c = this.sqlite3._sqlite3_exec(this.dbPtr, a, 0, 0, 0);
-      if (this.sqlite3._free(a), c !== v) {
-        const l = this.sqlite3._sqlite3_errmsg(this.dbPtr), d = this.sqlite3.UTF8ToString(l);
+      const l = this.sqlite3._sqlite3_exec(this.dbPtr, a, 0, 0, 0);
+      if (this.sqlite3._free(a), l !== v) {
+        const c = this.sqlite3._sqlite3_errmsg(this.dbPtr), d = this.sqlite3.UTF8ToString(c);
         throw this.log("error", `SQL execution failed: ${e} - Error: ${d}`), new h(`SQL execution failed: ${d}`);
       } else
         this.log("debug", `SQL executed successfully: ${e}`);
@@ -91,25 +91,25 @@ class Q {
     const s = this.sqlite3._malloc(4), r = this.sqlite3._sqlite3_prepare_v2(this.dbPtr, i, -1, s, 0);
     if (this.sqlite3._free(i), r !== v) {
       this.sqlite3._free(s);
-      const a = this.sqlite3._sqlite3_errmsg(this.dbPtr), c = this.sqlite3.UTF8ToString(a);
-      throw this.log("error", `SQL preparation failed: ${e} - Error: ${c}`), new h(`Failed to prepare statement: ${c}`);
+      const a = this.sqlite3._sqlite3_errmsg(this.dbPtr), l = this.sqlite3.UTF8ToString(a);
+      throw this.log("error", `SQL preparation failed: ${e} - Error: ${l}`), new h(`Failed to prepare statement: ${l}`);
     }
     const o = this.sqlite3.getValue(s, "i32");
     this.sqlite3._free(s);
     try {
       if (t)
         if (Array.isArray(t))
-          for (let c = 0; c < t.length; c++)
-            this.bindParameter(o, c + 1, t[c]);
+          for (let l = 0; l < t.length; l++)
+            this.bindParameter(o, l + 1, t[l]);
         else {
-          const c = Object.keys(t);
-          for (let l = 0; l < c.length; l++)
-            this.bindParameter(o, l + 1, t[c[l]]);
+          const l = Object.keys(t);
+          for (let c = 0; c < l.length; c++)
+            this.bindParameter(o, c + 1, t[l[c]]);
         }
       const a = this.sqlite3._sqlite3_step(o);
-      if (a !== N && a !== O) {
-        const c = this.sqlite3._sqlite3_errmsg(this.dbPtr), l = this.sqlite3.UTF8ToString(c);
-        throw this.log("error", `SQL execution failed: ${e} - Error: ${l}`), new h(`SQL execution failed: ${l}`);
+      if (a !== F && a !== A) {
+        const l = this.sqlite3._sqlite3_errmsg(this.dbPtr), c = this.sqlite3.UTF8ToString(l);
+        throw this.log("error", `SQL execution failed: ${e} - Error: ${c}`), new h(`SQL execution failed: ${c}`);
       }
       this.log("debug", `SQL executed successfully with parameters: ${e}`);
     } finally {
@@ -138,37 +138,37 @@ class Q {
     const r = this.sqlite3._malloc(4), o = this.sqlite3._sqlite3_prepare_v2(e, s, -1, r, 0);
     if (this.sqlite3._free(s), o !== v) {
       this.sqlite3._free(r);
-      const l = this.sqlite3._sqlite3_errmsg(e), d = this.sqlite3.UTF8ToString(l);
+      const c = this.sqlite3._sqlite3_errmsg(e), d = this.sqlite3.UTF8ToString(c);
       throw new h(`Failed to prepare statement: ${d}`);
     }
     const a = this.sqlite3.getValue(r, "i32");
     if (this.sqlite3._free(r), i) {
       if (Array.isArray(i) && i.length > 0)
-        for (let l = 0; l < i.length; l++) {
-          const d = i[l];
-          this.bindParameter(a, l + 1, d);
+        for (let c = 0; c < i.length; c++) {
+          const d = i[c];
+          this.bindParameter(a, c + 1, d);
         }
       else if (!Array.isArray(i)) {
-        const l = Object.keys(i);
-        if (l.length > 0)
-          for (let d = 0; d < l.length; d++)
-            this.bindParameter(a, d + 1, i[l[d]]);
+        const c = Object.keys(i);
+        if (c.length > 0)
+          for (let d = 0; d < c.length; d++)
+            this.bindParameter(a, d + 1, i[c[d]]);
       }
     }
-    const c = [];
+    const l = [];
     try {
-      for (; this.sqlite3._sqlite3_step(a) === O; ) {
-        const l = this.sqlite3._sqlite3_column_count(a), d = {};
-        for (let u = 0; u < l; u++) {
-          const m = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(a, u)), E = this.sqlite3._sqlite3_column_type(a, u);
-          d[m] = this.extractColumnValue(a, u, E);
+      for (; this.sqlite3._sqlite3_step(a) === A; ) {
+        const c = this.sqlite3._sqlite3_column_count(a), d = {};
+        for (let u = 0; u < c; u++) {
+          const m = this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_name(a, u)), y = this.sqlite3._sqlite3_column_type(a, u);
+          d[m] = this.extractColumnValue(a, u, y);
         }
-        c.push(d);
+        l.push(d);
       }
     } finally {
       this.sqlite3._sqlite3_finalize(a);
     }
-    return c;
+    return l;
   }
   /**
    * Bind parameter to prepared statement
@@ -203,18 +203,18 @@ class Q {
     if (!this.sqlite3)
       throw new h("SQLite not initialized");
     switch (i) {
-      case F:
-        return this.sqlite3._sqlite3_column_int(e, t);
       case z:
-        return this.sqlite3._sqlite3_column_double(e, t);
+        return this.sqlite3._sqlite3_column_int(e, t);
       case H:
-        return this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_text(e, t));
+        return this.sqlite3._sqlite3_column_double(e, t);
       case k:
+        return this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_text(e, t));
+      case U:
         const s = this.sqlite3._sqlite3_column_blob(e, t), r = this.sqlite3._sqlite3_column_bytes(e, t), o = new Uint8Array(r);
         for (let a = 0; a < r; a++)
           o[a] = this.sqlite3.getValue(s + a, "i8");
         return o;
-      case U:
+      case Q:
       default:
         return null;
     }
@@ -304,7 +304,7 @@ class Q {
     this.logger ? this.logger.log(e, t) : console.log(`[SQLiteManager] ${e.toUpperCase()}: ${t}`);
   }
 }
-class G {
+class W {
   constructor(e, t) {
     this.sqliteManager = e, this.logger = t, this.opfsPath = null, this.tempDbName = null, this.lastSyncTime = 0, this.syncInterval = 5e3, this.syncTimer = null, this.pendingDatabaseData = null;
   }
@@ -342,14 +342,14 @@ class G {
     try {
       if (!this.isOPFSSupported())
         throw new Error("OPFS not supported");
-      const t = await navigator.storage.getDirectory(), i = e.split("/").filter((l) => l.length > 0);
+      const t = await navigator.storage.getDirectory(), i = e.split("/").filter((c) => c.length > 0);
       let s = t;
-      for (let l = 0; l < i.length - 1; l++)
-        s = await s.getDirectoryHandle(i[l], { create: !1 });
-      const r = i[i.length - 1], a = await (await s.getFileHandle(r, { create: !1 })).getFile(), c = new Uint8Array(await a.arrayBuffer());
-      if (c.length === 0)
+      for (let c = 0; c < i.length - 1; c++)
+        s = await s.getDirectoryHandle(i[c], { create: !1 });
+      const r = i[i.length - 1], a = await (await s.getFileHandle(r, { create: !1 })).getFile(), l = new Uint8Array(await a.arrayBuffer());
+      if (l.length === 0)
         throw new Error("Empty database file");
-      this.pendingDatabaseData = c, this.log("info", `Loaded ${c.length} bytes from OPFS: ${e}`);
+      this.pendingDatabaseData = l, this.log("info", `Loaded ${l.length} bytes from OPFS: ${e}`);
     } catch (t) {
       const i = new I(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
       throw this.handleOPFSError(i, "load"), i;
@@ -369,8 +369,8 @@ class G {
         let s = t;
         for (let d = 0; d < i.length - 1; d++)
           s = await s.getDirectoryHandle(i[d], { create: !0 });
-        const r = i[i.length - 1], a = await (await s.getFileHandle(r, { create: !0 })).createWritable(), c = new ArrayBuffer(e.length);
-        new Uint8Array(c).set(e), await a.write(c), await a.close(), this.lastSyncTime = Date.now(), this.log("debug", `Saved ${e.length} bytes to OPFS: ${this.opfsPath}`);
+        const r = i[i.length - 1], a = await (await s.getFileHandle(r, { create: !0 })).createWritable(), l = new ArrayBuffer(e.length);
+        new Uint8Array(l).set(e), await a.write(l), await a.close(), this.lastSyncTime = Date.now(), this.log("debug", `Saved ${e.length} bytes to OPFS: ${this.opfsPath}`);
       } catch (e) {
         this.handleOPFSError(e instanceof Error ? e : new Error(String(e)), "save");
       }
@@ -508,7 +508,7 @@ class G {
   }
 }
 const b = 3;
-class W {
+class B {
   constructor(e, t) {
     this.sqliteManager = e, this.logger = t;
   }
@@ -809,7 +809,7 @@ class W {
     this.logger ? this.logger.log(e, t, i) : console.log(`[SchemaManager] ${e.toUpperCase()}: ${t}`, i || "");
   }
 }
-class B {
+class V {
   constructor(e, t) {
     this.sqliteManager = e, this.logger = t;
   }
@@ -827,10 +827,10 @@ class B {
         RETURNING id
       `, [t, i, s, r])).rows[0]?.id;
       if (!a) {
-        const l = (await this.sqliteManager.select("SELECT last_insert_rowid() as id")).rows[0]?.id;
-        if (!l)
+        const c = (await this.sqliteManager.select("SELECT last_insert_rowid() as id")).rows[0]?.id;
+        if (!c)
           throw new h("Failed to get queue item ID");
-        return this.log("info", `Enqueued embedding for document '${i}' in collection '${t}' with priority ${r} (ID: ${l})`), l;
+        return this.log("info", `Enqueued embedding for document '${i}' in collection '${t}' with priority ${r} (ID: ${c})`), c;
       }
       return this.log("info", `Enqueued embedding for document '${i}' in collection '${t}' with priority ${r} (ID: ${a})`), a;
     } catch (o) {
@@ -853,25 +853,25 @@ class B {
         remainingInQueue: 0,
         errors: []
       };
-      for (const l of o) {
+      for (const c of o) {
         a.processed++;
         try {
-          await this.markAsProcessing(l.id);
-          const d = await t(l.collection_name, l.content);
-          await this.storeEmbedding(l.collection_name, l.document_id, d), await this.markAsCompleted(l.id), this.log("debug", `Successfully processed embedding for document '${l.document_id}' in collection '${l.collection_name}'`);
+          await this.markAsProcessing(c.id);
+          const d = await t(c.collection_name, c.content);
+          await this.storeEmbedding(c.collection_name, c.document_id, d), await this.markAsCompleted(c.id), this.log("debug", `Successfully processed embedding for document '${c.document_id}' in collection '${c.collection_name}'`);
         } catch (d) {
           const u = d instanceof Error ? d.message : String(d);
-          l.retry_count < r ? (await this.markForRetry(l.id, l.retry_count + 1), this.log("warn", `Embedding processing failed for document '${l.document_id}', will retry (attempt ${l.retry_count + 1}/${r}): ${u}`)) : (await this.markAsFailed(l.id, u), a.failed++, a.errors.push({
-            documentId: l.document_id,
+          c.retry_count < r ? (await this.markForRetry(c.id, c.retry_count + 1), this.log("warn", `Embedding processing failed for document '${c.document_id}', will retry (attempt ${c.retry_count + 1}/${r}): ${u}`)) : (await this.markAsFailed(c.id, u), a.failed++, a.errors.push({
+            documentId: c.document_id,
             error: u
-          }), this.log("error", `Embedding processing failed permanently for document '${l.document_id}' after ${r} retries: ${u}`));
+          }), this.log("error", `Embedding processing failed permanently for document '${c.document_id}' after ${r} retries: ${u}`));
         }
       }
-      const c = await this.sqliteManager.select(`
+      const l = await this.sqliteManager.select(`
         SELECT COUNT(*) as count FROM embedding_queue
         WHERE status = 'pending'${i ? " AND collection_name = ?" : ""}
       `, i ? [i] : []);
-      return a.remainingInQueue = c.rows[0]?.count || 0, this.log("info", `Queue processing completed: ${a.processed - a.failed} successful, ${a.failed} failed, ${a.remainingInQueue} remaining`), a;
+      return a.remainingInQueue = l.rows[0]?.count || 0, this.log("info", `Queue processing completed: ${a.processed - a.failed} successful, ${a.failed} failed, ${a.remainingInQueue} remaining`), a;
     } catch (o) {
       throw new h(`Failed to process embedding queue: ${o instanceof Error ? o.message : String(o)}`);
     }
@@ -901,13 +901,13 @@ class B {
         total: 0
       };
       let o = 0, a = 0;
-      for (const l of s.rows) {
-        const d = l.status, u = l.count;
-        d in r && (r[d] = u, r.total += u), d === "completed" && l.avg_processing_time && (o += l.avg_processing_time * u, a += u);
+      for (const c of s.rows) {
+        const d = c.status, u = c.count;
+        d in r && (r[d] = u, r.total += u), d === "completed" && c.avg_processing_time && (o += c.avg_processing_time * u, a += u);
       }
       a > 0 && (r.avgProcessingTime = Math.round(o / a));
-      let c = [];
-      return e || (c = (await this.sqliteManager.select(`
+      let l = [];
+      return e || (l = (await this.sqliteManager.select(`
           SELECT DISTINCT collection_name
           FROM embedding_queue
           ORDER BY collection_name
@@ -933,8 +933,8 @@ class B {
       let s = "DELETE FROM embedding_queue WHERE 1=1";
       const r = [];
       t && (s += " AND collection_name = ?", r.push(t)), i && (s += " AND status = ?", r.push(i)), await this.sqliteManager.exec(s);
-      const o = s.replace("DELETE FROM embedding_queue", "SELECT COUNT(*) as count FROM embedding_queue"), c = (await this.sqliteManager.select("SELECT COUNT(*) as count FROM embedding_queue")).rows[0]?.count || 0;
-      return this.log("info", `Cleared ${c} items from embedding queue`), c;
+      const o = s.replace("DELETE FROM embedding_queue", "SELECT COUNT(*) as count FROM embedding_queue"), l = (await this.sqliteManager.select("SELECT COUNT(*) as count FROM embedding_queue")).rows[0]?.count || 0;
+      return this.log("info", `Cleared ${l} items from embedding queue`), l;
     } catch (s) {
       throw new h(`Failed to clear embedding queue: ${s instanceof Error ? s.message : String(s)}`);
     }
@@ -1035,7 +1035,7 @@ class B {
     this.logger ? this.logger.log(e, t, i) : console.log(`[EmbeddingQueue] ${e.toUpperCase()}: ${t}`, i || "");
   }
 }
-class V {
+class j {
   // 5 minutes
   constructor(e, t) {
     this.sqliteManager = e, this.logger = t, this.providers = /* @__PURE__ */ new Map(), this.initPromises = /* @__PURE__ */ new Map(), this.cleanupTimer = null, this.maxCacheAge = 30 * 60 * 1e3, this.cleanupInterval = 5 * 60 * 1e3, this.startCleanupTimer();
@@ -1077,7 +1077,7 @@ class V {
       const s = JSON.parse(t.rows[0].config || "{}").embeddingConfig;
       if (!s)
         throw new _(`Collection '${e}' has no embedding configuration`);
-      const r = await D.createProvider(s);
+      const r = await x.createProvider(s);
       if (typeof r.initialize == "function") {
         const o = {
           defaultProvider: s.provider,
@@ -1306,7 +1306,7 @@ class T {
       } catch (a) {
         if (r = a instanceof Error ? a : new Error(String(a)), t.onRetry && t.onRetry(o, r), o === i)
           break;
-        await new Promise((c) => setTimeout(c, s * o));
+        await new Promise((l) => setTimeout(l, s * o));
       }
     if (t.strategy === "fallback" && t.fallbackValue !== void 0)
       return t.onFallback && t.onFallback(r), t.fallbackValue;
@@ -1316,7 +1316,7 @@ class T {
    * Classify error for appropriate handling
    */
   static classifyError(e) {
-    return e instanceof h ? this.classifyDatabaseError(e) : e instanceof M ? {
+    return e instanceof h ? this.classifyDatabaseError(e) : e instanceof L ? {
       category: "vector",
       severity: "high",
       recoverable: !1,
@@ -1458,8 +1458,8 @@ class T {
       if (Array.isArray(o))
         return o.map(r);
       const a = {};
-      for (const [c, l] of Object.entries(o))
-        s.some((d) => c.toLowerCase().includes(d)) ? a[c] = "[REDACTED]" : typeof l == "object" ? a[c] = r(l) : a[c] = l;
+      for (const [l, c] of Object.entries(o))
+        s.some((d) => l.toLowerCase().includes(d)) ? a[l] = "[REDACTED]" : typeof c == "object" ? a[l] = r(c) : a[l] = c;
       return a;
     };
     return {
@@ -1470,64 +1470,64 @@ class T {
     };
   }
 }
-function j(n) {
+function X(n) {
   return n == null || typeof n == "string" || typeof n == "number" || n instanceof Uint8Array || n instanceof Float32Array;
 }
 function P(n) {
-  return Array.isArray(n) && n.every(j);
-}
-function X(n) {
-  return typeof n == "object" && n !== null && typeof n.filename == "string" && (n.path === void 0 || typeof n.path == "string") && (n.vfs === void 0 || n.vfs === "opfs" || n.vfs === "opfs-sahpool") && (n.pragmas === void 0 || typeof n.pragmas == "object" && n.pragmas !== null);
+  return Array.isArray(n) && n.every(X);
 }
 function K(n) {
+  return typeof n == "object" && n !== null && typeof n.filename == "string" && (n.path === void 0 || typeof n.path == "string") && (n.vfs === void 0 || n.vfs === "opfs" || n.vfs === "opfs-sahpool") && (n.pragmas === void 0 || typeof n.pragmas == "object" && n.pragmas !== null);
+}
+function Y(n) {
   return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || P(n.params));
 }
 function J(n) {
   return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || P(n.params));
 }
-function Y(n) {
+function Z(n) {
   return typeof n == "object" && n !== null && typeof n.tableName == "string" && Array.isArray(n.data) && n.data.every(
     (e) => typeof e == "object" && e !== null && !Array.isArray(e)
   );
 }
-function Z(n) {
+function ee(n) {
   return typeof n == "object" && n !== null && typeof n.name == "string" && (n.dimensions === void 0 || typeof n.dimensions == "number") && (n.config === void 0 || typeof n.config == "object" && n.config !== null);
 }
-function ee(n) {
+function te(n) {
   return typeof n == "object" && n !== null && typeof n.collection == "string" && // Validate nested document object
   typeof n.document == "object" && n.document !== null && (n.document.id === void 0 || typeof n.document.id == "string") && typeof n.document.content == "string" && (n.document.title === void 0 || typeof n.document.title == "string") && (n.document.metadata === void 0 || typeof n.document.metadata == "object" && n.document.metadata !== null) && // Validate optional options object
   (n.options === void 0 || typeof n.options == "object" && n.options !== null);
 }
-function te(n) {
+function ie(n) {
   return typeof n == "object" && n !== null && (n.data instanceof Uint8Array || n.data instanceof ArrayBuffer) && (n.overwrite === void 0 || typeof n.overwrite == "boolean");
 }
-function ie(n) {
+function se(n) {
   return typeof n == "object" && n !== null && typeof n.collection == "string" && typeof n.content == "string" && (n.options === void 0 || typeof n.options == "object" && n.options !== null);
 }
-function se(n) {
+function re(n) {
   return typeof n == "object" && n !== null && typeof n.collection == "string" && Array.isArray(n.documents) && n.documents.every(
     (e) => typeof e == "object" && e !== null && typeof e.id == "string" && typeof e.content == "string"
   ) && (n.options === void 0 || typeof n.options == "object" && n.options !== null);
 }
-function re(n) {
+function ne(n) {
   return typeof n == "object" && n !== null && typeof n.collection == "string" && typeof n.documentId == "string" && typeof n.textContent == "string" && (n.priority === void 0 || typeof n.priority == "number");
 }
-function ne(n) {
+function oe(n) {
   return n === void 0 || typeof n == "object" && n !== null && (n.collection === void 0 || typeof n.collection == "string") && (n.batchSize === void 0 || typeof n.batchSize == "number") && (n.onProgress === void 0 || typeof n.onProgress == "function");
 }
-function oe(n) {
+function ae(n) {
   return n === void 0 || typeof n == "object" && n !== null && (n.collection === void 0 || typeof n.collection == "string") && (n.status === void 0 || typeof n.status == "string");
 }
-function ae(n) {
+function le(n) {
   return typeof n == "string" && n.length > 0 && n.length <= 255 && /^[a-zA-Z0-9_-]+$/.test(n);
 }
-function le(n) {
+function ce(n) {
   return typeof n == "string" && n.length > 0 && n.length <= 255;
 }
-function ce(n) {
+function de(n) {
   return typeof n == "number" && Number.isInteger(n) && n > 0 && n <= 1e4;
 }
-function de(n) {
+function he(n) {
   return typeof n == "number" && n >= 0 && n <= 1;
 }
 class S {
@@ -1543,7 +1543,7 @@ class S {
    * Validate collection name with additional business rules
    */
   static validateCollectionName(e, t) {
-    if (!ae(e))
+    if (!le(e))
       throw new Error(`Invalid collection name for ${t}: must be a non-empty alphanumeric string with underscores/hyphens, max 255 characters`);
     if (["sqlite_master", "sqlite_temp_master", "sqlite_sequence"].includes(e.toLowerCase()))
       throw new Error(`Collection name '${e}' is reserved`);
@@ -1553,7 +1553,7 @@ class S {
    * Validate document ID with additional business rules
    */
   static validateDocumentId(e, t) {
-    if (!le(e))
+    if (!ce(e))
       throw new Error(`Invalid document ID for ${t}: must be a non-empty string, max 255 characters`);
     return e;
   }
@@ -1593,7 +1593,7 @@ class S {
   static validateLimit(e, t, i = 10) {
     if (e === void 0)
       return i;
-    if (!ce(e))
+    if (!de(e))
       throw new Error(`Invalid limit for ${t}: must be a positive integer between 1 and 10000`);
     return e;
   }
@@ -1602,13 +1602,13 @@ class S {
    */
   static validateThreshold(e, t) {
     if (e !== void 0) {
-      if (!de(e))
+      if (!he(e))
         throw new Error(`Invalid threshold for ${t}: must be a number between 0 and 1`);
       return e;
     }
   }
 }
-class he {
+class ue {
   constructor(e) {
     this.sqliteManager = e.sqliteManager, this.schemaManager = e.schemaManager, this.opfsManager = e.opfsManager, this.logger = e.logger;
   }
@@ -1695,7 +1695,7 @@ class he {
       return e;
     const r = {};
     for (const [o, a] of Object.entries(e))
-      s.some((c) => o.toLowerCase().includes(c)) ? r[o] = "[REDACTED]" : typeof a == "object" ? r[o] = this.sanitizeParams(a, t) : r[o] = a;
+      s.some((l) => o.toLowerCase().includes(l)) ? r[o] = "[REDACTED]" : typeof a == "object" ? r[o] = this.sanitizeParams(a, t) : r[o] = a;
     return r;
   }
   /**
@@ -1758,7 +1758,7 @@ class he {
     }
   }
 }
-class ue extends he {
+class ge extends ue {
   getComponentName() {
     return "SearchHandler";
   }
@@ -1771,17 +1771,14 @@ class ue extends he {
    */
   async generateEmbeddingWithProvider(e, t, i = "default") {
     try {
-      this.logger.info("Generating query embedding", { query: t.substring(0, 50), collection: i });
+      this.logger && this.logger.log("info", `Generating query embedding: ${t.substring(0, 50)}`);
       const s = await e.getProvider(i);
       if (!s)
         throw new Error("No embedding provider available for collection");
       const r = await s.generateEmbedding(t);
-      return this.logger.info("Query embedding generated successfully", {
-        query: t.substring(0, 50),
-        dimensions: r.length
-      }), r;
+      return this.logger && this.logger.log("info", `Query embedding generated successfully, dimensions: ${r.length}`), r;
     } catch (s) {
-      throw this.logger.error("Failed to generate query embedding", { query: t, error: s }), s;
+      throw this.logger && this.logger.log("error", `Failed to generate query embedding: ${s instanceof Error ? s.message : String(s)}`), s;
     }
   }
 }
@@ -1805,12 +1802,12 @@ class R extends p {
     super(`LLM request timeout after ${t}ms`, "TIMEOUT", void 0, e), this.name = "LLMTimeoutError", Object.setPrototypeOf(this, R.prototype);
   }
 }
-class y extends p {
+class E extends p {
   constructor(e, t, i) {
-    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, y.prototype);
+    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, E.prototype);
   }
 }
-function ge(n) {
+function me(n) {
   return `You are a search query expert. Analyze and enhance this search query.
 
 Original query: "${n}"
@@ -1829,7 +1826,7 @@ Format response as JSON:
   "confidence": 0.85
 }`;
 }
-function me(n) {
+function fe(n) {
   return `You are a search result summarizer. Analyze these search results and provide a concise summary.
 
 Search Results:
@@ -1854,7 +1851,7 @@ Format response as JSON:
   "confidence": 0.9
 }`;
 }
-class L {
+class M {
   constructor(e, t) {
     this.config = e, this.logger = t, this.validateConfig();
   }
@@ -1873,7 +1870,7 @@ class L {
    * Execute HTTP request to LLM API
    */
   async executeRequest(e, t) {
-    const i = this.buildRequestURL(), s = this.buildRequestHeaders(), r = this.buildRequestBody(e, t), o = t?.timeout || this.config.timeout || 1e4, a = new AbortController(), c = t?.signal || a.signal, l = setTimeout(() => a.abort(), o);
+    const i = this.buildRequestURL(), s = this.buildRequestHeaders(), r = this.buildRequestBody(e, t), o = t?.timeout || this.config.timeout || 1e4, a = new AbortController(), l = t?.signal || a.signal, c = setTimeout(() => a.abort(), o);
     try {
       this.logger.debug(`LLM Request to ${this.config.provider}`, {
         provider: this.config.provider,
@@ -1887,15 +1884,15 @@ class L {
           ...s
         },
         body: JSON.stringify(r),
-        signal: c
+        signal: l
       });
-      if (clearTimeout(l), !d.ok) {
-        const E = await d.json().catch(() => ({}));
+      if (clearTimeout(c), !d.ok) {
+        const y = await d.json().catch(() => ({}));
         throw new C(
-          E.error?.message || d.statusText,
+          y.error?.message || d.statusText,
           d.status,
           this.config.provider,
-          E
+          y
         );
       }
       const u = await d.json(), m = this.parseResponse(u);
@@ -1906,7 +1903,7 @@ class L {
         textLength: m.text.length
       }), m;
     } catch (d) {
-      throw clearTimeout(l), d.name === "AbortError" ? new R(this.config.provider, o) : d instanceof p ? d : new p(
+      throw clearTimeout(c), d.name === "AbortError" ? new R(this.config.provider, o) : d instanceof p ? d : new p(
         `LLM request failed: ${d.message}`,
         "NETWORK_ERROR",
         void 0,
@@ -1933,7 +1930,7 @@ class L {
             attempt: r + 1,
             maxRetries: i,
             error: o.message
-          }), await new Promise((c) => setTimeout(c, a));
+          }), await new Promise((l) => setTimeout(l, a));
         }
       }
     throw s;
@@ -1955,18 +1952,18 @@ class L {
    * Public API: Enhance query
    */
   async enhanceQuery(e, t) {
-    const i = ge(e);
+    const i = me(e);
     return await this.executeRequestWithRetry(i, t);
   }
   /**
    * Public API: Summarize results
    */
   async summarizeResults(e, t) {
-    const i = me(e);
+    const i = fe(e);
     return await this.executeRequestWithRetry(i, t);
   }
 }
-class fe extends L {
+class pe extends M {
   /**
    * Build OpenAI API endpoint URL
    */
@@ -2025,7 +2022,7 @@ class fe extends L {
         provider: "openai"
       };
     } catch (t) {
-      throw new y(
+      throw new E(
         `Failed to parse OpenAI response: ${t.message}`,
         "openai",
         { data: e, error: t.message }
@@ -2033,7 +2030,7 @@ class fe extends L {
     }
   }
 }
-class pe extends L {
+class ye extends M {
   /**
    * Build Anthropic API endpoint URL
    */
@@ -2089,7 +2086,7 @@ class pe extends L {
         provider: "anthropic"
       };
     } catch (t) {
-      throw new y(
+      throw new E(
         `Failed to parse Anthropic response: ${t.message}`,
         "anthropic",
         { data: e, error: t.message }
@@ -2097,7 +2094,7 @@ class pe extends L {
     }
   }
 }
-class ye extends L {
+class Ee extends M {
   /**
    * Build OpenRouter API endpoint URL
    */
@@ -2160,7 +2157,7 @@ class ye extends L {
         provider: "openrouter"
       };
     } catch (t) {
-      throw new y(
+      throw new E(
         `Failed to parse OpenRouter response: ${t.message}`,
         "openrouter",
         { data: e, error: t.message }
@@ -2168,7 +2165,7 @@ class ye extends L {
     }
   }
 }
-class Ee extends L {
+class be extends M {
   /**
    * Validate custom provider configuration
    */
@@ -2240,7 +2237,7 @@ class Ee extends L {
         provider: "custom"
       };
     } catch (t) {
-      throw new y(
+      throw new E(
         `Failed to parse custom provider response: ${t.message}`,
         "custom",
         { data: e, error: t.message }
@@ -2248,7 +2245,7 @@ class Ee extends L {
     }
   }
 }
-class be {
+class we {
   constructor(e) {
     this.providerCache = /* @__PURE__ */ new Map(), this.logger = e;
   }
@@ -2266,13 +2263,13 @@ class be {
   createProvider(e) {
     switch (e.provider) {
       case "openai":
-        return new fe(e, this.logger);
-      case "anthropic":
         return new pe(e, this.logger);
-      case "openrouter":
+      case "anthropic":
         return new ye(e, this.logger);
-      case "custom":
+      case "openrouter":
         return new Ee(e, this.logger);
+      case "custom":
+        return new be(e, this.logger);
       default:
         throw new p(
           `Unknown provider: ${e.provider}`,
@@ -2323,7 +2320,7 @@ class be {
     const s = Date.now(), r = this.getProvider(t);
     try {
       this.logger.debug(`Enhancing query: "${e}"`, { provider: t.provider });
-      const o = await r.enhanceQuery(e, i), a = JSON.parse(o.text), c = {
+      const o = await r.enhanceQuery(e, i), a = JSON.parse(o.text), l = {
         originalQuery: e,
         enhancedQuery: a.enhancedQuery || e,
         suggestions: Array.isArray(a.suggestions) ? a.suggestions : [],
@@ -2335,15 +2332,15 @@ class be {
       };
       return this.logger.debug("Query enhancement complete", {
         provider: t.provider,
-        enhancedQuery: c.enhancedQuery,
-        processingTime: c.processingTime
-      }), c;
+        enhancedQuery: l.enhancedQuery,
+        processingTime: l.processingTime
+      }), l;
     } catch (o) {
       throw this.logger.error("Query enhancement failed", {
         error: o.message,
         query: e,
         provider: t.provider
-      }), o instanceof SyntaxError ? new y(
+      }), o instanceof SyntaxError ? new E(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2357,7 +2354,7 @@ class be {
     const s = Date.now(), r = this.getProvider(t);
     try {
       this.logger.debug(`Summarizing ${e.length} results`, { provider: t.provider });
-      const o = await r.summarizeResults(e, i), a = JSON.parse(o.text), c = {
+      const o = await r.summarizeResults(e, i), a = JSON.parse(o.text), l = {
         summary: a.summary || "",
         keyPoints: Array.isArray(a.keyPoints) ? a.keyPoints : [],
         themes: Array.isArray(a.themes) ? a.themes : [],
@@ -2368,14 +2365,14 @@ class be {
       };
       return this.logger.debug("Result summarization complete", {
         provider: t.provider,
-        processingTime: c.processingTime
-      }), c;
+        processingTime: l.processingTime
+      }), l;
     } catch (o) {
       throw this.logger.error("Result summarization failed", {
         error: o.message,
         resultCount: e.length,
         provider: t.provider
-      }), o instanceof SyntaxError ? new y(
+      }), o instanceof SyntaxError ? new E(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2571,17 +2568,17 @@ class f {
     return new f({ component: e, level: t });
   }
 }
-class we {
+class ve {
   constructor() {
-    this.isInitialized = !1, this.startTime = Date.now(), this.logger = new f({
+    this.isInitialized = !1, this.startTime = Date.now(), this.operationCount = 0, this.logger = new f({
       level: "debug",
       component: "DatabaseWorker"
-    }), this.sqliteManager = new Q(this.logger), this.opfsManager = new G(this.sqliteManager, this.logger), this.schemaManager = new W(this.sqliteManager, this.logger), this.embeddingQueue = new B(this.sqliteManager, this.logger), this.providerManager = new V(this.sqliteManager, this.logger), this.searchHandler = new ue({
+    }), this.sqliteManager = new G(this.logger), this.opfsManager = new W(this.sqliteManager, this.logger), this.schemaManager = new B(this.sqliteManager, this.logger), this.embeddingQueue = new V(this.sqliteManager, this.logger), this.providerManager = new j(this.sqliteManager, this.logger), this.searchHandler = new ge({
       sqliteManager: this.sqliteManager,
       schemaManager: this.schemaManager,
       opfsManager: this.opfsManager,
       logger: this.logger
-    }), this.llmManager = new be(this.logger), this.rpcHandler = new x({
+    }), this.llmManager = new we(this.logger), this.rpcHandler = new N({
       logLevel: "debug",
       operationTimeout: 3e4
     }), this.setupRPCHandlers(), this.logger.info("DatabaseWorker initialized with modular architecture + LLM support");
@@ -2596,19 +2593,19 @@ class we {
   // Core Database Operations
   // =============================================================================
   async handleOpen(e) {
-    const t = this.validateParams(e, X, "handleOpen");
+    const t = this.validateParams(e, K, "handleOpen");
     return this.withContext("open", async () => {
       const i = t.filename || t.path || ":memory:";
       this.logger.info(`Opening database with filename: ${i}, vfs: ${t.vfs}`);
       let s = i;
-      i.startsWith("opfs:/") && (this.logger.info(`Initializing OPFS database: ${i}`), s = await this.opfsManager.initializeDatabase(i), this.logger.info(`OPFS database path resolved to: ${s}`)), this.logger.info(`Opening SQLite database at path: ${s}`), await this.sqliteManager.openDatabase(s), await this.sqliteManager.initVecExtension();
+      i.startsWith("opfs:/") && (this.logger.info(`Initializing OPFS database: ${i}`), s = await this.opfsManager.initializeDatabase(i), this.logger.info(`OPFS database path resolved to: ${s}`)), this.logger.info(`Opening SQLite database at path: ${s}`), await this.sqliteManager.openDatabase(s), await this.sqliteManager.exec("PRAGMA temp_store = MEMORY"), await this.sqliteManager.exec("PRAGMA cache_size = -64000"), await this.sqliteManager.exec("PRAGMA synchronous = NORMAL"), await this.sqliteManager.exec("PRAGMA journal_mode = MEMORY"), this.logger.info("SQLite PRAGMAs configured for browser environment"), await this.sqliteManager.initVecExtension();
       const r = this.opfsManager.getPendingDatabaseData();
       if (r) {
         this.logger.info("Restoring database from OPFS data"), await this.sqliteManager.deserialize(r), this.opfsManager.clearPendingDatabaseData(), this.logger.info("Database restored from OPFS successfully");
         try {
           await this.sqliteManager.exec("SELECT 1"), this.logger.info("Database connection verified after restore");
         } catch (o) {
-          this.logger.error("Database connection invalid after restore, reopening...", { error: o }), this.sqliteManager.closeDatabase(), await this.sqliteManager.openDatabase(s), await this.sqliteManager.initVecExtension(), this.logger.info("Database connection re-established");
+          this.logger.error("Database connection invalid after restore, reopening...", { error: o }), this.sqliteManager.closeDatabase(), await this.sqliteManager.openDatabase(s), await this.sqliteManager.exec("PRAGMA temp_store = MEMORY"), await this.sqliteManager.exec("PRAGMA cache_size = -64000"), await this.sqliteManager.exec("PRAGMA synchronous = NORMAL"), await this.sqliteManager.exec("PRAGMA journal_mode = MEMORY"), await this.sqliteManager.initVecExtension(), this.logger.info("Database connection re-established");
         }
       }
       i.startsWith("opfs:/") && this.opfsManager.startAutoSync(), this.isInitialized = !0, this.logger.info(`Database opened successfully: ${i}`);
@@ -2625,7 +2622,7 @@ class we {
     });
   }
   async handleExec(e) {
-    const t = this.validateParams(e, K, "handleExec");
+    const t = this.validateParams(e, Y, "handleExec");
     return this.ensureInitialized(), this.withContext("exec", async () => {
       await this.sqliteManager.exec(t.sql, t.params), this.logger.debug(`Executed SQL: ${t.sql.substring(0, 100)}...`);
     });
@@ -2638,7 +2635,7 @@ class we {
     });
   }
   async handleBulkInsert(e) {
-    const t = this.validateParams(e, Y, "handleBulkInsert");
+    const t = this.validateParams(e, Z, "handleBulkInsert");
     return this.ensureInitialized(), this.withContext("bulkInsert", async () => {
       for (const i of t.data) {
         const s = Object.keys(i), r = Object.values(i), o = s.map(() => "?").join(", "), a = `INSERT INTO ${t.tableName} (${s.join(", ")}) VALUES (${o})`;
@@ -2666,7 +2663,7 @@ class we {
     return this.withContext("getCollectionInfo", async () => await this.schemaManager.getCollectionInfo(t));
   }
   async handleCreateCollection(e) {
-    const t = this.validateParams(e, Z, "handleCreateCollection");
+    const t = this.validateParams(e, ee, "handleCreateCollection");
     return this.ensureInitialized(), this.withContext("createCollection", async () => {
       await this.schemaManager.createCollection(
         t.name,
@@ -2694,22 +2691,22 @@ class we {
     };
   }
   async handleInsertDocumentWithEmbedding(e) {
-    const t = this.validateParams(e, ee, "handleInsertDocumentWithEmbedding");
+    const t = this.validateParams(e, te, "handleInsertDocumentWithEmbedding");
     return this.ensureInitialized(), this.withContext("insertDocumentWithEmbedding", async () => {
-      const { validateDocument: i, generateDocumentId: s, sanitizeDocumentId: r } = await import("../Validation-Dai9aPfn.mjs"), { DocumentInsertError: o } = await import("../Errors-CBeo1Lsn.mjs");
+      const { validateDocument: i, generateDocumentId: s, sanitizeDocumentId: r } = await import("../Validation-E21ecA_U.mjs"), { DocumentInsertError: o } = await import("../Errors-CBeo1Lsn.mjs");
       i(t.document, t.collection);
-      const a = t.document.id ? r(t.document.id) : s(), c = t.document.metadata || {}, l = `
+      const a = t.document.id ? r(t.document.id) : s(), l = t.document.metadata || {}, c = `
         INSERT OR REPLACE INTO docs_default (id, title, content, collection, metadata, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
       `;
       try {
-        await this.sqliteManager.exec(l, [
+        await this.sqliteManager.exec(c, [
           a,
           t.document.title || "",
           t.document.content || "",
           t.collection,
           // ✅ Separate column for collection
-          JSON.stringify(c)
+          JSON.stringify(l)
           // ✅ Pure user metadata
         ]);
       } catch (m) {
@@ -2745,7 +2742,7 @@ Check database logs for details.`
     });
   }
   async handleGenerateEmbedding(e) {
-    return this.validateParams(e, ie, "handleGenerateEmbedding"), {
+    return this.validateParams(e, se, "handleGenerateEmbedding"), {
       embedding: new Float32Array(384).fill(0.1),
       // Mock embedding
       dimensions: 384,
@@ -2756,7 +2753,7 @@ Check database logs for details.`
   }
   async handleBatchGenerateEmbeddings(e) {
     return {
-      success: this.validateParams(e, se, "handleBatchGenerateEmbeddings").documents.length,
+      success: this.validateParams(e, re, "handleBatchGenerateEmbeddings").documents.length,
       failed: 0,
       errors: [],
       processingTime: 100
@@ -2774,11 +2771,11 @@ Check database logs for details.`
   // Queue Operations
   // =============================================================================
   async handleEnqueueEmbedding(e) {
-    const t = this.validateParams(e, re, "handleEnqueueEmbedding");
+    const t = this.validateParams(e, ne, "handleEnqueueEmbedding");
     return this.ensureInitialized(), this.withContext("enqueueEmbedding", async () => await this.embeddingQueue.enqueue(t));
   }
   async handleProcessEmbeddingQueue(e = {}) {
-    const t = this.validateParams(e, ne, "handleProcessEmbeddingQueue");
+    const t = this.validateParams(e, oe, "handleProcessEmbeddingQueue");
     return this.ensureInitialized(), this.withContext("processEmbeddingQueue", async () => {
       const i = async (s, r) => new Float32Array(384).fill(0.1);
       return await this.embeddingQueue.processQueue(t, i);
@@ -2788,7 +2785,7 @@ Check database logs for details.`
     return this.ensureInitialized(), this.withContext("getQueueStatus", async () => await this.embeddingQueue.getStatus(e));
   }
   async handleClearEmbeddingQueue(e = {}) {
-    const t = this.validateParams(e, oe, "handleClearEmbeddingQueue");
+    const t = this.validateParams(e, ae, "handleClearEmbeddingQueue");
     return this.ensureInitialized(), this.withContext("clearEmbeddingQueue", async () => await this.embeddingQueue.clearQueue(t));
   }
   // =============================================================================
@@ -2805,7 +2802,7 @@ Check database logs for details.`
         fusionMethod: o = "rrf",
         fusionWeights: a = { fts: 0.6, vec: 0.4 }
       } = e;
-      let c = { ...i };
+      let l = { ...i };
       if (e.options?.enableEmbedding && i.text && !i.vector)
         try {
           this.logger.info("Generating embedding for advanced search", { text: i.text });
@@ -2813,14 +2810,14 @@ Check database logs for details.`
             query: i.text,
             collection: s
           });
-          g.embedding && (c.vector = g.embedding, this.logger.info("Successfully generated query embedding"));
+          g.embedding && (l.vector = g.embedding, this.logger.info("Successfully generated query embedding"));
         } catch (g) {
           this.logger.warn("Failed to generate embedding, using text-only search", { embeddingError: g });
         }
-      this.logger.info(`Starting search - text: "${c.text || "none"}", vector: ${c.vector ? "provided" : "none"}, collection: ${s}`);
-      let l, d;
-      if (c.text && c.vector) {
-        this.logger.info("Performing hybrid text + vector search"), l = `
+      this.logger.info(`Starting search - text: "${l.text || "none"}", vector: ${l.vector ? "provided" : "none"}, collection: ${s}`);
+      let d, u;
+      if (l.text && l.vector) {
+        this.logger.info("Performing hybrid text + vector search"), d = `
           WITH fts_results AS (
             SELECT d.rowid, d.id, d.title, d.content, d.metadata,
                    bm25(fts_${s}) as fts_score,
@@ -2861,9 +2858,9 @@ Check database logs for details.`
           ORDER BY score DESC
           LIMIT ?
         `;
-        const g = JSON.stringify(Array.from(c.vector));
-        d = [
-          c.text,
+        const g = JSON.stringify(Array.from(l.vector));
+        u = [
+          l.text,
           r,
           g,
           r,
@@ -2872,10 +2869,10 @@ Check database logs for details.`
           a.vec,
           r
         ];
-      } else if (c.text) {
+      } else if (l.text) {
         this.logger.info("Performing text-only FTS search");
-        const g = c.text.trim().split(/\s+/), A = g.length > 1 ? g.join(" OR ") : c.text;
-        l = `
+        const g = l.text.trim().split(/\s+/), D = g.length > 1 ? g.join(" OR ") : l.text;
+        d = `
           SELECT d.id, d.title, d.content, d.metadata,
                  bm25(fts_${s}) as fts_score,
                  0 as vec_score,
@@ -2885,11 +2882,11 @@ Check database logs for details.`
           WHERE fts_${s} MATCH ?
           ORDER BY score DESC
           LIMIT ?
-        `, d = [A, r];
-      } else if (c.vector) {
+        `, u = [D, r];
+      } else if (l.vector) {
         this.logger.info("Performing vector-only search");
-        const g = JSON.stringify(Array.from(c.vector));
-        l = `
+        const g = JSON.stringify(Array.from(l.vector));
+        d = `
           SELECT d.id, d.title, d.content, d.metadata,
                  0 as fts_score,
                  v.distance as vec_score,
@@ -2903,11 +2900,11 @@ Check database logs for details.`
             LIMIT ?
           ) v ON d.rowid = v.rowid
           ORDER BY v.distance
-        `, d = [g, r];
+        `, u = [g, r];
       } else
-        throw new DatabaseError("Search requires either text or vector query");
-      this.logger.info(`Executing search SQL with ${d.length} parameters`);
-      const m = (await this.sqliteManager.select(l, d)).rows.map((g) => ({
+        throw new Error("Search requires either text or vector query");
+      this.logger.info(`Executing search SQL with ${u.length} parameters`);
+      const y = (await this.sqliteManager.select(d, u)).rows.map((g) => ({
         id: g.id,
         title: g.title,
         content: g.content,
@@ -2915,11 +2912,11 @@ Check database logs for details.`
         score: g.score,
         ftsScore: g.fts_score,
         vecScore: g.vec_score
-      })), E = Date.now() - t;
-      return this.operationCount++, this.logger.debug(`Search completed in ${E}ms, found ${m.length} results`), {
-        results: m,
-        totalResults: m.length,
-        searchTime: E
+      })), O = Date.now() - t;
+      return this.operationCount++, this.logger.debug(`Search completed in ${O}ms, found ${y.length} results`), {
+        results: y,
+        totalResults: y.length,
+        searchTime: O
       };
     } catch (i) {
       return this.logger.error("Search failed", { error: i }), {
@@ -2947,6 +2944,7 @@ Check database logs for details.`
       });
       return {
         results: t.results,
+        totalResults: t.totalResults,
         searchTime: t.searchTime,
         strategy: "fts"
       };
@@ -2955,12 +2953,13 @@ Check database logs for details.`
   async handleSearchAdvanced(e) {
     return this.ensureInitialized(), this.withContext("searchAdvanced", async () => {
       const t = await this.handleSearch({
-        query: e.query,
-        collection: e.options?.collection || "default",
-        limit: e.options?.limit || 10
+        query: typeof e.query == "string" ? { text: e.query } : e.query,
+        collection: e.collections?.[0] || "default",
+        limit: 10
       });
       return {
         results: t.results,
+        totalResults: t.totalResults,
         searchTime: t.searchTime,
         strategy: "hybrid"
       };
@@ -2970,14 +2969,19 @@ Check database logs for details.`
     return this.ensureInitialized(), this.withContext("searchGlobal", async () => {
       const t = await this.handleSearch({
         query: { text: e.query },
-        limit: e.options?.limit || 10
+        limit: 10
       });
       return {
-        resultsByCollection: {
-          default: t.results
-        },
-        totalResults: t.results.length,
-        searchTime: t.searchTime
+        results: t.results,
+        totalResults: t.totalResults,
+        searchTime: t.searchTime,
+        strategy: "fts",
+        collectionResults: [{
+          collection: "default",
+          results: t.results,
+          totalInCollection: t.totalResults
+        }],
+        collectionsSearched: ["default"]
       };
     });
   }
@@ -2988,7 +2992,7 @@ Check database logs for details.`
     return this.ensureInitialized(), this.withContext("export", async () => await this.sqliteManager.serialize());
   }
   async handleImport(e) {
-    return this.validateParams(e, te, "handleImport"), this.ensureInitialized(), this.withContext("import", async () => {
+    return this.validateParams(e, ie, "handleImport"), this.ensureInitialized(), this.withContext("import", async () => {
       const t = e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data;
       await this.sqliteManager.deserialize(t), await this.schemaManager.initializeSchema();
     });
@@ -3037,7 +3041,9 @@ Check database logs for details.`
       return {
         embedding: t,
         dimensions: t.length,
-        model: "Xenova/all-MiniLM-L6-v2"
+        model: "Xenova/all-MiniLM-L6-v2",
+        source: "provider_fresh",
+        processingTime: 0
       };
     });
   }
@@ -3052,19 +3058,21 @@ Check database logs for details.`
             i.collection
           );
           t.push({
-            query: i.query,
+            requestId: i.id,
             embedding: s,
             dimensions: s.length,
-            model: "Xenova/all-MiniLM-L6-v2",
-            success: !0
+            source: "provider_fresh",
+            processingTime: 0,
+            status: "completed"
           });
         } catch (s) {
           t.push({
-            query: i.query,
+            requestId: i.id,
             embedding: new Float32Array(),
             dimensions: 0,
-            model: "Xenova/all-MiniLM-L6-v2",
-            success: !1,
+            source: "provider_fresh",
+            processingTime: 0,
+            status: "failed",
             error: s instanceof Error ? s.message : String(s)
           });
         }
@@ -3072,7 +3080,9 @@ Check database logs for details.`
     });
   }
   async handleWarmEmbeddingCache(e) {
-    return this.ensureInitialized(), this.withContext("warmEmbeddingCache", async () => await this.searchHandler.warmEmbeddingCache(e.collection, e.commonQueries));
+    return this.ensureInitialized(), this.withContext("warmEmbeddingCache", async () => {
+      this.logger.info("Cache warming not yet implemented");
+    });
   }
   async handleClearEmbeddingCache(e) {
     return this.ensureInitialized(), this.withContext("clearEmbeddingCache", async () => {
@@ -3159,7 +3169,6 @@ Check database logs for details.`
         provider: e.options?.provider || "openai",
         model: e.options?.model || "gpt-4",
         apiKey: e.options?.apiKey,
-        endpoint: e.options?.endpoint,
         temperature: e.options?.temperature,
         timeout: e.options?.timeout
       };
@@ -3172,7 +3181,6 @@ Check database logs for details.`
         provider: e.options?.provider || "openai",
         model: e.options?.model || "gpt-4",
         apiKey: e.options?.apiKey,
-        endpoint: e.options?.endpoint,
         temperature: e.options?.temperature,
         timeout: e.options?.timeout
       };
@@ -3188,7 +3196,6 @@ Check database logs for details.`
           provider: e.options.llmOptions?.provider || "openai",
           model: e.options.llmOptions?.model || "gpt-4",
           apiKey: e.options.llmOptions?.apiKey,
-          endpoint: e.options.llmOptions?.endpoint,
           temperature: e.options.llmOptions?.temperature
         };
         i = await this.llmManager.enhanceQuery(e.query, u), s += Date.now() - d;
@@ -3196,23 +3203,22 @@ Check database logs for details.`
       const r = i?.enhancedQuery || e.query, o = Date.now(), a = await this.handleSearchText({
         query: r,
         options: e.options?.searchOptions
-      }), c = Date.now() - o;
-      let l;
+      }), l = Date.now() - o;
+      let c;
       if (e.options?.summarizeResults && a.results.length > 0) {
         const d = Date.now(), u = {
           provider: e.options.llmOptions?.provider || "openai",
           model: e.options.llmOptions?.model || "gpt-4",
           apiKey: e.options.llmOptions?.apiKey,
-          endpoint: e.options.llmOptions?.endpoint,
           temperature: e.options.llmOptions?.temperature
         };
-        l = await this.llmManager.summarizeResults(a.results, u), s += Date.now() - d;
+        c = await this.llmManager.summarizeResults(a.results, u), s += Date.now() - d;
       }
       return {
         results: a.results,
         enhancedQuery: i,
-        summary: l,
-        searchTime: c,
+        summary: c,
+        searchTime: l,
         llmTime: s,
         totalTime: Date.now() - t
       };
@@ -3224,7 +3230,6 @@ Check database logs for details.`
         provider: e.options?.provider || "openai",
         model: e.options?.model || "gpt-4",
         apiKey: e.options?.apiKey,
-        endpoint: e.options?.endpoint,
         temperature: e.options?.temperature,
         maxTokens: e.options?.maxTokens,
         timeout: e.options?.timeout
@@ -3260,7 +3265,7 @@ Check database logs for details.`
     return T.withContext(e, "DatabaseWorker", t);
   }
 }
-new we();
+new ve();
 self.addEventListener("error", (n) => {
   console.error("[Worker] Unhandled error:", n.error);
 });
@@ -3268,6 +3273,6 @@ self.addEventListener("unhandledrejection", (n) => {
   console.error("[Worker] Unhandled promise rejection:", n.reason);
 });
 export {
-  we as DatabaseWorker
+  ve as DatabaseWorker
 };
 //# sourceMappingURL=worker.js.map
