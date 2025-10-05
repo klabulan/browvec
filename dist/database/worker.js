@@ -10,7 +10,7 @@ class G {
   async loadWASM() {
     if (!this.sqlite3)
       try {
-        const e = `${self.location.origin}/sqlite3.mjs`;
+        const e = "../sqlite3.mjs";
         this.log("info", `Loading SQLite WASM from: ${e}`);
         const t = await import(e);
         if (this.sqlite3 = await t.default(), !this.sqlite3?._sqlite3_open || !this.sqlite3?._sqlite3_close)
