@@ -32,12 +32,13 @@
       "Bash(npm run dev:vite:*)",
       "Bash(test:*)",
       "Bash(md5sum:*)",
-            "Bash(certutil:*)",
-                  "Bash(git add:*)",
-                        "Bash(npm install:*)",
-                              "Bash(git commit:*)"
-                                ],
+      "Bash(certutil:*)",
+      "Bash(git add:*)",
+      "Bash(npm install:*)",
+      "Bash(git commit:*)"
+    ],
     "deny": [],
     "ask": []
-  }
+  },
+  "outputStyle": "edgar-architect"
 }
