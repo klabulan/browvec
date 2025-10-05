@@ -48,7 +48,7 @@ export class SQLiteManager {
     }
 
     try {
-      const sqlite3ModulePath = `${self.location.origin}/sqlite3.mjs`;
+      const sqlite3ModulePath = `../sqlite3.mjs`;
       this.log('info', `Loading SQLite WASM from: ${sqlite3ModulePath}`);
 
       const sqlite3Module = await import(sqlite3ModulePath);
