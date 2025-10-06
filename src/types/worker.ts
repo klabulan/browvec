@@ -424,6 +424,19 @@ export interface DBWorkerAPI {
 
   // Document operations with embedding support
   insertDocumentWithEmbedding(params: InsertDocumentWithEmbeddingParams): Promise<{ id: string; embeddingGenerated: boolean }>;
+  batchInsertDocuments(params: {
+    collection: string;
+    documents: Array<{
+      id?: string;
+      title?: string;
+      content: string;
+      metadata?: Record<string, any>;
+    }>;
+    options?: {
+      generateEmbedding?: boolean;
+      embeddingOptions?: any;
+    };
+  }): Promise<Array<{ id: string; embeddingGenerated: boolean }>>;
 
   // Embedding generation operations
   generateEmbedding(params: GenerateEmbeddingRequest): Promise<GenerateEmbeddingResult>;

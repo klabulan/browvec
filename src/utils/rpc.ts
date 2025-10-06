@@ -260,6 +260,10 @@ export class WorkerRPC implements DBWorkerAPI {
     return this.call('insertDocumentWithEmbedding', params);
   }
 
+  async batchInsertDocuments(params: Parameters<DBWorkerAPI['batchInsertDocuments']>[0]) {
+    return this.call('batchInsertDocuments', params);
+  }
+
   // Search operations
   async searchSemantic(params: Parameters<DBWorkerAPI['searchSemantic']>[0]) {
     return this.call('searchSemantic', params);

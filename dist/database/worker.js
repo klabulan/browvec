@@ -1,5 +1,5 @@
-import { D as h, b as L, O as I, E as _, p as x, t as N } from "../ProviderFactory-BqrsaSK-.mjs";
-const v = 0, A = 100, F = 101, z = 1, H = 2, k = 3, U = 4, Q = 5, $ = -1;
+import { D as h, b as I, O as L, E as _, p as x, t as N } from "../ProviderFactory-3B-jCMm2.mjs";
+const v = 0, A = 100, F = 101, z = 1, k = 2, H = 3, U = 4, Q = 5, $ = -1;
 class G {
   constructor(e) {
     this.logger = e, this.sqlite3 = null, this.dbPtr = 0, this.operationCount = 0;
@@ -57,10 +57,10 @@ class G {
     if (!this.sqlite3 || !this.dbPtr)
       throw new h("Database not initialized");
     if (!this.sqlite3._sqlite3_vec_init_manual)
-      throw new L("sqlite-vec extension not available");
+      throw new I("sqlite-vec extension not available");
     const e = this.sqlite3._sqlite3_vec_init_manual(this.dbPtr);
     if (e !== v)
-      throw this.log("error", `sqlite-vec initialization failed with code: ${e}`), new L(`Failed to initialize sqlite-vec extension (code: ${e})`);
+      throw this.log("error", `sqlite-vec initialization failed with code: ${e}`), new I(`Failed to initialize sqlite-vec extension (code: ${e})`);
     this.log("info", "sqlite-vec extension initialized successfully");
     try {
       const t = await this.select("SELECT vec_f32('[1.0, 2.0, 3.0]') as test_vector");
@@ -205,9 +205,9 @@ class G {
     switch (i) {
       case z:
         return this.sqlite3._sqlite3_column_int(e, t);
-      case H:
-        return this.sqlite3._sqlite3_column_double(e, t);
       case k:
+        return this.sqlite3._sqlite3_column_double(e, t);
+      case H:
         return this.sqlite3.UTF8ToString(this.sqlite3._sqlite3_column_text(e, t));
       case U:
         const s = this.sqlite3._sqlite3_column_blob(e, t), r = this.sqlite3._sqlite3_column_bytes(e, t), o = new Uint8Array(r);
@@ -351,7 +351,7 @@ class W {
         throw new Error("Empty database file");
       this.pendingDatabaseData = l, this.log("info", `Loaded ${l.length} bytes from OPFS: ${e}`);
     } catch (t) {
-      const i = new I(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
+      const i = new L(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
       throw this.handleOPFSError(i, "load"), i;
     }
   }
@@ -456,7 +456,7 @@ class W {
     }
     if (t.available < e) {
       const i = (t.available / 1048576).toFixed(2), s = (e / (1024 * 1024)).toFixed(2);
-      throw new I(
+      throw new L(
         `Insufficient storage space. Available: ${i}MB, Required: ${s}MB. Please clear browser data or use database.export() to backup your data.`
       );
     }
@@ -1316,13 +1316,13 @@ class T {
    * Classify error for appropriate handling
    */
   static classifyError(e) {
-    return e instanceof h ? this.classifyDatabaseError(e) : e instanceof L ? {
+    return e instanceof h ? this.classifyDatabaseError(e) : e instanceof I ? {
       category: "vector",
       severity: "high",
       recoverable: !1,
       userMessage: "Vector search functionality is not available",
       suggestedAction: "Check if sqlite-vec extension is properly loaded"
-    } : e instanceof I ? {
+    } : e instanceof L ? {
       category: "opfs",
       severity: "medium",
       recoverable: !0,
@@ -2587,7 +2587,7 @@ class ve {
    * Setup all RPC handlers
    */
   setupRPCHandlers() {
-    this.rpcHandler.register("open", this.handleOpen.bind(this)), this.rpcHandler.register("close", this.handleClose.bind(this)), this.rpcHandler.register("exec", this.handleExec.bind(this)), this.rpcHandler.register("select", this.handleSelect.bind(this)), this.rpcHandler.register("bulkInsert", this.handleBulkInsert.bind(this)), this.rpcHandler.register("initVecExtension", this.handleInitVecExtension.bind(this)), this.rpcHandler.register("initializeSchema", this.handleInitializeSchema.bind(this)), this.rpcHandler.register("getCollectionInfo", this.handleGetCollectionInfo.bind(this)), this.rpcHandler.register("createCollection", this.handleCreateCollection.bind(this)), this.rpcHandler.register("getCollectionEmbeddingStatus", this.handleGetCollectionEmbeddingStatus.bind(this)), this.rpcHandler.register("insertDocumentWithEmbedding", this.handleInsertDocumentWithEmbedding.bind(this)), this.rpcHandler.register("generateEmbedding", this.handleGenerateEmbedding.bind(this)), this.rpcHandler.register("batchGenerateEmbeddings", this.handleBatchGenerateEmbeddings.bind(this)), this.rpcHandler.register("regenerateCollectionEmbeddings", this.handleRegenerateCollectionEmbeddings.bind(this)), this.rpcHandler.register("enqueueEmbedding", this.handleEnqueueEmbedding.bind(this)), this.rpcHandler.register("processEmbeddingQueue", this.handleProcessEmbeddingQueue.bind(this)), this.rpcHandler.register("getQueueStatus", this.handleGetQueueStatus.bind(this)), this.rpcHandler.register("clearEmbeddingQueue", this.handleClearEmbeddingQueue.bind(this)), this.rpcHandler.register("search", this.handleSearch.bind(this)), this.rpcHandler.register("searchSemantic", this.handleSearchSemantic.bind(this)), this.rpcHandler.register("searchText", this.handleSearchText.bind(this)), this.rpcHandler.register("searchAdvanced", this.handleSearchAdvanced.bind(this)), this.rpcHandler.register("searchGlobal", this.handleSearchGlobal.bind(this)), this.rpcHandler.register("enhanceQuery", this.handleEnhanceQuery.bind(this)), this.rpcHandler.register("summarizeResults", this.handleSummarizeResults.bind(this)), this.rpcHandler.register("searchWithLLM", this.handleSearchWithLLM.bind(this)), this.rpcHandler.register("callLLM", this.handleCallLLM.bind(this)), this.rpcHandler.register("generateQueryEmbedding", this.handleGenerateQueryEmbedding.bind(this)), this.rpcHandler.register("batchGenerateQueryEmbeddings", this.handleBatchGenerateQueryEmbeddings.bind(this)), this.rpcHandler.register("warmEmbeddingCache", this.handleWarmEmbeddingCache.bind(this)), this.rpcHandler.register("clearEmbeddingCache", this.handleClearEmbeddingCache.bind(this)), this.rpcHandler.register("getPipelineStats", this.handleGetPipelineStats.bind(this)), this.rpcHandler.register("getModelStatus", this.handleGetModelStatus.bind(this)), this.rpcHandler.register("preloadModels", this.handlePreloadModels.bind(this)), this.rpcHandler.register("optimizeModelMemory", this.handleOptimizeModelMemory.bind(this)), this.rpcHandler.register("export", this.handleExport.bind(this)), this.rpcHandler.register("import", this.handleImport.bind(this)), this.rpcHandler.register("clear", this.handleClear.bind(this)), this.rpcHandler.register("ping", this.handlePing.bind(this)), this.rpcHandler.register("getVersion", this.handleGetVersion.bind(this)), this.rpcHandler.register("getStats", this.handleGetStats.bind(this));
+    this.rpcHandler.register("open", this.handleOpen.bind(this)), this.rpcHandler.register("close", this.handleClose.bind(this)), this.rpcHandler.register("exec", this.handleExec.bind(this)), this.rpcHandler.register("select", this.handleSelect.bind(this)), this.rpcHandler.register("bulkInsert", this.handleBulkInsert.bind(this)), this.rpcHandler.register("initVecExtension", this.handleInitVecExtension.bind(this)), this.rpcHandler.register("initializeSchema", this.handleInitializeSchema.bind(this)), this.rpcHandler.register("getCollectionInfo", this.handleGetCollectionInfo.bind(this)), this.rpcHandler.register("createCollection", this.handleCreateCollection.bind(this)), this.rpcHandler.register("getCollectionEmbeddingStatus", this.handleGetCollectionEmbeddingStatus.bind(this)), this.rpcHandler.register("insertDocumentWithEmbedding", this.handleInsertDocumentWithEmbedding.bind(this)), this.rpcHandler.register("batchInsertDocuments", this.handleBatchInsertDocuments.bind(this)), this.rpcHandler.register("generateEmbedding", this.handleGenerateEmbedding.bind(this)), this.rpcHandler.register("batchGenerateEmbeddings", this.handleBatchGenerateEmbeddings.bind(this)), this.rpcHandler.register("regenerateCollectionEmbeddings", this.handleRegenerateCollectionEmbeddings.bind(this)), this.rpcHandler.register("enqueueEmbedding", this.handleEnqueueEmbedding.bind(this)), this.rpcHandler.register("processEmbeddingQueue", this.handleProcessEmbeddingQueue.bind(this)), this.rpcHandler.register("getQueueStatus", this.handleGetQueueStatus.bind(this)), this.rpcHandler.register("clearEmbeddingQueue", this.handleClearEmbeddingQueue.bind(this)), this.rpcHandler.register("search", this.handleSearch.bind(this)), this.rpcHandler.register("searchSemantic", this.handleSearchSemantic.bind(this)), this.rpcHandler.register("searchText", this.handleSearchText.bind(this)), this.rpcHandler.register("searchAdvanced", this.handleSearchAdvanced.bind(this)), this.rpcHandler.register("searchGlobal", this.handleSearchGlobal.bind(this)), this.rpcHandler.register("enhanceQuery", this.handleEnhanceQuery.bind(this)), this.rpcHandler.register("summarizeResults", this.handleSummarizeResults.bind(this)), this.rpcHandler.register("searchWithLLM", this.handleSearchWithLLM.bind(this)), this.rpcHandler.register("callLLM", this.handleCallLLM.bind(this)), this.rpcHandler.register("generateQueryEmbedding", this.handleGenerateQueryEmbedding.bind(this)), this.rpcHandler.register("batchGenerateQueryEmbeddings", this.handleBatchGenerateQueryEmbeddings.bind(this)), this.rpcHandler.register("warmEmbeddingCache", this.handleWarmEmbeddingCache.bind(this)), this.rpcHandler.register("clearEmbeddingCache", this.handleClearEmbeddingCache.bind(this)), this.rpcHandler.register("getPipelineStats", this.handleGetPipelineStats.bind(this)), this.rpcHandler.register("getModelStatus", this.handleGetModelStatus.bind(this)), this.rpcHandler.register("preloadModels", this.handlePreloadModels.bind(this)), this.rpcHandler.register("optimizeModelMemory", this.handleOptimizeModelMemory.bind(this)), this.rpcHandler.register("export", this.handleExport.bind(this)), this.rpcHandler.register("import", this.handleImport.bind(this)), this.rpcHandler.register("clear", this.handleClear.bind(this)), this.rpcHandler.register("ping", this.handlePing.bind(this)), this.rpcHandler.register("getVersion", this.handleGetVersion.bind(this)), this.rpcHandler.register("getStats", this.handleGetStats.bind(this));
   }
   // =============================================================================
   // Core Database Operations
@@ -2739,6 +2739,47 @@ Check database logs for details.`
           }
         );
       return this.logger.info(`Document inserted successfully: ${a} in collection ${t.collection}`), { id: a, embeddingGenerated: !1 };
+    });
+  }
+  /**
+   * Batch insert documents with WORKER-SIDE transaction management
+   *
+   * CRITICAL: Transaction MUST be on worker side where actual inserts happen!
+   * Main thread and worker have SEPARATE SQLite connections.
+   */
+  async handleBatchInsertDocuments(e) {
+    return this.ensureInitialized(), this.withContext("batchInsertDocuments", async () => {
+      const { collection: t, documents: i, options: s } = e;
+      if (!i || i.length === 0)
+        return [];
+      if (i.length === 1)
+        return [await this.handleInsertDocumentWithEmbedding({
+          collection: t,
+          document: i[0],
+          options: s
+        })];
+      this.logger.info(`Starting batch insert of ${i.length} documents in collection ${t}`);
+      try {
+        await this.sqliteManager.exec("BEGIN IMMEDIATE TRANSACTION"), this.logger.debug("Worker transaction started");
+        const r = [];
+        for (const o of i) {
+          const a = await this.handleInsertDocumentWithEmbedding({
+            collection: t,
+            document: o,
+            options: s
+          });
+          r.push(a);
+        }
+        return await this.sqliteManager.exec("COMMIT"), this.logger.info(`Worker transaction committed: ${r.length} documents inserted`), r;
+      } catch (r) {
+        try {
+          await this.sqliteManager.exec("ROLLBACK"), this.logger.warn("Worker transaction rolled back due to error");
+        } catch (a) {
+          this.logger.error("Rollback failed", { error: a });
+        }
+        const o = r instanceof Error ? r.message : String(r);
+        throw new Error(`Batch insert failed (rolled back): ${o}`);
+      }
     });
   }
   async handleGenerateEmbedding(e) {

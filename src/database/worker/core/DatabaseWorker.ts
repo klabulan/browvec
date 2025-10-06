@@ -173,6 +173,7 @@ export class DatabaseWorker {
 
     // Document operations with embedding support
     this.rpcHandler.register('insertDocumentWithEmbedding', this.handleInsertDocumentWithEmbedding.bind(this));
+    this.rpcHandler.register('batchInsertDocuments', this.handleBatchInsertDocuments.bind(this));
 
     // Embedding generation operations
     this.rpcHandler.register('generateEmbedding', this.handleGenerateEmbedding.bind(this));
@@ -503,6 +504,85 @@ export class DatabaseWorker {
 
       // STEP 6: Return accurate result
       return { id: documentId, embeddingGenerated: false };
+    });
+  }
+
+  /**
+   * Batch insert documents with WORKER-SIDE transaction management
+   *
+   * CRITICAL: Transaction MUST be on worker side where actual inserts happen!
+   * Main thread and worker have SEPARATE SQLite connections.
+   */
+  private async handleBatchInsertDocuments(params: {
+    collection: string;
+    documents: Array<{
+      id?: string;
+      title?: string;
+      content: string;
+      metadata?: Record<string, any>;
+    }>;
+    options?: {
+      generateEmbedding?: boolean;
+      embeddingOptions?: any;
+    };
+  }): Promise<Array<{ id: string; embeddingGenerated: boolean }>> {
+    this.ensureInitialized();
+
+    return this.withContext('batchInsertDocuments', async () => {
+      const { collection, documents, options } = params;
+
+      if (!documents || documents.length === 0) {
+        return [];
+      }
+
+      // Single document - no transaction overhead needed
+      if (documents.length === 1) {
+        const result = await this.handleInsertDocumentWithEmbedding({
+          collection,
+          document: documents[0],
+          options
+        });
+        return [result];
+      }
+
+      // Multiple documents - use transaction IN WORKER CONTEXT
+      this.logger.info(`Starting batch insert of ${documents.length} documents in collection ${collection}`);
+
+      try {
+        // BEGIN TRANSACTION on WORKER's SQLite connection
+        await this.sqliteManager.exec('BEGIN IMMEDIATE TRANSACTION');
+        this.logger.debug('Worker transaction started');
+
+        const results: Array<{ id: string; embeddingGenerated: boolean }> = [];
+
+        // Insert all documents within the SAME transaction
+        for (const document of documents) {
+          const result = await this.handleInsertDocumentWithEmbedding({
+            collection,
+            document,
+            options
+          });
+          results.push(result);
+        }
+
+        // COMMIT on WORKER's SQLite connection
+        await this.sqliteManager.exec('COMMIT');
+        this.logger.info(`Worker transaction committed: ${results.length} documents inserted`);
+
+        return results;
+
+      } catch (error) {
+        // ROLLBACK on WORKER's SQLite connection
+        try {
+          await this.sqliteManager.exec('ROLLBACK');
+          this.logger.warn('Worker transaction rolled back due to error');
+        } catch (rollbackError) {
+          this.logger.error('Rollback failed', { error: rollbackError });
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Batch insert failed (rolled back): ${message}`);
+      }
     });
   }
 

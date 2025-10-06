@@ -1,5 +1,5 @@
-import { c as B, V as C, E as M, p as T, g as H, T as W, C as R, M as x, a as P } from "./ProviderFactory-BqrsaSK-.mjs";
-import { A as pe, B as ye, k as ve, r as Ce, O as Se, e as be, s as Me, P as Ee, Q as xe, h as Ae, b as Te, D as Re, W as Pe, d as Ie, m as ke, f as De, l as Le, j as ze, q as _e, o as Oe, n as $e, i as Be, v as He } from "./ProviderFactory-BqrsaSK-.mjs";
+import { c as B, V as C, E as M, p as T, g as H, T as W, C as R, M as x, a as P } from "./ProviderFactory-3B-jCMm2.mjs";
+import { A as pe, B as ye, k as ve, r as Ce, O as Se, e as be, s as Me, P as Ee, Q as xe, h as Ae, b as Te, D as Re, W as Pe, d as Ie, m as ke, f as De, l as Le, j as ze, q as _e, o as Oe, n as $e, i as Be, v as He } from "./ProviderFactory-3B-jCMm2.mjs";
 class I extends Error {
   constructor(e, t) {
     super(e), this.code = t, this.name = "SQLError";
@@ -919,10 +919,13 @@ class E {
   /**
    * Batch insert multiple documents with automatic transaction management
    *
-   * Wraps all inserts in a single transaction for:
+   * FIXED: Transaction now handled on worker side where inserts actually happen!
+   *
+   * Benefits:
    * - Reliability: Prevents FTS5 lock contention errors
    * - Performance: 10-100x faster than sequential inserts
    * - Atomicity: All documents inserted or none (rollback on error)
+   * - Correctness: Transaction on same connection as inserts
    *
    * @example
    * ```typescript
@@ -944,33 +947,11 @@ class E {
       throw new o("Database is not open");
     if (!this.workerRPC)
       throw new o("Worker not available");
-    if (!e.documents || e.documents.length === 0)
-      return [];
-    if (e.documents.length === 1)
-      return [await this.insertDocumentWithEmbedding({
-        collection: e.collection,
-        document: e.documents[0],
-        options: e.options
-      })];
     try {
-      await this.execAsync("BEGIN IMMEDIATE TRANSACTION");
-      const t = [];
-      for (const s of e.documents) {
-        const r = await this.insertDocumentWithEmbedding({
-          collection: e.collection,
-          document: s,
-          options: e.options
-        });
-        t.push(r);
-      }
-      return await this.execAsync("COMMIT"), t;
+      return await this.workerRPC.batchInsertDocuments(e);
     } catch (t) {
-      try {
-        await this.execAsync("ROLLBACK");
-      } catch {
-      }
       const s = t instanceof Error ? t.message : String(t);
-      throw new o(`Batch insert failed (rolled back): ${s}`);
+      throw new o(`Batch insert failed: ${s}`);
     }
   }
   /**
