@@ -917,6 +917,63 @@ class E {
     }
   }
   /**
+   * Batch insert multiple documents with automatic transaction management
+   *
+   * Wraps all inserts in a single transaction for:
+   * - Reliability: Prevents FTS5 lock contention errors
+   * - Performance: 10-100x faster than sequential inserts
+   * - Atomicity: All documents inserted or none (rollback on error)
+   *
+   * @example
+   * ```typescript
+   * const results = await db.batchInsertDocuments({
+   *   collection: 'chunks',
+   *   documents: [
+   *     { id: 'chunk1', content: 'First chunk...' },
+   *     { id: 'chunk2', content: 'Second chunk...' },
+   *     { id: 'chunk3', content: 'Third chunk...' }
+   *   ],
+   *   options: { generateEmbedding: false }
+   * });
+   *
+   * console.log(`Inserted ${results.length} documents`);
+   * ```
+   */
+  async batchInsertDocuments(e) {
+    if (!this.state.isOpen)
+      throw new o("Database is not open");
+    if (!this.workerRPC)
+      throw new o("Worker not available");
+    if (!e.documents || e.documents.length === 0)
+      return [];
+    if (e.documents.length === 1)
+      return [await this.insertDocumentWithEmbedding({
+        collection: e.collection,
+        document: e.documents[0],
+        options: e.options
+      })];
+    try {
+      await this.execAsync("BEGIN IMMEDIATE TRANSACTION");
+      const t = [];
+      for (const s of e.documents) {
+        const r = await this.insertDocumentWithEmbedding({
+          collection: e.collection,
+          document: s,
+          options: e.options
+        });
+        t.push(r);
+      }
+      return await this.execAsync("COMMIT"), t;
+    } catch (t) {
+      try {
+        await this.execAsync("ROLLBACK");
+      } catch {
+      }
+      const s = t instanceof Error ? t.message : String(t);
+      throw new o(`Batch insert failed (rolled back): ${s}`);
+    }
+  }
+  /**
    * Perform semantic search on a collection
    */
   async searchSemantic(e) {

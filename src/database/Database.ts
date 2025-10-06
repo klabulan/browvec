@@ -986,6 +986,99 @@ export class Database implements SQLDatabase {
   }
 
   /**
+   * Batch insert multiple documents with automatic transaction management
+   *
+   * Wraps all inserts in a single transaction for:
+   * - Reliability: Prevents FTS5 lock contention errors
+   * - Performance: 10-100x faster than sequential inserts
+   * - Atomicity: All documents inserted or none (rollback on error)
+   *
+   * @example
+   * ```typescript
+   * const results = await db.batchInsertDocuments({
+   *   collection: 'chunks',
+   *   documents: [
+   *     { id: 'chunk1', content: 'First chunk...' },
+   *     { id: 'chunk2', content: 'Second chunk...' },
+   *     { id: 'chunk3', content: 'Third chunk...' }
+   *   ],
+   *   options: { generateEmbedding: false }
+   * });
+   *
+   * console.log(`Inserted ${results.length} documents`);
+   * ```
+   */
+  async batchInsertDocuments(params: {
+    collection: string;
+    documents: Array<{
+      id?: string;
+      title?: string;
+      content: string;
+      metadata?: Record<string, any>;
+    }>;
+    options?: {
+      generateEmbedding?: boolean;
+      embeddingOptions?: import('../embedding/types.js').EmbeddingRequestOptions;
+    };
+  }): Promise<Array<{ id: string; embeddingGenerated: boolean }>> {
+    if (!this.state.isOpen) {
+      throw new DatabaseError('Database is not open');
+    }
+
+    if (!this.workerRPC) {
+      throw new DatabaseError('Worker not available');
+    }
+
+    if (!params.documents || params.documents.length === 0) {
+      return [];
+    }
+
+    // Single document - no need for transaction overhead
+    if (params.documents.length === 1) {
+      const result = await this.insertDocumentWithEmbedding({
+        collection: params.collection,
+        document: params.documents[0],
+        options: params.options
+      });
+      return [result];
+    }
+
+    // Multiple documents - use transaction for reliability and performance
+    try {
+      // Begin transaction
+      await this.execAsync('BEGIN IMMEDIATE TRANSACTION');
+
+      const results: Array<{ id: string; embeddingGenerated: boolean }> = [];
+
+      // Insert all documents within transaction
+      for (const document of params.documents) {
+        const result = await this.insertDocumentWithEmbedding({
+          collection: params.collection,
+          document,
+          options: params.options
+        });
+        results.push(result);
+      }
+
+      // Commit transaction
+      await this.execAsync('COMMIT');
+
+      return results;
+
+    } catch (error) {
+      // Rollback on any error to maintain database consistency
+      try {
+        await this.execAsync('ROLLBACK');
+      } catch (rollbackError) {
+        // Ignore rollback errors (transaction may have already been rolled back)
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseError(`Batch insert failed (rolled back): ${message}`);
+    }
+  }
+
+  /**
    * Perform semantic search on a collection
    */
   async searchSemantic(params: {

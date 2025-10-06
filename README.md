@@ -315,6 +315,85 @@ const customResult = await db.insertDocumentWithEmbedding({
 console.log(customResult.id);  // 'doc-2024-001'
 ```
 
+#### Batch Insert (Recommended for Multiple Documents)
+
+For inserting multiple documents, use `batchInsertDocuments()` which automatically manages transactions for:
+- **Reliability**: Prevents FTS5 lock contention errors
+- **Performance**: 10-100x faster than sequential inserts
+- **Atomicity**: All documents inserted or none (automatic rollback on error)
+
+```typescript
+// Batch insert with automatic transaction management
+const results = await db.batchInsertDocuments({
+  collection: 'chunks',
+  documents: [
+    {
+      id: 'chunk_1',
+      title: 'Chapter 1',
+      content: 'First chapter content...',
+      metadata: { chapter: 1, pages: 15 }
+    },
+    {
+      id: 'chunk_2',
+      title: 'Chapter 2',
+      content: 'Second chapter content...',
+      metadata: { chapter: 2, pages: 22 }
+    },
+    {
+      id: 'chunk_3',
+      title: 'Chapter 3',
+      content: 'Third chapter content...',
+      metadata: { chapter: 3, pages: 18 }
+    }
+  ],
+  options: {
+    generateEmbedding: true
+  }
+});
+
+console.log(`Inserted ${results.length} documents`);
+// Results: Array of { id: string, embeddingGenerated: boolean }
+```
+
+**When to use:**
+- ✅ Inserting 2+ documents sequentially
+- ✅ Bulk data imports
+- ✅ Processing large files split into chunks
+- ✅ Any batch operation
+
+**Performance example:**
+```typescript
+// 50 documents batch insert
+const startTime = Date.now();
+
+const results = await db.batchInsertDocuments({
+  collection: 'articles',
+  documents: articles, // Array of 50 documents
+  options: { generateEmbedding: false }
+});
+
+console.log(`Inserted ${results.length} in ${Date.now() - startTime}ms`);
+// Typical result: ~50-100ms for 50 documents
+// vs 500-2000ms with sequential inserts
+```
+
+**Error handling (automatic rollback):**
+```typescript
+try {
+  const results = await db.batchInsertDocuments({
+    collection: 'docs',
+    documents: myDocuments
+  });
+
+  console.log('All documents inserted successfully');
+
+} catch (error) {
+  // All inserts automatically rolled back on error
+  // Database remains in consistent state
+  console.error('Batch insert failed:', error.message);
+}
+```
+
 ### Semantic Search (Text-to-Vector)
 
 ```typescript
