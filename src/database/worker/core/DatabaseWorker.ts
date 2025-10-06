@@ -508,10 +508,69 @@ export class DatabaseWorker {
   }
 
   /**
+   * Calculate optimal batch size based on document sizes and available cache
+   *
+   * FTS5 defers index building until COMMIT, which can exceed memory limits.
+   * This calculates safe batch size to avoid "database full" on commit.
+   */
+  private async calculateOptimalBatchSize(documents: Array<any>): Promise<number> {
+    try {
+      // Get current cache size (in KB if negative, in pages if positive)
+      const cacheResult = await this.sqliteManager.select('PRAGMA cache_size');
+      const cacheSize = cacheResult.rows[0]?.cache_size || -64000; // Default 64MB
+
+      // Convert to KB
+      const cacheKB = cacheSize < 0 ? Math.abs(cacheSize) : cacheSize * 4; // 4KB page size
+
+      // Use 25% of cache for batch (leave room for FTS5 overhead, temp data, etc.)
+      const availableKB = cacheKB * 0.25;
+      const availableBytes = availableKB * 1024;
+
+      // Calculate average document size
+      let totalSize = 0;
+      const sampleSize = Math.min(10, documents.length); // Sample first 10 docs
+
+      for (let i = 0; i < sampleSize; i++) {
+        const doc = documents[i];
+        const contentSize = (doc.content || '').length;
+        const titleSize = (doc.title || '').length;
+        const metadataSize = JSON.stringify(doc.metadata || {}).length;
+
+        // FTS5 overhead: ~3-5x content size for tokenization + index
+        const ftsOverhead = contentSize * 4;
+
+        totalSize += contentSize + titleSize + metadataSize + ftsOverhead;
+      }
+
+      const avgDocSize = totalSize / sampleSize;
+
+      // Calculate how many docs fit in available memory
+      let batchSize = Math.floor(availableBytes / avgDocSize);
+
+      // Apply limits
+      const MIN_BATCH = 5;   // Always do at least 5
+      const MAX_BATCH = 50;  // Never more than 50 (safety)
+
+      batchSize = Math.max(MIN_BATCH, Math.min(MAX_BATCH, batchSize));
+
+      this.logger.debug(`Batch size calculation: cache=${cacheKB}KB, available=${availableKB.toFixed(0)}KB, avgDocSize=${(avgDocSize/1024).toFixed(1)}KB, batchSize=${batchSize}`);
+
+      return batchSize;
+
+    } catch (error) {
+      // Fallback to conservative batch size
+      this.logger.warn('Failed to calculate optimal batch size, using default: 10', { error });
+      return 10;
+    }
+  }
+
+  /**
    * Batch insert documents with WORKER-SIDE transaction management
    *
    * CRITICAL: Transaction MUST be on worker side where actual inserts happen!
    * Main thread and worker have SEPARATE SQLite connections.
+   *
+   * Uses adaptive batching to avoid FTS5 memory limits during COMMIT.
    */
   private async handleBatchInsertDocuments(params: {
     collection: string;
@@ -545,43 +604,59 @@ export class DatabaseWorker {
         return [result];
       }
 
-      // Multiple documents - use transaction IN WORKER CONTEXT
-      this.logger.info(`Starting batch insert of ${documents.length} documents in collection ${collection}`);
+      // Calculate optimal batch size based on document sizes and cache
+      const BATCH_SIZE = await this.calculateOptimalBatchSize(documents);
+      const results: Array<{ id: string; embeddingGenerated: boolean }> = [];
+
+      this.logger.info(`Starting batch insert of ${documents.length} documents in collection ${collection} (adaptive batch size: ${BATCH_SIZE})`);
 
       try {
-        // BEGIN TRANSACTION on WORKER's SQLite connection
-        await this.sqliteManager.exec('BEGIN IMMEDIATE TRANSACTION');
-        this.logger.debug('Worker transaction started');
+        // Process in batches to avoid FTS5 index memory issues during COMMIT
+        for (let i = 0; i < documents.length; i += BATCH_SIZE) {
+          const batch = documents.slice(i, i + BATCH_SIZE);
+          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+          const totalBatches = Math.ceil(documents.length / BATCH_SIZE);
 
-        const results: Array<{ id: string; embeddingGenerated: boolean }> = [];
+          this.logger.debug(`Processing batch ${batchNum}/${totalBatches} (${batch.length} docs)`);
 
-        // Insert all documents within the SAME transaction
-        for (const document of documents) {
-          const result = await this.handleInsertDocumentWithEmbedding({
-            collection,
-            document,
-            options
-          });
-          results.push(result);
+          // BEGIN TRANSACTION for this batch
+          await this.sqliteManager.exec('BEGIN IMMEDIATE TRANSACTION');
+
+          try {
+            // Insert all documents in this batch
+            for (const document of batch) {
+              const result = await this.handleInsertDocumentWithEmbedding({
+                collection,
+                document,
+                options
+              });
+              results.push(result);
+            }
+
+            // COMMIT this batch (FTS5 builds indexes here)
+            await this.sqliteManager.exec('COMMIT');
+            this.logger.debug(`Batch ${batchNum}/${totalBatches} committed (${results.length}/${documents.length} total)`);
+
+          } catch (batchError) {
+            // ROLLBACK this batch only
+            try {
+              await this.sqliteManager.exec('ROLLBACK');
+              this.logger.warn(`Batch ${batchNum} rolled back`);
+            } catch (rollbackError) {
+              // Ignore rollback errors (transaction may have auto-rolled back)
+            }
+
+            // Re-throw to stop further batches
+            throw batchError;
+          }
         }
 
-        // COMMIT on WORKER's SQLite connection
-        await this.sqliteManager.exec('COMMIT');
-        this.logger.info(`Worker transaction committed: ${results.length} documents inserted`);
-
+        this.logger.info(`All batches committed: ${results.length} documents inserted successfully`);
         return results;
 
       } catch (error) {
-        // ROLLBACK on WORKER's SQLite connection
-        try {
-          await this.sqliteManager.exec('ROLLBACK');
-          this.logger.warn('Worker transaction rolled back due to error');
-        } catch (rollbackError) {
-          this.logger.error('Rollback failed', { error: rollbackError });
-        }
-
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Batch insert failed (rolled back): ${message}`);
+        throw new Error(`Batch insert failed at document ${results.length + 1}/${documents.length}: ${message}`);
       }
     });
   }
