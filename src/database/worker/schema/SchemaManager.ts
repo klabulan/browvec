@@ -11,8 +11,10 @@ import { DatabaseError } from '../../../types/worker.js';
 
 /**
  * Database schema version
+ *
+ * Version 4: Added unicode61 tokenizer to FTS5 for proper Cyrillic/multilingual support
  */
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 /**
  * SchemaManager handles all database schema operations
@@ -68,7 +70,7 @@ export class SchemaManager {
       // Handle schema migrations if we have an older version
       if (currentSchemaVersion > 0 && currentSchemaVersion < CURRENT_SCHEMA_VERSION) {
         throw new DatabaseError(
-          `Database schema v${currentSchemaVersion} detected. Schema v3 requires database recreation. ` +
+          `Database schema v${currentSchemaVersion} detected. Schema v${CURRENT_SCHEMA_VERSION} requires database recreation. ` +
           `Please export your data, clear the database (db.clearAsync()), and reimport.`
         );
       }
@@ -229,10 +231,12 @@ export class SchemaManager {
       -- Full-text search table (EXTERNAL CONTENT - requires manual sync)
       -- NOTE: FTS5 sync is handled manually in DatabaseWorker to avoid
       --       memory exhaustion during batch transactions
+      -- TOKENIZER: unicode61 for proper Unicode support (Cyrillic, CJK, etc.)
       CREATE VIRTUAL TABLE IF NOT EXISTS fts_default USING fts5(
         title, content, metadata,
         content=docs_default,
-        content_rowid=rowid
+        content_rowid=rowid,
+        tokenize='unicode61'
       );
 
       -- Vector search table (384-dimensional dense vectors)

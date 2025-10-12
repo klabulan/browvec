@@ -509,7 +509,7 @@ class se {
     this.logger ? this.logger.log(e, t) : console.log(`[OPFSManager] ${e.toUpperCase()}: ${t}`);
   }
 }
-const I = 3;
+const T = 4;
 class re {
   constructor(e, t) {
     this.sqliteManager = e, this.logger = t;
@@ -526,16 +526,16 @@ class re {
         const i = await this.sqliteManager.select("SELECT MAX(schema_version) as version FROM collections");
         i.rows.length > 0 && i.rows[0].version !== null && (e = i.rows[0].version, this.log("info", `Current schema version: ${e}`));
         const s = await this.sqliteManager.select("SELECT COUNT(*) as count FROM docs_default");
-        if (t = s.rows.length > 0 && s.rows[0].count > 0, e === I && t) {
+        if (t = s.rows.length > 0 && s.rows[0].count > 0, e === T && t) {
           this.log("info", "Schema is up-to-date, skipping initialization");
           return;
         }
       } catch {
         this.log("debug", "Schema tables do not exist yet, proceeding with initialization");
       }
-      if (e > 0 && e < I)
+      if (e > 0 && e < T)
         throw new f(
-          `Database schema v${e} detected. Schema v3 requires database recreation. Please export your data, clear the database (db.clearAsync()), and reimport.`
+          `Database schema v${e} detected. Schema v${T} requires database recreation. Please export your data, clear the database (db.clearAsync()), and reimport.`
         );
       await this.validateAndCleanupSchema(), await this.createSchema(), this.log("info", "Schema initialized successfully");
     } catch (e) {
@@ -546,9 +546,9 @@ class re {
    * Migrate schema from older version to current version
    */
   async migrateSchema(e) {
-    this.log("info", `Migrating schema from version ${e} to version ${I}`);
+    this.log("info", `Migrating schema from version ${e} to version ${T}`);
     try {
-      this.log("info", `Successfully migrated from schema version ${e} to ${I}`);
+      this.log("info", `Successfully migrated from schema version ${e} to ${T}`);
     } catch (t) {
       throw new f(`Schema migration failed: ${t instanceof Error ? t.message : String(t)}`);
     }
@@ -648,10 +648,12 @@ class re {
       -- Full-text search table (EXTERNAL CONTENT - requires manual sync)
       -- NOTE: FTS5 sync is handled manually in DatabaseWorker to avoid
       --       memory exhaustion during batch transactions
+      -- TOKENIZER: unicode61 for proper Unicode support (Cyrillic, CJK, etc.)
       CREATE VIRTUAL TABLE IF NOT EXISTS fts_default USING fts5(
         title, content, metadata,
         content=docs_default,
-        content_rowid=rowid
+        content_rowid=rowid,
+        tokenize='unicode61'
       );
 
       -- Vector search table (384-dimensional dense vectors)
@@ -664,7 +666,7 @@ class re {
         name TEXT PRIMARY KEY,
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-        schema_version INTEGER DEFAULT ${I},
+        schema_version INTEGER DEFAULT ${T},
         config JSON,
         embedding_provider TEXT DEFAULT 'local',
         embedding_dimensions INTEGER DEFAULT 384,
@@ -756,14 +758,14 @@ class re {
         [
           e,
           JSON.stringify(r),
-          I,
+          T,
           o,
           o
         ]
       );
       await this.sqliteManager.exec(
         `INSERT INTO collections (name, config, schema_version, created_at, updated_at)
-         VALUES ('${e}', '${JSON.stringify(r)}', ${I}, ${o}, ${o})`
+         VALUES ('${e}', '${JSON.stringify(r)}', ${T}, ${o}, ${o})`
       ), this.log("info", `Collection '${e}' created with ${t} dimensions`);
     } catch (s) {
       throw new f(`Failed to create collection: ${s instanceof Error ? s.message : String(s)}`);
@@ -1806,9 +1808,9 @@ class F extends v {
     super(`LLM request timeout after ${t}ms`, "TIMEOUT", void 0, e), this.name = "LLMTimeoutError", Object.setPrototypeOf(this, F.prototype);
   }
 }
-class T extends v {
+class S extends v {
   constructor(e, t, i) {
-    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, T.prototype);
+    super(e, "PARSE_ERROR", void 0, t, i), this.name = "LLMParseError", Object.setPrototypeOf(this, S.prototype);
   }
 }
 function Ce(n) {
@@ -2026,7 +2028,7 @@ class Re extends z {
         provider: "openai"
       };
     } catch (t) {
-      throw new T(
+      throw new S(
         `Failed to parse OpenAI response: ${t.message}`,
         "openai",
         { data: e, error: t.message }
@@ -2090,7 +2092,7 @@ class Me extends z {
         provider: "anthropic"
       };
     } catch (t) {
-      throw new T(
+      throw new S(
         `Failed to parse Anthropic response: ${t.message}`,
         "anthropic",
         { data: e, error: t.message }
@@ -2161,7 +2163,7 @@ class $e extends z {
         provider: "openrouter"
       };
     } catch (t) {
-      throw new T(
+      throw new S(
         `Failed to parse OpenRouter response: ${t.message}`,
         "openrouter",
         { data: e, error: t.message }
@@ -2241,7 +2243,7 @@ class Le extends z {
         provider: "custom"
       };
     } catch (t) {
-      throw new T(
+      throw new S(
         `Failed to parse custom provider response: ${t.message}`,
         "custom",
         { data: e, error: t.message }
@@ -2344,7 +2346,7 @@ class Ae {
         error: o.message,
         query: e,
         provider: t.provider
-      }), o instanceof SyntaxError ? new T(
+      }), o instanceof SyntaxError ? new S(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2376,7 +2378,7 @@ class Ae {
         error: o.message,
         resultCount: e.length,
         provider: t.provider
-      }), o instanceof SyntaxError ? new T(
+      }), o instanceof SyntaxError ? new S(
         "Failed to parse LLM JSON response",
         t.provider,
         { error: o.message }
@@ -2782,8 +2784,8 @@ Check database logs for details.`
       let a = 0;
       const c = Math.min(10, e.length);
       for (let g = 0; g < c; g++) {
-        const m = e[g], u = (m.content || "").length, S = (m.title || "").length, H = JSON.stringify(m.metadata || {}).length, A = u * 4;
-        a += u + S + H + A;
+        const m = e[g], u = (m.content || "").length, _ = (m.title || "").length, H = JSON.stringify(m.metadata || {}).length, A = u * 4;
+        a += u + _ + H + A;
       }
       const d = a / c;
       let l = Math.floor(o / d);
@@ -2825,14 +2827,14 @@ Check database logs for details.`
       this.logger.info(`[BatchInsert] Batch size: ${l}, total batches: ${p}`), this.logger.info(`[BatchInsert] Starting batch insert of ${i.length} documents in collection ${t} (adaptive batch size: ${l})`);
       try {
         for (let g = 0; g < i.length; g += l) {
-          const m = i.slice(g, g + l), u = Math.floor(g / l) + 1, S = g, H = Math.min(g + l, i.length);
-          this.logger.info("[BatchInsert] ========================================"), this.logger.info(`[BatchInsert] Processing batch ${u}/${p}`), this.logger.info(`[BatchInsert] Batch range: documents ${S + 1}-${H} of ${i.length}`), this.logger.info(`[BatchInsert] Batch size: ${m.length} documents`);
-          const A = m.reduce((y, _) => y + (_.content || "").length, 0);
+          const m = i.slice(g, g + l), u = Math.floor(g / l) + 1, _ = g, H = Math.min(g + l, i.length);
+          this.logger.info("[BatchInsert] ========================================"), this.logger.info(`[BatchInsert] Processing batch ${u}/${p}`), this.logger.info(`[BatchInsert] Batch range: documents ${_ + 1}-${H} of ${i.length}`), this.logger.info(`[BatchInsert] Batch size: ${m.length} documents`);
+          const A = m.reduce((y, I) => y + (I.content || "").length, 0);
           this.logger.info(`[BatchInsert] Batch total content size: ${A} bytes (${(A / 1024).toFixed(1)}KB)`), this.logger.debug("[BatchInsert] Executing: BEGIN IMMEDIATE TRANSACTION"), await this.sqliteManager.exec("BEGIN IMMEDIATE TRANSACTION"), this.logger.info(`[BatchInsert] Transaction started for batch ${u}`);
           try {
             this.logger.info(`[BatchInsert] Inserting ${m.length} documents...`);
             for (let E = 0; E < m.length; E++) {
-              const q = m[E], $ = S + E;
+              const q = m[E], $ = _ + E;
               this.logger.debug(`[BatchInsert] Inserting document ${$ + 1}/${i.length} (${E + 1}/${m.length} in batch)`), this.logger.debug(`[BatchInsert] Document ID: ${q.id || "auto"}, content length: ${(q.content || "").length}`);
               const b = await this.handleInsertDocumentWithEmbedding({
                 collection: t,
@@ -2842,10 +2844,10 @@ Check database logs for details.`
               h.push(b), this.logger.debug(`[BatchInsert] Document inserted: ${b.id}`);
             }
             this.logger.info(`[BatchInsert] All ${m.length} documents inserted in batch ${u}, attempting COMMIT...`), this.logger.debug("[BatchInsert] Executing: COMMIT"), await this.sqliteManager.exec("COMMIT"), this.logger.info(`[BatchInsert] ✓ Batch ${u}/${p} COMMITTED successfully`), this.logger.info(`[BatchInsert] Progress: ${h.length}/${i.length} documents inserted`), this.logger.info(`[BatchInsert] Syncing FTS5 for batch ${u} (${m.length} documents)...`);
-            const y = 10, _ = Math.ceil(m.length / y);
+            const y = 10, I = Math.ceil(m.length / y);
             for (let E = 0; E < m.length; E += y) {
               const q = m.slice(E, E + y), $ = Math.floor(E / y) + 1;
-              this.logger.debug(`[BatchInsert] FTS5 sub-batch ${$}/${_} (${q.length} documents)`), await this.sqliteManager.exec("BEGIN TRANSACTION");
+              this.logger.debug(`[BatchInsert] FTS5 sub-batch ${$}/${I} (${q.length} documents)`), await this.sqliteManager.exec("BEGIN TRANSACTION");
               try {
                 for (const b of q) {
                   const Q = h.find((O) => {
@@ -2877,11 +2879,11 @@ Check database logs for details.`
             }
             this.logger.info(`[BatchInsert] ✓ FTS5 sync completed for batch ${u}`);
           } catch (y) {
-            this.logger.error(`[BatchInsert] ✗ Batch ${u} FAILED during insert or commit`), this.logger.error(`[BatchInsert] Error type: ${y instanceof Error ? y.constructor.name : typeof y}`), this.logger.error(`[BatchInsert] Error message: ${y instanceof Error ? y.message : String(y)}`), this.logger.error(`[BatchInsert] Documents inserted in failed batch before error: ${h.length - S}`);
+            this.logger.error(`[BatchInsert] ✗ Batch ${u} FAILED during insert or commit`), this.logger.error(`[BatchInsert] Error type: ${y instanceof Error ? y.constructor.name : typeof y}`), this.logger.error(`[BatchInsert] Error message: ${y instanceof Error ? y.message : String(y)}`), this.logger.error(`[BatchInsert] Documents inserted in failed batch before error: ${h.length - _}`);
             try {
               this.logger.debug("[BatchInsert] Attempting ROLLBACK..."), await this.sqliteManager.exec("ROLLBACK"), this.logger.info(`[BatchInsert] Transaction rolled back for batch ${u}`);
-            } catch (_) {
-              this.logger.warn(`[BatchInsert] ROLLBACK failed (transaction may have auto-rolled back): ${_ instanceof Error ? _.message : String(_)}`);
+            } catch (I) {
+              this.logger.warn(`[BatchInsert] ROLLBACK failed (transaction may have auto-rolled back): ${I instanceof Error ? I.message : String(I)}`);
             }
             throw this.logger.error(`[BatchInsert] Stopping batch processing due to error in batch ${u}`), y;
           }
@@ -3033,7 +3035,7 @@ Check database logs for details.`
         ];
       } else if (c.text) {
         this.logger.info("Performing text-only FTS search");
-        const u = c.text.trim().split(/\s+/), S = u.length > 1 ? u.join(" OR ") : c.text;
+        const u = c.text.trim().split(/\s+/), _ = u.length > 1 ? u.join(" OR ") : c.text;
         l = `
           SELECT d.id, d.title, d.content, d.metadata,
                  bm25(fts_default) as fts_score,
@@ -3044,7 +3046,7 @@ Check database logs for details.`
           WHERE d.collection = ? AND fts_default MATCH ?
           ORDER BY score DESC
           LIMIT ?
-        `, h = [s, S, r];
+        `, h = [s, _, r];
       } else if (c.vector) {
         this.logger.info("Performing vector-only search");
         const u = JSON.stringify(Array.from(c.vector));
