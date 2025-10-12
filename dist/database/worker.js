@@ -1,5 +1,5 @@
-import { D as u, b as D, O as x, E as M, p as U, t as B } from "../ProviderFactory-3B-jCMm2.mjs";
-const C = 0, z = 100, Q = 101, G = 1, W = 2, V = 3, j = 4, X = 5, H = -1;
+import { D as u, b as D, O as N, E as M, p as k, t as B } from "../ProviderFactory-3B-jCMm2.mjs";
+const I = 0, z = 100, Q = 101, G = 1, W = 2, V = 3, j = 4, X = 5, H = -1;
 class K {
   constructor(e) {
     this.logger = e, this.sqlite3 = null, this.dbPtr = 0, this.operationCount = 0;
@@ -30,7 +30,7 @@ class K {
     const t = this.sqlite3._malloc(e.length + 1);
     this.sqlite3.stringToUTF8(e, t, e.length + 1);
     const i = this.sqlite3._malloc(4), s = this.sqlite3._sqlite3_open(t, i);
-    if (this.sqlite3._free(t), s !== C) {
+    if (this.sqlite3._free(t), s !== I) {
       this.sqlite3._free(i);
       const r = this.sqlite3._sqlite3_errmsg && this.sqlite3._sqlite3_errmsg(0) || 0, o = r ? this.sqlite3.UTF8ToString(r) : `SQLite error code ${s}`;
       throw new u(`Failed to open database: ${o}`);
@@ -59,7 +59,7 @@ class K {
     if (!this.sqlite3._sqlite3_vec_init_manual)
       throw new D("sqlite-vec extension not available");
     const e = this.sqlite3._sqlite3_vec_init_manual(this.dbPtr);
-    if (e !== C)
+    if (e !== I)
       throw this.log("error", `sqlite-vec initialization failed with code: ${e}`), new D(`Failed to initialize sqlite-vec extension (code: ${e})`);
     this.log("info", "sqlite-vec extension initialized successfully");
     try {
@@ -81,7 +81,7 @@ class K {
       const c = this.sqlite3._malloc(e.length + 1);
       this.sqlite3.stringToUTF8(e, c, e.length + 1);
       const l = this.sqlite3._sqlite3_exec(this.dbPtr, c, 0, 0, 0);
-      if (this.sqlite3._free(c), l !== C) {
+      if (this.sqlite3._free(c), l !== I) {
         const h = this.sqlite3._sqlite3_errmsg(this.dbPtr), p = this.sqlite3.UTF8ToString(h);
         throw this.log("error", `[SQLExec] SQL execution failed: ${e} - Error: ${p}`), new u(`SQL execution failed: ${p}`);
       } else
@@ -91,7 +91,7 @@ class K {
     const r = this.sqlite3._malloc(e.length + 1);
     this.sqlite3.stringToUTF8(e, r, e.length + 1);
     const o = this.sqlite3._malloc(4), a = this.sqlite3._sqlite3_prepare_v2(this.dbPtr, r, -1, o, 0);
-    if (this.sqlite3._free(r), a !== C) {
+    if (this.sqlite3._free(r), a !== I) {
       this.sqlite3._free(o);
       const c = this.sqlite3._sqlite3_errmsg(this.dbPtr), l = this.sqlite3.UTF8ToString(c);
       throw this.log("error", `SQL preparation failed: ${e} - Error: ${l}`), new u(`Failed to prepare statement: ${l}`);
@@ -138,7 +138,7 @@ class K {
     const s = this.sqlite3._malloc(t.length + 1);
     this.sqlite3.stringToUTF8(t, s, t.length + 1);
     const r = this.sqlite3._malloc(4), o = this.sqlite3._sqlite3_prepare_v2(e, s, -1, r, 0);
-    if (this.sqlite3._free(s), o !== C) {
+    if (this.sqlite3._free(s), o !== I) {
       this.sqlite3._free(r);
       const c = this.sqlite3._sqlite3_errmsg(e), l = this.sqlite3.UTF8ToString(c);
       throw new u(`Failed to prepare statement: ${l}`);
@@ -265,7 +265,7 @@ class K {
         BigInt(e.length),
         0
       );
-      if (r !== C)
+      if (r !== I)
         throw new u(`Failed to deserialize database (SQLite error code: ${r})`);
       this.log("debug", `Database deserialized: ${e.length} bytes`);
     } finally {
@@ -353,7 +353,7 @@ class J {
         throw new Error("Empty database file");
       this.pendingDatabaseData = d, this.log("info", `Loaded ${d.length} bytes from OPFS: ${e}`);
     } catch (t) {
-      const i = new x(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
+      const i = new N(`Failed to load from OPFS: ${t instanceof Error ? t.message : String(t)}`);
       throw this.handleOPFSError(i, "load"), i;
     }
   }
@@ -458,7 +458,7 @@ class J {
     }
     if (t.available < e) {
       const i = (t.available / 1048576).toFixed(2), s = (e / (1024 * 1024)).toFixed(2);
-      throw new x(
+      throw new N(
         `Insufficient storage space. Available: ${i}MB, Required: ${s}MB. Please clear browser data or use database.export() to backup your data.`
       );
     }
@@ -651,6 +651,24 @@ class Y {
         content=docs_default,
         content_rowid=rowid
       );
+
+      -- Triggers to keep FTS5 in sync with docs_default
+      CREATE TRIGGER IF NOT EXISTS docs_fts_insert AFTER INSERT ON docs_default BEGIN
+        INSERT INTO fts_default(rowid, title, content, metadata)
+        VALUES (new.rowid, new.title, new.content, new.metadata);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS docs_fts_update AFTER UPDATE ON docs_default BEGIN
+        INSERT INTO fts_default(fts_default, rowid, title, content, metadata)
+        VALUES('delete', old.rowid, old.title, old.content, old.metadata);
+        INSERT INTO fts_default(rowid, title, content, metadata)
+        VALUES (new.rowid, new.title, new.content, new.metadata);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS docs_fts_delete AFTER DELETE ON docs_default BEGIN
+        INSERT INTO fts_default(fts_default, rowid, title, content, metadata)
+        VALUES('delete', old.rowid, old.title, old.content, old.metadata);
+      END;
 
       -- Vector search table (384-dimensional dense vectors)
       CREATE VIRTUAL TABLE IF NOT EXISTS vec_default_dense USING vec0(
@@ -1079,7 +1097,7 @@ class ee {
       const s = JSON.parse(t.rows[0].config || "{}").embeddingConfig;
       if (!s)
         throw new M(`Collection '${e}' has no embedding configuration`);
-      const r = await U.createProvider(s);
+      const r = await k.createProvider(s);
       if (typeof r.initialize == "function") {
         const o = {
           defaultProvider: s.provider,
@@ -1268,7 +1286,7 @@ class L extends Error {
     };
   }
 }
-class q {
+class C {
   static {
     this.errorHistory = [];
   }
@@ -1324,7 +1342,7 @@ class q {
       recoverable: !1,
       userMessage: "Vector search functionality is not available",
       suggestedAction: "Check if sqlite-vec extension is properly loaded"
-    } : e instanceof x ? {
+    } : e instanceof N ? {
       category: "opfs",
       severity: "medium",
       recoverable: !0,
@@ -1475,17 +1493,17 @@ class q {
 function te(n) {
   return n == null || typeof n == "string" || typeof n == "number" || n instanceof Uint8Array || n instanceof Float32Array;
 }
-function N(n) {
+function x(n) {
   return Array.isArray(n) && n.every(te);
 }
 function ie(n) {
   return typeof n == "object" && n !== null && typeof n.filename == "string" && (n.path === void 0 || typeof n.path == "string") && (n.vfs === void 0 || n.vfs === "opfs" || n.vfs === "opfs-sahpool") && (n.pragmas === void 0 || typeof n.pragmas == "object" && n.pragmas !== null);
 }
 function se(n) {
-  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || N(n.params));
+  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || x(n.params));
 }
 function re(n) {
-  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || N(n.params));
+  return typeof n == "object" && n !== null && typeof n.sql == "string" && (n.params === void 0 || x(n.params));
 }
 function ne(n) {
   return typeof n == "object" && n !== null && typeof n.tableName == "string" && Array.isArray(n.data) && n.data.every(
@@ -1532,7 +1550,7 @@ function pe(n) {
 function ye(n) {
   return typeof n == "number" && n >= 0 && n <= 1;
 }
-class I {
+class R {
   /**
    * Validate and sanitize parameters for a worker method
    */
@@ -1564,7 +1582,7 @@ class I {
    */
   static validateSQLParams(e, t) {
     if (e !== void 0) {
-      if (!N(e))
+      if (!x(e))
         throw new Error(`Invalid SQL parameters for ${t}: must be an array of SQL values`);
       return Array.isArray(e) ? e.forEach((i, s) => {
         if (typeof i == "string" && i.length > 1e5)
@@ -1618,7 +1636,7 @@ class Ee {
    * Execute an operation with error handling and context
    */
   async withContext(e, t, i) {
-    return q.withContext(
+    return C.withContext(
       e,
       this.getComponentName(),
       t,
@@ -1629,7 +1647,7 @@ class Ee {
    * Execute an operation with retry logic
    */
   async withRetry(e, t = 3, i = 1e3) {
-    return q.withRetry(e, {
+    return C.withRetry(e, {
       strategy: "retry",
       maxRetries: t,
       retryDelay: i,
@@ -1642,7 +1660,7 @@ class Ee {
    * Validate parameters using type guards
    */
   validateParams(e, t, i) {
-    return I.validate(e, t, `${this.getComponentName()}.${i}`);
+    return R.validate(e, t, `${this.getComponentName()}.${i}`);
   }
   /**
    * Ensure database is initialized before operations
@@ -1674,19 +1692,19 @@ class Ee {
    * Create standardized error response for RPC
    */
   createErrorResponse(e, t) {
-    return q.createErrorResponse(e, t);
+    return C.createErrorResponse(e, t);
   }
   /**
    * Check if error is recoverable
    */
   isRecoverableError(e) {
-    return q.isRecoverable(e);
+    return C.isRecoverable(e);
   }
   /**
    * Create user-friendly error message
    */
   createUserMessage(e) {
-    return q.createUserMessage(e);
+    return C.createUserMessage(e);
   }
   /**
    * Sanitize sensitive data from parameters for logging
@@ -1704,25 +1722,25 @@ class Ee {
    * Validate collection name with business rules
    */
   validateCollectionName(e, t) {
-    return I.validateCollectionName(e, `${this.getComponentName()}.${t}`);
+    return R.validateCollectionName(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Validate document ID with business rules
    */
   validateDocumentId(e, t) {
-    return I.validateDocumentId(e, `${this.getComponentName()}.${t}`);
+    return R.validateDocumentId(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Validate search limit parameter
    */
   validateLimit(e, t, i = 10) {
-    return I.validateLimit(e, `${this.getComponentName()}.${t}`, i);
+    return R.validateLimit(e, `${this.getComponentName()}.${t}`, i);
   }
   /**
    * Validate search threshold parameter
    */
   validateThreshold(e, t) {
-    return I.validateThreshold(e, `${this.getComponentName()}.${t}`);
+    return R.validateThreshold(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Convert Float32Array to database-compatible blob
@@ -1794,14 +1812,14 @@ class _ extends w {
     super(e, "INVALID_CONFIG", void 0, void 0, t), this.name = "LLMConfigError", Object.setPrototypeOf(this, _.prototype);
   }
 }
-class $ extends w {
+class A extends w {
   constructor(e, t, i, s) {
-    super(e, "PROVIDER_ERROR", t, i, s), this.name = "LLMProviderError", Object.setPrototypeOf(this, $.prototype);
+    super(e, "PROVIDER_ERROR", t, i, s), this.name = "LLMProviderError", Object.setPrototypeOf(this, A.prototype);
   }
 }
-class A extends w {
+class $ extends w {
   constructor(e, t) {
-    super(`LLM request timeout after ${t}ms`, "TIMEOUT", void 0, e), this.name = "LLMTimeoutError", Object.setPrototypeOf(this, A.prototype);
+    super(`LLM request timeout after ${t}ms`, "TIMEOUT", void 0, e), this.name = "LLMTimeoutError", Object.setPrototypeOf(this, $.prototype);
   }
 }
 class v extends w {
@@ -1853,7 +1871,7 @@ Format response as JSON:
   "confidence": 0.9
 }`;
 }
-class P {
+class O {
   constructor(e, t) {
     this.config = e, this.logger = t, this.validateConfig();
   }
@@ -1890,7 +1908,7 @@ class P {
       });
       if (clearTimeout(c), !l.ok) {
         const g = await l.json().catch(() => ({}));
-        throw new $(
+        throw new A(
           g.error?.message || l.statusText,
           l.status,
           this.config.provider,
@@ -1905,7 +1923,7 @@ class P {
         textLength: p.text.length
       }), p;
     } catch (l) {
-      throw clearTimeout(c), l.name === "AbortError" ? new A(this.config.provider, o) : l instanceof w ? l : new w(
+      throw clearTimeout(c), l.name === "AbortError" ? new $(this.config.provider, o) : l instanceof w ? l : new w(
         `LLM request failed: ${l.message}`,
         "NETWORK_ERROR",
         void 0,
@@ -1924,7 +1942,7 @@ class P {
       try {
         return await this.executeRequest(e, t);
       } catch (o) {
-        if (s = o, o instanceof _ || o instanceof A || o instanceof $ && o.statusCode && o.statusCode < 500)
+        if (s = o, o instanceof _ || o instanceof $ || o instanceof A && o.statusCode && o.statusCode < 500)
           throw o;
         if (r < i) {
           const a = Math.pow(2, r) * 1e3;
@@ -1965,7 +1983,7 @@ class P {
     return await this.executeRequestWithRetry(i, t);
   }
 }
-class Te extends P {
+class Te extends O {
   /**
    * Build OpenAI API endpoint URL
    */
@@ -2032,7 +2050,7 @@ class Te extends P {
     }
   }
 }
-class Se extends P {
+class Se extends O {
   /**
    * Build Anthropic API endpoint URL
    */
@@ -2096,7 +2114,7 @@ class Se extends P {
     }
   }
 }
-class _e extends P {
+class _e extends O {
   /**
    * Build OpenRouter API endpoint URL
    */
@@ -2167,7 +2185,7 @@ class _e extends P {
     }
   }
 }
-class Ce extends P {
+class Ie extends O {
   /**
    * Validate custom provider configuration
    */
@@ -2247,7 +2265,7 @@ class Ce extends P {
     }
   }
 }
-class qe {
+class Ce {
   constructor(e) {
     this.providerCache = /* @__PURE__ */ new Map(), this.logger = e;
   }
@@ -2271,7 +2289,7 @@ class qe {
       case "openrouter":
         return new _e(e, this.logger);
       case "custom":
-        return new Ce(e, this.logger);
+        return new Ie(e, this.logger);
       default:
         throw new w(
           `Unknown provider: ${e.provider}`,
@@ -2570,7 +2588,7 @@ class b {
     return new b({ component: e, level: t });
   }
 }
-class Ie {
+class Re {
   constructor() {
     this.isInitialized = !1, this.startTime = Date.now(), this.operationCount = 0, this.logger = new b({
       level: "debug",
@@ -2580,7 +2598,7 @@ class Ie {
       schemaManager: this.schemaManager,
       opfsManager: this.opfsManager,
       logger: this.logger
-    }), this.llmManager = new qe(this.logger), this.rpcHandler = new B({
+    }), this.llmManager = new Ce(this.logger), this.rpcHandler = new B({
       logLevel: "debug",
       operationTimeout: 3e4
     }), this.setupRPCHandlers(), this.logger.info("DatabaseWorker initialized with modular architecture + LLM support");
@@ -2760,8 +2778,8 @@ Check database logs for details.`
       let a = 0;
       const d = Math.min(10, e.length);
       for (let g = 0; g < d; g++) {
-        const f = e[g], m = (f.content || "").length, T = (f.title || "").length, O = JSON.stringify(f.metadata || {}).length, R = m * 4;
-        a += m + T + O + R;
+        const f = e[g], m = (f.content || "").length, T = (f.title || "").length, P = JSON.stringify(f.metadata || {}).length, q = m * 4;
+        a += m + T + P + q;
       }
       const c = a / d;
       let l = Math.floor(o / c);
@@ -2803,15 +2821,15 @@ Check database logs for details.`
       this.logger.info(`[BatchInsert] Batch size: ${l}, total batches: ${p}`), this.logger.info(`[BatchInsert] Starting batch insert of ${i.length} documents in collection ${t} (adaptive batch size: ${l})`);
       try {
         for (let g = 0; g < i.length; g += l) {
-          const f = i.slice(g, g + l), m = Math.floor(g / l) + 1, T = g, O = Math.min(g + l, i.length);
-          this.logger.info("[BatchInsert] ========================================"), this.logger.info(`[BatchInsert] Processing batch ${m}/${p}`), this.logger.info(`[BatchInsert] Batch range: documents ${T + 1}-${O} of ${i.length}`), this.logger.info(`[BatchInsert] Batch size: ${f.length} documents`);
-          const R = f.reduce((y, E) => y + (E.content || "").length, 0);
-          this.logger.info(`[BatchInsert] Batch total content size: ${R} bytes (${(R / 1024).toFixed(1)}KB)`), this.logger.debug("[BatchInsert] Executing: BEGIN IMMEDIATE TRANSACTION"), await this.sqliteManager.exec("BEGIN IMMEDIATE TRANSACTION"), this.logger.info(`[BatchInsert] Transaction started for batch ${m}`);
+          const f = i.slice(g, g + l), m = Math.floor(g / l) + 1, T = g, P = Math.min(g + l, i.length);
+          this.logger.info("[BatchInsert] ========================================"), this.logger.info(`[BatchInsert] Processing batch ${m}/${p}`), this.logger.info(`[BatchInsert] Batch range: documents ${T + 1}-${P} of ${i.length}`), this.logger.info(`[BatchInsert] Batch size: ${f.length} documents`);
+          const q = f.reduce((y, E) => y + (E.content || "").length, 0);
+          this.logger.info(`[BatchInsert] Batch total content size: ${q} bytes (${(q / 1024).toFixed(1)}KB)`), this.logger.debug("[BatchInsert] Executing: BEGIN IMMEDIATE TRANSACTION"), await this.sqliteManager.exec("BEGIN IMMEDIATE TRANSACTION"), this.logger.info(`[BatchInsert] Transaction started for batch ${m}`);
           try {
             this.logger.info(`[BatchInsert] Inserting ${f.length} documents...`);
             for (let y = 0; y < f.length; y++) {
-              const E = f[y], k = T + y;
-              this.logger.debug(`[BatchInsert] Inserting document ${k + 1}/${i.length} (${y + 1}/${f.length} in batch)`), this.logger.debug(`[BatchInsert] Document ID: ${E.id || "auto"}, content length: ${(E.content || "").length}`);
+              const E = f[y], U = T + y;
+              this.logger.debug(`[BatchInsert] Inserting document ${U + 1}/${i.length} (${y + 1}/${f.length} in batch)`), this.logger.debug(`[BatchInsert] Document ID: ${E.id || "auto"}, content length: ${(E.content || "").length}`);
               const F = await this.handleInsertDocumentWithEmbedding({
                 collection: t,
                 document: E,
@@ -3369,10 +3387,10 @@ Check database logs for details.`
       throw new Error("Database not initialized - call open() first");
   }
   async withContext(e, t) {
-    return q.withContext(e, "DatabaseWorker", t);
+    return C.withContext(e, "DatabaseWorker", t);
   }
 }
-new Ie();
+new Re();
 self.addEventListener("error", (n) => {
   console.error("[Worker] Unhandled error:", n.error);
 });
@@ -3380,6 +3398,6 @@ self.addEventListener("unhandledrejection", (n) => {
   console.error("[Worker] Unhandled promise rejection:", n.reason);
 });
 export {
-  Ie as DatabaseWorker
+  Re as DatabaseWorker
 };
 //# sourceMappingURL=worker.js.map

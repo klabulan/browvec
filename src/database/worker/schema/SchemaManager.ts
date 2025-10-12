@@ -233,6 +233,24 @@ export class SchemaManager {
         content_rowid=rowid
       );
 
+      -- Triggers to keep FTS5 in sync with docs_default
+      CREATE TRIGGER IF NOT EXISTS docs_fts_insert AFTER INSERT ON docs_default BEGIN
+        INSERT INTO fts_default(rowid, title, content, metadata)
+        VALUES (new.rowid, new.title, new.content, new.metadata);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS docs_fts_update AFTER UPDATE ON docs_default BEGIN
+        INSERT INTO fts_default(fts_default, rowid, title, content, metadata)
+        VALUES('delete', old.rowid, old.title, old.content, old.metadata);
+        INSERT INTO fts_default(rowid, title, content, metadata)
+        VALUES (new.rowid, new.title, new.content, new.metadata);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS docs_fts_delete AFTER DELETE ON docs_default BEGIN
+        INSERT INTO fts_default(fts_default, rowid, title, content, metadata)
+        VALUES('delete', old.rowid, old.title, old.content, old.metadata);
+      END;
+
       -- Vector search table (384-dimensional dense vectors)
       CREATE VIRTUAL TABLE IF NOT EXISTS vec_default_dense USING vec0(
         embedding float[384]
