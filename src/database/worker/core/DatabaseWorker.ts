@@ -436,7 +436,10 @@ export class DatabaseWorker {
     };
   }
 
-  private async handleInsertDocumentWithEmbedding(params: InsertDocumentWithEmbeddingParams): Promise<{ id: string; embeddingGenerated: boolean }> {
+  private async handleInsertDocumentWithEmbedding(
+    params: InsertDocumentWithEmbeddingParams,
+    skipFtsSync: boolean = false
+  ): Promise<{ id: string; embeddingGenerated: boolean }> {
     const validParams = this.validateParams(params, isInsertDocumentWithEmbeddingParams, 'handleInsertDocumentWithEmbedding');
     this.ensureInitialized();
 
@@ -519,6 +522,36 @@ export class DatabaseWorker {
       }
 
       this.logger.info(`Document inserted successfully: ${documentId} in collection ${validParams.collection}`);
+
+      // STEP 5.5: Manually sync FTS5 (no automatic triggers to avoid memory exhaustion)
+      // Skip FTS5 sync if requested (e.g., during batch processing)
+      if (!skipFtsSync) {
+        this.logger.debug(`[InsertDoc] Syncing FTS5 index for document: ${documentId}`);
+        try {
+          // Get rowid for FTS5
+          const rowidResult = await this.sqliteManager.select(
+            'SELECT rowid FROM docs_default WHERE id = ? AND collection = ?',
+            [documentId, validParams.collection]
+          );
+
+          if (rowidResult.rows.length > 0) {
+            const rowid = rowidResult.rows[0].rowid;
+
+            // Manually insert into FTS5
+            await this.sqliteManager.exec(
+              'INSERT INTO fts_default(rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
+              [rowid, validParams.document.title || '', validParams.document.content || '', metadataJson]
+            );
+
+            this.logger.debug(`[InsertDoc] ✓ FTS5 sync completed for document: ${documentId} (rowid: ${rowid})`);
+          }
+        } catch (ftsError) {
+          // Log FTS5 error but don't fail the insert - document is already in docs_default
+          this.logger.warn(`[InsertDoc] FTS5 sync failed for document ${documentId}, search may not work: ${ftsError instanceof Error ? ftsError.message : String(ftsError)}`);
+        }
+      } else {
+        this.logger.debug(`[InsertDoc] Skipping FTS5 sync for document: ${documentId} (batch mode)`);
+      }
 
       // STEP 6: Return accurate result
       return { id: documentId, embeddingGenerated: false };
@@ -676,7 +709,7 @@ export class DatabaseWorker {
           this.logger.info(`[BatchInsert] Transaction started for batch ${batchNum}`);
 
           try {
-            // Insert all documents in this batch
+            // Insert all documents in this batch (skip FTS5 sync to avoid memory exhaustion)
             this.logger.info(`[BatchInsert] Inserting ${batch.length} documents...`);
             for (let docIdx = 0; docIdx < batch.length; docIdx++) {
               const document = batch[docIdx];
@@ -689,7 +722,7 @@ export class DatabaseWorker {
                 collection,
                 document,
                 options
-              });
+              }, true); // Skip FTS5 sync during transaction
 
               results.push(result);
               this.logger.debug(`[BatchInsert] Document inserted: ${result.id}`);
@@ -697,12 +730,69 @@ export class DatabaseWorker {
 
             this.logger.info(`[BatchInsert] All ${batch.length} documents inserted in batch ${batchNum}, attempting COMMIT...`);
 
-            // COMMIT this batch (FTS5 builds indexes here)
+            // COMMIT this batch (documents only, NO FTS5 yet)
             this.logger.debug(`[BatchInsert] Executing: COMMIT`);
             await this.sqliteManager.exec('COMMIT');
 
             this.logger.info(`[BatchInsert] ✓ Batch ${batchNum}/${totalBatches} COMMITTED successfully`);
             this.logger.info(`[BatchInsert] Progress: ${results.length}/${documents.length} documents inserted`);
+
+            // STEP: Sync FTS5 separately in small batches (e.g., 10 at a time)
+            this.logger.info(`[BatchInsert] Syncing FTS5 for batch ${batchNum} (${batch.length} documents)...`);
+            const FTS_BATCH_SIZE = 10;
+            const ftsSubBatches = Math.ceil(batch.length / FTS_BATCH_SIZE);
+
+            for (let ftsIdx = 0; ftsIdx < batch.length; ftsIdx += FTS_BATCH_SIZE) {
+              const ftsSubBatch = batch.slice(ftsIdx, ftsIdx + FTS_BATCH_SIZE);
+              const ftsBatchNum = Math.floor(ftsIdx / FTS_BATCH_SIZE) + 1;
+
+              this.logger.debug(`[BatchInsert] FTS5 sub-batch ${ftsBatchNum}/${ftsSubBatches} (${ftsSubBatch.length} documents)`);
+
+              // Begin transaction for FTS5 batch
+              await this.sqliteManager.exec('BEGIN TRANSACTION');
+
+              try {
+                for (const document of ftsSubBatch) {
+                  // Get document ID (it was generated during insert)
+                  const docId = results.find(r => {
+                    const doc = document as any;
+                    return doc.id ? r.id === doc.id : true; // Match by ID if available
+                  })?.id;
+
+                  if (docId) {
+                    // Get rowid and sync to FTS5
+                    const rowidResult = await this.sqliteManager.select(
+                      'SELECT rowid FROM docs_default WHERE id = ? AND collection = ?',
+                      [docId, collection]
+                    );
+
+                    if (rowidResult.rows.length > 0) {
+                      const rowid = rowidResult.rows[0].rowid;
+                      const metadataJson = JSON.stringify(document.metadata || {});
+
+                      await this.sqliteManager.exec(
+                        'INSERT INTO fts_default(rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
+                        [rowid, document.title || '', document.content || '', metadataJson]
+                      );
+                    }
+                  }
+                }
+
+                // Commit FTS5 batch
+                await this.sqliteManager.exec('COMMIT');
+                this.logger.debug(`[BatchInsert] ✓ FTS5 sub-batch ${ftsBatchNum} committed`);
+
+              } catch (ftsError) {
+                // Rollback FTS5 batch on error
+                try {
+                  await this.sqliteManager.exec('ROLLBACK');
+                } catch {}
+                this.logger.warn(`[BatchInsert] FTS5 sync failed for sub-batch ${ftsBatchNum}: ${ftsError instanceof Error ? ftsError.message : String(ftsError)}`);
+                // Don't throw - FTS5 failure shouldn't fail the whole batch
+              }
+            }
+
+            this.logger.info(`[BatchInsert] ✓ FTS5 sync completed for batch ${batchNum}`);
 
           } catch (batchError) {
             this.logger.error(`[BatchInsert] ✗ Batch ${batchNum} FAILED during insert or commit`);

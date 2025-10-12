@@ -226,30 +226,14 @@ export class SchemaManager {
       -- Index for efficient collection filtering
       CREATE INDEX IF NOT EXISTS idx_docs_collection ON docs_default(collection);
 
-      -- Full-text search table
+      -- Full-text search table (EXTERNAL CONTENT - requires manual sync)
+      -- NOTE: FTS5 sync is handled manually in DatabaseWorker to avoid
+      --       memory exhaustion during batch transactions
       CREATE VIRTUAL TABLE IF NOT EXISTS fts_default USING fts5(
         title, content, metadata,
         content=docs_default,
         content_rowid=rowid
       );
-
-      -- Triggers to keep FTS5 in sync with docs_default
-      CREATE TRIGGER IF NOT EXISTS docs_fts_insert AFTER INSERT ON docs_default BEGIN
-        INSERT INTO fts_default(rowid, title, content, metadata)
-        VALUES (new.rowid, new.title, new.content, new.metadata);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS docs_fts_update AFTER UPDATE ON docs_default BEGIN
-        INSERT INTO fts_default(fts_default, rowid, title, content, metadata)
-        VALUES('delete', old.rowid, old.title, old.content, old.metadata);
-        INSERT INTO fts_default(rowid, title, content, metadata)
-        VALUES (new.rowid, new.title, new.content, new.metadata);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS docs_fts_delete AFTER DELETE ON docs_default BEGIN
-        INSERT INTO fts_default(fts_default, rowid, title, content, metadata)
-        VALUES('delete', old.rowid, old.title, old.content, old.metadata);
-      END;
 
       -- Vector search table (384-dimensional dense vectors)
       CREATE VIRTUAL TABLE IF NOT EXISTS vec_default_dense USING vec0(
