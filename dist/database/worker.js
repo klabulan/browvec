@@ -1268,7 +1268,7 @@ class $ extends Error {
     };
   }
 }
-class I {
+class q {
   static {
     this.errorHistory = [];
   }
@@ -1532,7 +1532,7 @@ function pe(n) {
 function ye(n) {
   return typeof n == "number" && n >= 0 && n <= 1;
 }
-class q {
+class I {
   /**
    * Validate and sanitize parameters for a worker method
    */
@@ -1618,7 +1618,7 @@ class Ee {
    * Execute an operation with error handling and context
    */
   async withContext(e, t, i) {
-    return I.withContext(
+    return q.withContext(
       e,
       this.getComponentName(),
       t,
@@ -1629,7 +1629,7 @@ class Ee {
    * Execute an operation with retry logic
    */
   async withRetry(e, t = 3, i = 1e3) {
-    return I.withRetry(e, {
+    return q.withRetry(e, {
       strategy: "retry",
       maxRetries: t,
       retryDelay: i,
@@ -1642,7 +1642,7 @@ class Ee {
    * Validate parameters using type guards
    */
   validateParams(e, t, i) {
-    return q.validate(e, t, `${this.getComponentName()}.${i}`);
+    return I.validate(e, t, `${this.getComponentName()}.${i}`);
   }
   /**
    * Ensure database is initialized before operations
@@ -1674,19 +1674,19 @@ class Ee {
    * Create standardized error response for RPC
    */
   createErrorResponse(e, t) {
-    return I.createErrorResponse(e, t);
+    return q.createErrorResponse(e, t);
   }
   /**
    * Check if error is recoverable
    */
   isRecoverableError(e) {
-    return I.isRecoverable(e);
+    return q.isRecoverable(e);
   }
   /**
    * Create user-friendly error message
    */
   createUserMessage(e) {
-    return I.createUserMessage(e);
+    return q.createUserMessage(e);
   }
   /**
    * Sanitize sensitive data from parameters for logging
@@ -1704,25 +1704,25 @@ class Ee {
    * Validate collection name with business rules
    */
   validateCollectionName(e, t) {
-    return q.validateCollectionName(e, `${this.getComponentName()}.${t}`);
+    return I.validateCollectionName(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Validate document ID with business rules
    */
   validateDocumentId(e, t) {
-    return q.validateDocumentId(e, `${this.getComponentName()}.${t}`);
+    return I.validateDocumentId(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Validate search limit parameter
    */
   validateLimit(e, t, i = 10) {
-    return q.validateLimit(e, `${this.getComponentName()}.${t}`, i);
+    return I.validateLimit(e, `${this.getComponentName()}.${t}`, i);
   }
   /**
    * Validate search threshold parameter
    */
   validateThreshold(e, t) {
-    return q.validateThreshold(e, `${this.getComponentName()}.${t}`);
+    return I.validateThreshold(e, `${this.getComponentName()}.${t}`);
   }
   /**
    * Convert Float32Array to database-compatible blob
@@ -1853,7 +1853,7 @@ Format response as JSON:
   "confidence": 0.9
 }`;
 }
-class O {
+class P {
   constructor(e, t) {
     this.config = e, this.logger = t, this.validateConfig();
   }
@@ -1965,7 +1965,7 @@ class O {
     return await this.executeRequestWithRetry(i, t);
   }
 }
-class Te extends O {
+class Te extends P {
   /**
    * Build OpenAI API endpoint URL
    */
@@ -2032,7 +2032,7 @@ class Te extends O {
     }
   }
 }
-class Se extends O {
+class Se extends P {
   /**
    * Build Anthropic API endpoint URL
    */
@@ -2096,7 +2096,7 @@ class Se extends O {
     }
   }
 }
-class _e extends O {
+class _e extends P {
   /**
    * Build OpenRouter API endpoint URL
    */
@@ -2167,7 +2167,7 @@ class _e extends O {
     }
   }
 }
-class Ce extends O {
+class Ce extends P {
   /**
    * Validate custom provider configuration
    */
@@ -2247,7 +2247,7 @@ class Ce extends O {
     }
   }
 }
-class Ie {
+class qe {
   constructor(e) {
     this.providerCache = /* @__PURE__ */ new Map(), this.logger = e;
   }
@@ -2570,7 +2570,7 @@ class b {
     return new b({ component: e, level: t });
   }
 }
-class qe {
+class Ie {
   constructor() {
     this.isInitialized = !1, this.startTime = Date.now(), this.operationCount = 0, this.logger = new b({
       level: "debug",
@@ -2580,7 +2580,7 @@ class qe {
       schemaManager: this.schemaManager,
       opfsManager: this.opfsManager,
       logger: this.logger
-    }), this.llmManager = new Ie(this.logger), this.rpcHandler = new B({
+    }), this.llmManager = new qe(this.logger), this.rpcHandler = new B({
       logLevel: "debug",
       operationTimeout: 3e4
     }), this.setupRPCHandlers(), this.logger.info("DatabaseWorker initialized with modular architecture + LLM support");
@@ -2600,14 +2600,14 @@ class qe {
       const i = t.filename || t.path || ":memory:";
       this.logger.info(`Opening database with filename: ${i}, vfs: ${t.vfs}`);
       let s = i;
-      i.startsWith("opfs:/") && (this.logger.info(`Initializing OPFS database: ${i}`), s = await this.opfsManager.initializeDatabase(i), this.logger.info(`OPFS database path resolved to: ${s}`)), this.logger.info(`Opening SQLite database at path: ${s}`), await this.sqliteManager.openDatabase(s), await this.sqliteManager.exec("PRAGMA temp_store = MEMORY"), await this.sqliteManager.exec("PRAGMA cache_size = -64000"), await this.sqliteManager.exec("PRAGMA synchronous = NORMAL"), await this.sqliteManager.exec("PRAGMA journal_mode = MEMORY"), this.logger.info("SQLite PRAGMAs configured for browser environment"), await this.sqliteManager.initVecExtension();
+      i.startsWith("opfs:/") && (this.logger.info(`Initializing OPFS database: ${i}`), s = await this.opfsManager.initializeDatabase(i), this.logger.info(`OPFS database path resolved to: ${s}`)), this.logger.info(`Opening SQLite database at path: ${s}`), await this.sqliteManager.openDatabase(s), await this.sqliteManager.exec("PRAGMA temp_store = MEMORY"), await this.sqliteManager.exec("PRAGMA cache_size = -8000"), await this.sqliteManager.exec("PRAGMA synchronous = NORMAL"), await this.sqliteManager.exec("PRAGMA journal_mode = DELETE"), this.logger.info("SQLite PRAGMAs configured for WASM environment (8MB cache, disk journal)"), await this.sqliteManager.initVecExtension();
       const r = this.opfsManager.getPendingDatabaseData();
       if (r) {
-        this.logger.info("Restoring database from OPFS data"), await this.sqliteManager.deserialize(r), this.opfsManager.clearPendingDatabaseData(), this.logger.info("Database restored from OPFS successfully");
+        this.logger.info("Restoring database from OPFS data"), await this.sqliteManager.deserialize(r), this.opfsManager.clearPendingDatabaseData(), this.logger.info("Database restored from OPFS successfully"), await this.sqliteManager.exec("PRAGMA cache_size = -8000"), await this.sqliteManager.exec("PRAGMA journal_mode = DELETE"), this.logger.info("PRAGMAs enforced after OPFS restore (8MB cache, disk journal)");
         try {
           await this.sqliteManager.exec("SELECT 1"), this.logger.info("Database connection verified after restore");
         } catch (o) {
-          this.logger.error("Database connection invalid after restore, reopening...", { error: o }), this.sqliteManager.closeDatabase(), await this.sqliteManager.openDatabase(s), await this.sqliteManager.exec("PRAGMA temp_store = MEMORY"), await this.sqliteManager.exec("PRAGMA cache_size = -64000"), await this.sqliteManager.exec("PRAGMA synchronous = NORMAL"), await this.sqliteManager.exec("PRAGMA journal_mode = MEMORY"), await this.sqliteManager.initVecExtension(), this.logger.info("Database connection re-established");
+          this.logger.error("Database connection invalid after restore, reopening...", { error: o }), this.sqliteManager.closeDatabase(), await this.sqliteManager.openDatabase(s), await this.sqliteManager.exec("PRAGMA temp_store = MEMORY"), await this.sqliteManager.exec("PRAGMA cache_size = -8000"), await this.sqliteManager.exec("PRAGMA synchronous = NORMAL"), await this.sqliteManager.exec("PRAGMA journal_mode = DELETE"), await this.sqliteManager.initVecExtension(), this.logger.info("Database connection re-established");
         }
       }
       i.startsWith("opfs:/") && this.opfsManager.startAutoSync(), this.isInitialized = !0, this.logger.info(`Database opened successfully: ${i}`);
@@ -2760,8 +2760,8 @@ Check database logs for details.`
       let a = 0;
       const d = Math.min(10, e.length);
       for (let g = 0; g < d; g++) {
-        const f = e[g], m = (f.content || "").length, T = (f.title || "").length, P = JSON.stringify(f.metadata || {}).length, R = m * 4;
-        a += m + T + P + R;
+        const f = e[g], m = (f.content || "").length, T = (f.title || "").length, O = JSON.stringify(f.metadata || {}).length, R = m * 4;
+        a += m + T + O + R;
       }
       const c = a / d;
       let l = Math.floor(o / c);
@@ -2803,8 +2803,8 @@ Check database logs for details.`
       this.logger.info(`[BatchInsert] Batch size: ${l}, total batches: ${p}`), this.logger.info(`[BatchInsert] Starting batch insert of ${i.length} documents in collection ${t} (adaptive batch size: ${l})`);
       try {
         for (let g = 0; g < i.length; g += l) {
-          const f = i.slice(g, g + l), m = Math.floor(g / l) + 1, T = g, P = Math.min(g + l, i.length);
-          this.logger.info("[BatchInsert] ========================================"), this.logger.info(`[BatchInsert] Processing batch ${m}/${p}`), this.logger.info(`[BatchInsert] Batch range: documents ${T + 1}-${P} of ${i.length}`), this.logger.info(`[BatchInsert] Batch size: ${f.length} documents`);
+          const f = i.slice(g, g + l), m = Math.floor(g / l) + 1, T = g, O = Math.min(g + l, i.length);
+          this.logger.info("[BatchInsert] ========================================"), this.logger.info(`[BatchInsert] Processing batch ${m}/${p}`), this.logger.info(`[BatchInsert] Batch range: documents ${T + 1}-${O} of ${i.length}`), this.logger.info(`[BatchInsert] Batch size: ${f.length} documents`);
           const R = f.reduce((y, E) => y + (E.content || "").length, 0);
           this.logger.info(`[BatchInsert] Batch total content size: ${R} bytes (${(R / 1024).toFixed(1)}KB)`), this.logger.debug("[BatchInsert] Executing: BEGIN IMMEDIATE TRANSACTION"), await this.sqliteManager.exec("BEGIN IMMEDIATE TRANSACTION"), this.logger.info(`[BatchInsert] Transaction started for batch ${m}`);
           try {
@@ -3365,10 +3365,10 @@ Check database logs for details.`
       throw new Error("Database not initialized - call open() first");
   }
   async withContext(e, t) {
-    return I.withContext(e, "DatabaseWorker", t);
+    return q.withContext(e, "DatabaseWorker", t);
   }
 }
-new qe();
+new Ie();
 self.addEventListener("error", (n) => {
   console.error("[Worker] Unhandled error:", n.error);
 });
@@ -3376,6 +3376,6 @@ self.addEventListener("unhandledrejection", (n) => {
   console.error("[Worker] Unhandled promise rejection:", n.reason);
 });
 export {
-  qe as DatabaseWorker
+  Ie as DatabaseWorker
 };
 //# sourceMappingURL=worker.js.map

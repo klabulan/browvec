@@ -246,12 +246,13 @@ export class DatabaseWorker {
       await this.sqliteManager.openDatabase(dbPath);
 
       // Configure SQLite for browser environment (prevent "database or disk is full" errors)
-      // Critical: FTS5 and vector operations require adequate memory/cache settings
+      // CRITICAL FIX: Reduced cache_size to fit in 16MB WASM heap (was -64000/64MB, causing malloc failures)
+      // CRITICAL FIX: Changed journal_mode to DELETE (disk-based) to reduce memory pressure
       await this.sqliteManager.exec('PRAGMA temp_store = MEMORY');          // Store temp tables in memory
-      await this.sqliteManager.exec('PRAGMA cache_size = -64000');          // 64MB cache (-ve = kibibytes)
+      await this.sqliteManager.exec('PRAGMA cache_size = -8000');           // 8MB cache (fits in 16MB heap)
       await this.sqliteManager.exec('PRAGMA synchronous = NORMAL');         // Balance performance/durability
-      await this.sqliteManager.exec('PRAGMA journal_mode = MEMORY');        // In-memory journal for WASM
-      this.logger.info('SQLite PRAGMAs configured for browser environment');
+      await this.sqliteManager.exec('PRAGMA journal_mode = DELETE');        // Disk-based journal (OPFS)
+      this.logger.info('SQLite PRAGMAs configured for WASM environment (8MB cache, disk journal)');
 
       // Initialize sqlite-vec extension
       await this.sqliteManager.initVecExtension();
@@ -264,6 +265,11 @@ export class DatabaseWorker {
         this.opfsManager.clearPendingDatabaseData();
         this.logger.info('Database restored from OPFS successfully');
 
+        // CRITICAL: Force correct PRAGMAs after restore (overrides old settings from OPFS)
+        await this.sqliteManager.exec('PRAGMA cache_size = -8000');           // 8MB cache
+        await this.sqliteManager.exec('PRAGMA journal_mode = DELETE');        // Disk-based journal
+        this.logger.info('PRAGMAs enforced after OPFS restore (8MB cache, disk journal)');
+
         // Verify database integrity after deserialization
         try {
           await this.sqliteManager.exec('SELECT 1');
@@ -274,11 +280,11 @@ export class DatabaseWorker {
           this.sqliteManager.closeDatabase();
           await this.sqliteManager.openDatabase(dbPath);
 
-          // Reapply PRAGMAs after reopening
+          // Reapply PRAGMAs after reopening (CRITICAL: Use same settings as initial open)
           await this.sqliteManager.exec('PRAGMA temp_store = MEMORY');
-          await this.sqliteManager.exec('PRAGMA cache_size = -64000');
+          await this.sqliteManager.exec('PRAGMA cache_size = -8000');           // 8MB cache (fits in 16MB heap)
           await this.sqliteManager.exec('PRAGMA synchronous = NORMAL');
-          await this.sqliteManager.exec('PRAGMA journal_mode = MEMORY');
+          await this.sqliteManager.exec('PRAGMA journal_mode = DELETE');        // Disk-based journal
 
           await this.sqliteManager.initVecExtension();
           this.logger.info('Database connection re-established');
