@@ -578,7 +578,8 @@ const smartSearch = await db.searchWithLLM('machine learning tutorials', {
   searchOptions: {
     limit: 20,
     minScore: 0.5,
-    collection: 'default'
+    collection: 'default',
+    enableEmbedding: true          // Enable hybrid search (text + vector)
   },
   llmOptions: {
     provider: 'openrouter',
@@ -645,6 +646,7 @@ interface SearchWithLLMOptions {
     minScore?: number;             // Minimum relevance score (0-1)
     collection?: string;           // Collection name (default: 'default')
     offset?: number;               // Skip N results (pagination)
+    enableEmbedding?: boolean;     // Auto-generate query embedding for hybrid search (default: false)
   };
 
   // LLM provider configuration
@@ -694,12 +696,16 @@ console.log(result.enhancedQuery.enhancedQuery);  // "machine learning documenta
 console.log(result.enhancedQuery.suggestions);     // ["ML tutorials", "deep learning guides", ...]
 ```
 
-**3. Full smart search (both features):**
+**3. Full smart search (both features + hybrid):**
 ```typescript
 const result = await db.searchWithLLM('AI', {
   enhanceQuery: true,
   summarizeResults: true,
-  searchOptions: { limit: 20, minScore: 0.6 },
+  searchOptions: {
+    limit: 20,
+    minScore: 0.6,
+    enableEmbedding: true          // Use hybrid search (text + vector)
+  },
   llmOptions: {
     provider: 'openrouter',
     model: 'openrouter/auto',     // Auto-select best model
