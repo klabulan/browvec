@@ -439,6 +439,7 @@ export class DatabaseWorker {
       const { validateDocument, generateDocumentId, sanitizeDocumentId } = await import('../utils/Validation.js');
       const { DocumentInsertError } = await import('../utils/Errors.js');
 
+      this.logger.debug(`[InsertDoc] Validating document for collection: ${validParams.collection}`);
       validateDocument(validParams.document, validParams.collection);
 
       // STEP 2: Generate or sanitize document ID
@@ -446,8 +447,13 @@ export class DatabaseWorker {
         ? sanitizeDocumentId(validParams.document.id)
         : generateDocumentId();
 
+      this.logger.debug(`[InsertDoc] Document ID: ${documentId}, content length: ${(validParams.document.content || '').length}`);
+
       // STEP 3: Prepare user metadata (NO INJECTION - pure user data)
       const userMetadata = validParams.document.metadata || {};
+      const metadataJson = JSON.stringify(userMetadata);
+
+      this.logger.debug(`[InsertDoc] Metadata size: ${metadataJson.length} bytes`);
 
       // STEP 4: Insert document with collection in separate column
       const sql = `
@@ -455,15 +461,19 @@ export class DatabaseWorker {
         VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
       `;
 
+      this.logger.debug(`[InsertDoc] Executing INSERT for document: ${documentId}`);
+
       try {
         await this.sqliteManager.exec(sql, [
           documentId,
           validParams.document.title || '',
           validParams.document.content || '',
           validParams.collection,           // ✅ Separate column for collection
-          JSON.stringify(userMetadata)       // ✅ Pure user metadata
+          metadataJson                       // ✅ Pure user metadata
         ]);
+        this.logger.debug(`[InsertDoc] ✓ INSERT completed for document: ${documentId}`);
       } catch (error) {
+        this.logger.error(`[InsertDoc] ✗ INSERT failed for document: ${documentId} - ${error instanceof Error ? error.message : String(error)}`);
         throw new DocumentInsertError(
           `Failed to insert document into collection '${validParams.collection}'`,
           {
@@ -477,6 +487,7 @@ export class DatabaseWorker {
       }
 
       // STEP 5: Verify insertion (post-insert verification)
+      this.logger.debug(`[InsertDoc] Verifying insertion for document: ${documentId}`);
       const verifyResult = await this.sqliteManager.select(
         'SELECT COUNT(*) as count FROM docs_default WHERE id = ? AND collection = ?',
         [documentId, validParams.collection]
@@ -484,6 +495,7 @@ export class DatabaseWorker {
 
       const insertedCount = verifyResult.rows[0]?.count || 0;
       if (insertedCount === 0) {
+        this.logger.error(`[InsertDoc] ✗ Verification failed: document ${documentId} not found in database`);
         throw new DocumentInsertError(
           `Document insertion verification failed: id='${documentId}' was not found in database`,
           {
@@ -590,72 +602,144 @@ export class DatabaseWorker {
     return this.withContext('batchInsertDocuments', async () => {
       const { collection, documents, options } = params;
 
+      this.logger.info(`[BatchInsert] === BATCH INSERT STARTED ===`);
+      this.logger.info(`[BatchInsert] Collection: ${collection}`);
+      this.logger.info(`[BatchInsert] Total documents: ${documents.length}`);
+      this.logger.info(`[BatchInsert] Options: ${JSON.stringify(options)}`);
+
       if (!documents || documents.length === 0) {
+        this.logger.warn(`[BatchInsert] No documents to insert, returning empty array`);
         return [];
       }
 
+      // Log document size statistics
+      const docSizes = documents.map(d => ({
+        contentLength: (d.content || '').length,
+        titleLength: (d.title || '').length,
+        metadataSize: JSON.stringify(d.metadata || {}).length,
+        id: d.id || 'auto-generated'
+      }));
+      const totalContentSize = docSizes.reduce((sum, d) => sum + d.contentLength, 0);
+      const avgContentSize = totalContentSize / documents.length;
+      const maxContentSize = Math.max(...docSizes.map(d => d.contentLength));
+      const minContentSize = Math.min(...docSizes.map(d => d.contentLength));
+
+      this.logger.info(`[BatchInsert] Document sizes: avg=${avgContentSize.toFixed(0)} bytes, min=${minContentSize}, max=${maxContentSize}, total=${totalContentSize} bytes`);
+
       // Single document - no transaction overhead needed
       if (documents.length === 1) {
+        this.logger.info(`[BatchInsert] Single document, using direct insert without batching`);
         const result = await this.handleInsertDocumentWithEmbedding({
           collection,
           document: documents[0],
           options
         });
+        this.logger.info(`[BatchInsert] === BATCH INSERT COMPLETED (1 document) ===`);
         return [result];
       }
 
       // Calculate optimal batch size based on document sizes and cache
+      this.logger.info(`[BatchInsert] Calculating optimal batch size...`);
       const BATCH_SIZE = await this.calculateOptimalBatchSize(documents);
       const results: Array<{ id: string; embeddingGenerated: boolean }> = [];
+      const totalBatches = Math.ceil(documents.length / BATCH_SIZE);
 
-      this.logger.info(`Starting batch insert of ${documents.length} documents in collection ${collection} (adaptive batch size: ${BATCH_SIZE})`);
+      this.logger.info(`[BatchInsert] Batch size: ${BATCH_SIZE}, total batches: ${totalBatches}`);
+      this.logger.info(`[BatchInsert] Starting batch insert of ${documents.length} documents in collection ${collection} (adaptive batch size: ${BATCH_SIZE})`);
 
       try {
         // Process in batches to avoid FTS5 index memory issues during COMMIT
         for (let i = 0; i < documents.length; i += BATCH_SIZE) {
           const batch = documents.slice(i, i + BATCH_SIZE);
           const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-          const totalBatches = Math.ceil(documents.length / BATCH_SIZE);
+          const batchStartIdx = i;
+          const batchEndIdx = Math.min(i + BATCH_SIZE, documents.length);
 
-          this.logger.debug(`Processing batch ${batchNum}/${totalBatches} (${batch.length} docs)`);
+          this.logger.info(`[BatchInsert] ========================================`);
+          this.logger.info(`[BatchInsert] Processing batch ${batchNum}/${totalBatches}`);
+          this.logger.info(`[BatchInsert] Batch range: documents ${batchStartIdx + 1}-${batchEndIdx} of ${documents.length}`);
+          this.logger.info(`[BatchInsert] Batch size: ${batch.length} documents`);
+
+          // Log batch content stats
+          const batchTotalSize = batch.reduce((sum, d) => sum + (d.content || '').length, 0);
+          this.logger.info(`[BatchInsert] Batch total content size: ${batchTotalSize} bytes (${(batchTotalSize/1024).toFixed(1)}KB)`);
 
           // BEGIN TRANSACTION for this batch
+          this.logger.debug(`[BatchInsert] Executing: BEGIN IMMEDIATE TRANSACTION`);
           await this.sqliteManager.exec('BEGIN IMMEDIATE TRANSACTION');
+          this.logger.info(`[BatchInsert] Transaction started for batch ${batchNum}`);
 
           try {
             // Insert all documents in this batch
-            for (const document of batch) {
+            this.logger.info(`[BatchInsert] Inserting ${batch.length} documents...`);
+            for (let docIdx = 0; docIdx < batch.length; docIdx++) {
+              const document = batch[docIdx];
+              const globalDocIdx = batchStartIdx + docIdx;
+
+              this.logger.debug(`[BatchInsert] Inserting document ${globalDocIdx + 1}/${documents.length} (${docIdx + 1}/${batch.length} in batch)`);
+              this.logger.debug(`[BatchInsert] Document ID: ${document.id || 'auto'}, content length: ${(document.content || '').length}`);
+
               const result = await this.handleInsertDocumentWithEmbedding({
                 collection,
                 document,
                 options
               });
+
               results.push(result);
+              this.logger.debug(`[BatchInsert] Document inserted: ${result.id}`);
             }
 
+            this.logger.info(`[BatchInsert] All ${batch.length} documents inserted in batch ${batchNum}, attempting COMMIT...`);
+
             // COMMIT this batch (FTS5 builds indexes here)
+            this.logger.debug(`[BatchInsert] Executing: COMMIT`);
             await this.sqliteManager.exec('COMMIT');
-            this.logger.debug(`Batch ${batchNum}/${totalBatches} committed (${results.length}/${documents.length} total)`);
+
+            this.logger.info(`[BatchInsert] ✓ Batch ${batchNum}/${totalBatches} COMMITTED successfully`);
+            this.logger.info(`[BatchInsert] Progress: ${results.length}/${documents.length} documents inserted`);
 
           } catch (batchError) {
+            this.logger.error(`[BatchInsert] ✗ Batch ${batchNum} FAILED during insert or commit`);
+            this.logger.error(`[BatchInsert] Error type: ${batchError instanceof Error ? batchError.constructor.name : typeof batchError}`);
+            this.logger.error(`[BatchInsert] Error message: ${batchError instanceof Error ? batchError.message : String(batchError)}`);
+            this.logger.error(`[BatchInsert] Documents inserted in failed batch before error: ${results.length - batchStartIdx}`);
+
             // ROLLBACK this batch only
             try {
+              this.logger.debug(`[BatchInsert] Attempting ROLLBACK...`);
               await this.sqliteManager.exec('ROLLBACK');
-              this.logger.warn(`Batch ${batchNum} rolled back`);
+              this.logger.info(`[BatchInsert] Transaction rolled back for batch ${batchNum}`);
             } catch (rollbackError) {
+              this.logger.warn(`[BatchInsert] ROLLBACK failed (transaction may have auto-rolled back): ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
               // Ignore rollback errors (transaction may have auto-rolled back)
             }
 
             // Re-throw to stop further batches
+            this.logger.error(`[BatchInsert] Stopping batch processing due to error in batch ${batchNum}`);
             throw batchError;
           }
         }
 
-        this.logger.info(`All batches committed: ${results.length} documents inserted successfully`);
+        this.logger.info(`[BatchInsert] ========================================`);
+        this.logger.info(`[BatchInsert] ✓ ALL BATCHES COMPLETED SUCCESSFULLY`);
+        this.logger.info(`[BatchInsert] Total documents inserted: ${results.length}/${documents.length}`);
+        this.logger.info(`[BatchInsert] === BATCH INSERT COMPLETED ===`);
         return results;
 
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const errorDetails = {
+          documentsAttempted: documents.length,
+          documentsInserted: results.length,
+          documentsFailed: documents.length - results.length,
+          failurePoint: `document ${results.length + 1}`,
+          errorMessage: message,
+          collection
+        };
+
+        this.logger.error(`[BatchInsert] === BATCH INSERT FAILED ===`);
+        this.logger.error(`[BatchInsert] Error details: ${JSON.stringify(errorDetails, null, 2)}`);
+
         throw new Error(`Batch insert failed at document ${results.length + 1}/${documents.length}: ${message}`);
       }
     });

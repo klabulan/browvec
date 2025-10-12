@@ -164,6 +164,18 @@ export class SQLiteManager {
 
     this.operationCount++;
 
+    // Special logging for transaction commands
+    const sqlTrimmed = sql.trim().toUpperCase();
+    const isTransactionCmd = sqlTrimmed.startsWith('BEGIN') ||
+                            sqlTrimmed.startsWith('COMMIT') ||
+                            sqlTrimmed.startsWith('ROLLBACK');
+
+    if (isTransactionCmd) {
+      this.log('info', `[SQLExec] Executing transaction command: ${sql}`);
+    } else {
+      this.log('debug', `[SQLExec] Executing: ${sql.substring(0, 100)}${sql.length > 100 ? '...' : ''}`);
+    }
+
     // If no parameters, use simple exec
     if (!params || params.length === 0) {
       const sqlPtr = this.sqlite3._malloc(sql.length + 1);
@@ -175,10 +187,14 @@ export class SQLiteManager {
       if (result !== SQLITE_OK) {
         const errorPtr = this.sqlite3._sqlite3_errmsg(this.dbPtr);
         const errorMsg = this.sqlite3.UTF8ToString(errorPtr);
-        this.log('error', `SQL execution failed: ${sql} - Error: ${errorMsg}`);
+        this.log('error', `[SQLExec] SQL execution failed: ${sql} - Error: ${errorMsg}`);
         throw new DatabaseError(`SQL execution failed: ${errorMsg}`);
       } else {
-        this.log('debug', `SQL executed successfully: ${sql}`);
+        if (isTransactionCmd) {
+          this.log('info', `[SQLExec] ✓ Transaction command completed: ${sql}`);
+        } else {
+          this.log('debug', `[SQLExec] ✓ SQL executed successfully`);
+        }
       }
       return;
     }
