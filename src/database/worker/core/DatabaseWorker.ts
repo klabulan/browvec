@@ -879,25 +879,26 @@ export class DatabaseWorker {
         searchSQL = `
           WITH fts_results AS (
             SELECT d.rowid, d.id, d.title, d.content, d.metadata,
-                   bm25(fts_${collection}) as fts_score,
-                   rank() OVER (ORDER BY bm25(fts_${collection})) as fts_rank
-            FROM docs_${collection} d
-            JOIN fts_${collection} f ON d.rowid = f.rowid
-            WHERE fts_${collection} MATCH ?
+                   bm25(fts_default) as fts_score,
+                   rank() OVER (ORDER BY bm25(fts_default)) as fts_rank
+            FROM docs_default d
+            JOIN fts_default f ON d.rowid = f.rowid
+            WHERE d.collection = ? AND fts_default MATCH ?
             LIMIT ?
           ),
           vec_results AS (
             SELECT d.rowid, d.id, d.title, d.content, d.metadata,
                    v.distance as vec_score,
                    rank() OVER (ORDER BY v.distance) as vec_rank
-            FROM docs_${collection} d
+            FROM docs_default d
             JOIN (
               SELECT rowid, distance
-              FROM vec_${collection}_dense
+              FROM vec_default_dense
               WHERE embedding MATCH ?
               ORDER BY distance
               LIMIT ?
             ) v ON d.rowid = v.rowid
+            WHERE d.collection = ?
           )
           SELECT DISTINCT
             COALESCE(f.id, v.id) as id,
@@ -920,8 +921,9 @@ export class DatabaseWorker {
 
         const vectorJson = JSON.stringify(Array.from(searchQuery.vector));
         searchParams = [
-          searchQuery.text, limit,
+          collection, searchQuery.text, limit,
           vectorJson, limit,
+          collection,
           fusionMethod,
           fusionWeights.fts, fusionWeights.vec,
           limit
@@ -936,17 +938,17 @@ export class DatabaseWorker {
 
         searchSQL = `
           SELECT d.id, d.title, d.content, d.metadata,
-                 bm25(fts_${collection}) as fts_score,
+                 bm25(fts_default) as fts_score,
                  0 as vec_score,
-                 -bm25(fts_${collection}) as score
-          FROM docs_${collection} d
-          JOIN fts_${collection} f ON d.rowid = f.rowid
-          WHERE fts_${collection} MATCH ?
+                 -bm25(fts_default) as score
+          FROM docs_default d
+          JOIN fts_default f ON d.rowid = f.rowid
+          WHERE d.collection = ? AND fts_default MATCH ?
           ORDER BY score DESC
           LIMIT ?
         `;
 
-        searchParams = [ftsQuery, limit];
+        searchParams = [collection, ftsQuery, limit];
       } else if (searchQuery.vector) {
         // Vector-only search
         this.logger.info('Performing vector-only search');
@@ -957,18 +959,19 @@ export class DatabaseWorker {
                  0 as fts_score,
                  v.distance as vec_score,
                  1.0/(1.0 + v.distance) as score
-          FROM docs_${collection} d
+          FROM docs_default d
           JOIN (
             SELECT rowid, distance
-            FROM vec_${collection}_dense
+            FROM vec_default_dense
             WHERE embedding MATCH ?
             ORDER BY distance
             LIMIT ?
           ) v ON d.rowid = v.rowid
+          WHERE d.collection = ?
           ORDER BY v.distance
         `;
 
-        searchParams = [vectorJson, limit];
+        searchParams = [vectorJson, limit, collection];
       } else {
         throw new Error('Search requires either text or vector query');
       }

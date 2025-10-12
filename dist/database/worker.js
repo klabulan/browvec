@@ -1237,9 +1237,9 @@ class ee {
     this.logger ? this.logger.log(e, t, i) : console.log(`[ProviderManager] ${e.toUpperCase()}: ${t}`, i || "");
   }
 }
-class $ extends Error {
+class L extends Error {
   constructor(e, t, i) {
-    super(e), this.name = "ContextualError", this.context = t, this.originalError = i, Error.captureStackTrace && Error.captureStackTrace(this, $);
+    super(e), this.name = "ContextualError", this.context = t, this.originalError = i, Error.captureStackTrace && Error.captureStackTrace(this, L);
   }
   /**
    * Get full error message with context
@@ -1288,7 +1288,7 @@ class q {
         params: s,
         timestamp: Date.now(),
         stackTrace: r instanceof Error ? r.stack : void 0
-      }, a = new $(
+      }, a = new L(
         r instanceof Error ? r.message : String(r),
         o,
         r instanceof Error ? r : void 0
@@ -1468,7 +1468,7 @@ class q {
       name: e.name,
       message: e.message,
       stack: e.stack,
-      context: e instanceof $ ? r(e.context) : void 0
+      context: e instanceof L ? r(e.context) : void 0
     };
   }
 }
@@ -1794,9 +1794,9 @@ class _ extends w {
     super(e, "INVALID_CONFIG", void 0, void 0, t), this.name = "LLMConfigError", Object.setPrototypeOf(this, _.prototype);
   }
 }
-class L extends w {
+class $ extends w {
   constructor(e, t, i, s) {
-    super(e, "PROVIDER_ERROR", t, i, s), this.name = "LLMProviderError", Object.setPrototypeOf(this, L.prototype);
+    super(e, "PROVIDER_ERROR", t, i, s), this.name = "LLMProviderError", Object.setPrototypeOf(this, $.prototype);
   }
 }
 class A extends w {
@@ -1890,7 +1890,7 @@ class P {
       });
       if (clearTimeout(c), !l.ok) {
         const g = await l.json().catch(() => ({}));
-        throw new L(
+        throw new $(
           g.error?.message || l.statusText,
           l.status,
           this.config.provider,
@@ -1924,7 +1924,7 @@ class P {
       try {
         return await this.executeRequest(e, t);
       } catch (o) {
-        if (s = o, o instanceof _ || o instanceof A || o instanceof L && o.statusCode && o.statusCode < 500)
+        if (s = o, o instanceof _ || o instanceof A || o instanceof $ && o.statusCode && o.statusCode < 500)
           throw o;
         if (r < i) {
           const a = Math.pow(2, r) * 1e3;
@@ -2923,25 +2923,26 @@ Check database logs for details.`
         this.logger.info("Performing hybrid text + vector search"), l = `
           WITH fts_results AS (
             SELECT d.rowid, d.id, d.title, d.content, d.metadata,
-                   bm25(fts_${s}) as fts_score,
-                   rank() OVER (ORDER BY bm25(fts_${s})) as fts_rank
-            FROM docs_${s} d
-            JOIN fts_${s} f ON d.rowid = f.rowid
-            WHERE fts_${s} MATCH ?
+                   bm25(fts_default) as fts_score,
+                   rank() OVER (ORDER BY bm25(fts_default)) as fts_rank
+            FROM docs_default d
+            JOIN fts_default f ON d.rowid = f.rowid
+            WHERE d.collection = ? AND fts_default MATCH ?
             LIMIT ?
           ),
           vec_results AS (
             SELECT d.rowid, d.id, d.title, d.content, d.metadata,
                    v.distance as vec_score,
                    rank() OVER (ORDER BY v.distance) as vec_rank
-            FROM docs_${s} d
+            FROM docs_default d
             JOIN (
               SELECT rowid, distance
-              FROM vec_${s}_dense
+              FROM vec_default_dense
               WHERE embedding MATCH ?
               ORDER BY distance
               LIMIT ?
             ) v ON d.rowid = v.rowid
+            WHERE d.collection = ?
           )
           SELECT DISTINCT
             COALESCE(f.id, v.id) as id,
@@ -2963,10 +2964,12 @@ Check database logs for details.`
         `;
         const m = JSON.stringify(Array.from(d.vector));
         h = [
+          s,
           d.text,
           r,
           m,
           r,
+          s,
           o,
           a.fts,
           a.vec,
@@ -2977,15 +2980,15 @@ Check database logs for details.`
         const m = d.text.trim().split(/\s+/), T = m.length > 1 ? m.join(" OR ") : d.text;
         l = `
           SELECT d.id, d.title, d.content, d.metadata,
-                 bm25(fts_${s}) as fts_score,
+                 bm25(fts_default) as fts_score,
                  0 as vec_score,
-                 -bm25(fts_${s}) as score
-          FROM docs_${s} d
-          JOIN fts_${s} f ON d.rowid = f.rowid
-          WHERE fts_${s} MATCH ?
+                 -bm25(fts_default) as score
+          FROM docs_default d
+          JOIN fts_default f ON d.rowid = f.rowid
+          WHERE d.collection = ? AND fts_default MATCH ?
           ORDER BY score DESC
           LIMIT ?
-        `, h = [T, r];
+        `, h = [s, T, r];
       } else if (d.vector) {
         this.logger.info("Performing vector-only search");
         const m = JSON.stringify(Array.from(d.vector));
@@ -2994,16 +2997,17 @@ Check database logs for details.`
                  0 as fts_score,
                  v.distance as vec_score,
                  1.0/(1.0 + v.distance) as score
-          FROM docs_${s} d
+          FROM docs_default d
           JOIN (
             SELECT rowid, distance
-            FROM vec_${s}_dense
+            FROM vec_default_dense
             WHERE embedding MATCH ?
             ORDER BY distance
             LIMIT ?
           ) v ON d.rowid = v.rowid
+          WHERE d.collection = ?
           ORDER BY v.distance
-        `, h = [m, r];
+        `, h = [m, r, s];
       } else
         throw new Error("Search requires either text or vector query");
       this.logger.info(`Executing search SQL with ${h.length} parameters`);
