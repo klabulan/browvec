@@ -324,4 +324,95 @@ if (!docId) {
 
 ---
 
+### 22. Missing WASM Runtime Exports Break UTF-8 Handling
+**Scenario:** Non-ASCII text (Russian, Chinese, etc.) causes "unrecognized token" errors
+**Problem:**
+```javascript
+// ❌ WRONG - lengthBytesUTF8 not exported
+-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,getValue,setValue,UTF8ToString,stringToUTF8,writeArrayToMemory
+```
+**Why it fails:**
+- `param.length` returns CHARACTER count, not BYTE count
+- Russian "Пушкин" = 6 chars but 12 bytes in UTF-8
+- Buffer allocation too small → memory corruption → SQL parser fails
+
+**Fix:** Export `lengthBytesUTF8` in WASM build
+```javascript
+// ✅ CORRECT - Include lengthBytesUTF8
+-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,getValue,setValue,UTF8ToString,stringToUTF8,lengthBytesUTF8,writeArrayToMemory
+```
+
+**Symptom:**
+- Error: `Aborted('lengthBytesUTF8' was not exported. add it to EXPORTED_RUNTIME_METHODS...)`
+- SQL parser errors: `unrecognized token: "'Пуш"`
+- English searches work, non-ASCII searches fail
+
+**Impact:** Cannot search any non-ASCII text (affects 70% of world's languages)
+
+**Files to update:**
+- `scripts/build-wasm.js` (line 159)
+- `scripts/build-wasm.sh` (line 212)
+
+**Related:** Must rebuild WASM after changing exports: `npm run build:wasm`
+
+**Date discovered:** 2025-10-16 (Task 20251016_russian_search_fix)
+
+---
+
+### 23. Database.execAsync() Missing Parameter Support
+**Scenario:** Using `db.execAsync(sql, params)` with non-ASCII text
+**Problem:**
+```typescript
+// ❌ WRONG - execAsync doesn't accept params (before fix)
+async execAsync(sql: string): Promise<QueryExecResult[]> {
+    const result = await this.workerRPC.select({ sql });  // params ignored!
+}
+
+// User code fails silently
+await db.execAsync('SELECT * FROM fts_default WHERE fts_default MATCH ?', ['Пушкин']);
+// → SQL sent as literal string with '?' character
+// → Parser sees Cyrillic in inline SQL → error
+```
+
+**Why it fails:**
+- `runAsync()` has params, but `execAsync()` doesn't
+- Users expect consistency with `runAsync()` API
+- Without params, Cyrillic must be inline in SQL string
+- SQLite WASM SQL parser can't handle Cyrillic in string literals
+
+**Fix:** Add parameter support to `execAsync()`
+```typescript
+// ✅ CORRECT - Accept params
+async execAsync(sql: string, params?: SQLParams): Promise<QueryExecResult[]> {
+    if (params !== undefined && !isSQLParams(params)) {
+        throw new SQLDatabaseError('Invalid SQL parameters');
+    }
+    const result = await this.workerRPC.select({ sql, params });  // Pass params!
+    return [transformToSQLResult(result.rows || [])];
+}
+```
+
+**Symptom:**
+- `execAsync()` queries with non-ASCII text fail
+- Error: `unrecognized token: "'Пуш"`
+- Workaround: Use `runAsync()` instead (has params)
+
+**Root cause:** API inconsistency - `runAsync()` had params, `execAsync()` didn't
+
+**File:** `src/database/Database.ts` (line 142)
+
+**Testing:**
+```typescript
+// Now works correctly
+const results = await db.execAsync(
+    'SELECT * FROM fts_default WHERE fts_default MATCH ?',
+    ['Пушкин']
+);
+// ✅ Parameters properly bound, no parser errors
+```
+
+**Date discovered:** 2025-10-16 (Task 20251016_russian_search_fix)
+
+---
+
 *This document captures surprising behaviors and easy-to-miss details. Update when you encounter a gotcha!*

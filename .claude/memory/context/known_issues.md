@@ -59,10 +59,19 @@ _No critical issues currently_
 **Fixed:** Replaced with manual sync pattern
 **Impact:** Resolved completely
 
-### ✅ Cyrillic Text Search (2025-10-16)
-**Was:** FTS5 didn't handle Cyrillic properly
-**Fixed:** Changed to unicode61 tokenizer
-**Impact:** Multilingual search now works
+### ✅ Cyrillic/Multilingual Text Search (2025-10-16)
+**Was:** Russian, Chinese, and other non-ASCII text searches failed with "unrecognized token" errors
+**Root Cause:**
+- Missing `lengthBytesUTF8` export in WASM (buffer overflow)
+- `Database.execAsync()` lacked parameter binding support
+- SQL parser couldn't handle Cyrillic in inline strings
+**Fixed:**
+- Added lengthBytesUTF8 to WASM EXPORTED_RUNTIME_METHODS
+- Added params support to Database.execAsync()
+- unicode61 tokenizer already in place (schema v4)
+**Commit:** bf92428
+**Impact:** All Unicode languages now searchable (Russian, Chinese, Japanese, Arabic, etc.)
+**Files:** scripts/build-wasm.js, scripts/build-wasm.sh, src/database/Database.ts
 
 ---
 

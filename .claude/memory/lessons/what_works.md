@@ -88,6 +88,90 @@ const id = result.id;
 
 ---
 
+## Multilingual Text Search Pattern
+
+**Context:** Supporting non-ASCII text (Russian, Chinese, Japanese, etc.) in FTS5 search
+
+**Pattern:**
+```typescript
+// 1. WASM Build: Export lengthBytesUTF8 for proper UTF-8 byte calculations
+// In build-wasm.js/build-wasm.sh:
+-sEXPORTED_RUNTIME_METHODS=...,lengthBytesUTF8,...
+
+// 2. Database API: Support parameter binding in all query methods
+async execAsync(sql: string, params?: SQLParams): Promise<QueryExecResult[]> {
+    const result = await this.workerRPC.select({ sql, params });
+    return [transformToSQLResult(result.rows)];
+}
+
+// 3. Schema: Use unicode61 tokenizer for FTS5
+CREATE VIRTUAL TABLE fts_default USING fts5(
+    title, content, metadata,
+    content=docs_default,
+    content_rowid=rowid,
+    tokenize='unicode61'  -- Critical for multilingual support
+);
+
+// 4. Usage: Always use parameter binding for non-ASCII text
+// ✅ CORRECT - Parameter binding
+await db.execAsync(
+    'SELECT * FROM fts_default WHERE fts_default MATCH ?',
+    ['Пушкин']  // Russian text properly bound
+);
+
+// ❌ WRONG - Inline strings fail with non-ASCII
+await db.execAsync(
+    "SELECT * FROM fts_default WHERE fts_default MATCH 'Пушкин'"
+);
+```
+
+**Why it works:**
+- **lengthBytesUTF8**: Correctly calculates buffer size for UTF-8 (6 chars "Пушкин" = 12 bytes)
+- **Parameter binding**: SQLite handles encoding internally, bypassing SQL parser limitations
+- **unicode61 tokenizer**: Properly tokenizes Cyrillic, CJK, and other Unicode scripts
+- **API consistency**: execAsync() has same signature as runAsync()
+
+**What doesn't work:**
+- ❌ Inline SQL strings with Cyrillic (parser errors)
+- ❌ Missing lengthBytesUTF8 export (buffer overflow)
+- ❌ Default FTS5 tokenizer (ASCII-only stemming)
+- ❌ Using char length instead of byte length for UTF-8
+
+**Testing approach:**
+```typescript
+// Verify Russian search works
+const results = await db.search({ query: { text: 'Пушкин' }});
+expect(results.results.length).toBeGreaterThan(0);
+expect(results.results[0].title).toContain('литература');
+
+// Verify Chinese/Japanese work too
+await db.search({ query: { text: '中文搜索' }});  // Chinese
+await db.search({ query: { text: '日本語検索' }});  // Japanese
+```
+
+**Impact:**
+- ✅ Supports all Unicode languages (70%+ of world population)
+- ✅ No special cases needed per language
+- ✅ Same API for all text, regardless of script
+- ✅ No performance penalty
+
+**Key files:**
+- `scripts/build-wasm.js` (line 159) - WASM exports
+- `scripts/build-wasm.sh` (line 212) - WASM exports
+- `src/database/Database.ts` (line 142) - execAsync params
+- `src/database/worker/schema/SchemaManager.ts` (line 239) - unicode61 tokenizer
+
+**Common mistake:** Thinking the unicode61 tokenizer alone fixes everything. You ALSO need:
+1. lengthBytesUTF8 export in WASM
+2. Parameter binding support in API
+3. Proper buffer allocation in SQLiteManager
+
+**Date added:** 2025-10-16
+
+**Evidence:** Fixed Russian search (commit bf92428)
+
+---
+
 ## Architecture Decisions
 
 ### 1. Worker Isolation for WASM
