@@ -1,6 +1,6 @@
-import { c as B, V as C, E as M, p as T, g as H, T as W, C as R, M as x, a as P } from "./ProviderFactory-3B-jCMm2.mjs";
+import { c as B, V as C, E as M, p as R, g as H, T as W, C as P, M as x, a as I } from "./ProviderFactory-3B-jCMm2.mjs";
 import { A as pe, B as ye, k as ve, r as Ce, O as Se, e as be, s as Me, P as Ee, Q as xe, h as Ae, b as Te, D as Re, W as Pe, d as Ie, m as ke, f as De, l as Le, j as ze, q as _e, o as Oe, n as $e, i as Be, v as He } from "./ProviderFactory-3B-jCMm2.mjs";
-class I extends Error {
+class k extends Error {
   constructor(e, t) {
     super(e), this.code = t, this.name = "SQLError";
   }
@@ -10,7 +10,7 @@ class v extends Error {
     super(e), this.code = t, this.name = "SQLStatementError";
   }
 }
-class g extends Error {
+class u extends Error {
   constructor(e, t) {
     super(e), this.code = t, this.name = "SQLDatabaseError";
   }
@@ -18,7 +18,7 @@ class g extends Error {
 function D(c) {
   return c === null || typeof c == "number" || typeof c == "string" || c instanceof Uint8Array;
 }
-function k(c) {
+function T(c) {
   return c ? Array.isArray(c) ? c.every(D) : typeof c == "object" && c !== null ? Object.values(c).every(D) : !1 : !0;
 }
 function b(c) {
@@ -67,7 +67,7 @@ class O {
   bind(e) {
     if (this._finalized)
       throw new v("Cannot bind to finalized statement");
-    if (e !== void 0 && !k(e))
+    if (e !== void 0 && !T(e))
       throw new v("Invalid parameter types");
     return this.state.bound = !0, this.reset(), this._boundParams = e, !0;
   }
@@ -324,34 +324,39 @@ class E {
    */
   exec(e) {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     if (!b(e))
-      throw new g("Invalid SQL statement");
+      throw new u("Invalid SQL statement");
     try {
       return this._execSyncCompat(e);
     } catch (t) {
-      if (t instanceof I)
+      if (t instanceof k)
         throw t;
       const s = t instanceof Error ? t.message : String(t);
-      throw new g(`SQL execution failed: ${s}`);
+      throw new u(`SQL execution failed: ${s}`);
     }
   }
   /**
    * Execute SQL statement(s) asynchronously (enhanced API)
+   *
+   * CRITICAL: Supports parameter binding for non-ASCII text (Cyrillic, CJK, etc.)
+   * Always use parameter binding instead of inline SQL for non-ASCII strings!
    */
-  async execAsync(e) {
+  async execAsync(e, t) {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     if (!b(e))
-      throw new g("Invalid SQL statement");
+      throw new u("Invalid SQL statement");
+    if (t !== void 0 && !T(t))
+      throw new u("Invalid SQL parameters");
     if (!this.workerRPC)
-      throw new g("Worker not available");
+      throw new u("Worker not available");
     try {
-      const t = await this.workerRPC.select({ sql: e });
-      return [L(t.rows || [])];
-    } catch (t) {
-      const s = t instanceof Error ? t.message : String(t);
-      throw new g(`SQL execution failed: ${s}`);
+      const s = await this.workerRPC.select({ sql: e, params: t });
+      return [L(s.rows || [])];
+    } catch (s) {
+      const r = s instanceof Error ? s.message : String(s);
+      throw new u(`SQL execution failed: ${r}`);
     }
   }
   /**
@@ -359,18 +364,18 @@ class E {
    */
   run(e, t) {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     if (!b(e))
-      throw new g("Invalid SQL statement");
-    if (t !== void 0 && !k(t))
-      throw new g("Invalid SQL parameters");
+      throw new u("Invalid SQL statement");
+    if (t !== void 0 && !T(t))
+      throw new u("Invalid SQL parameters");
     try {
       return this._runSyncCompat(e, t), this;
     } catch (s) {
-      if (s instanceof I)
+      if (s instanceof k)
         throw s;
       const r = s instanceof Error ? s.message : String(s);
-      throw new g(`SQL execution failed: ${r}`);
+      throw new u(`SQL execution failed: ${r}`);
     }
   }
   /**
@@ -378,18 +383,18 @@ class E {
    */
   async runAsync(e, t) {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     if (!b(e))
-      throw new g("Invalid SQL statement");
-    if (t !== void 0 && !k(t))
-      throw new g("Invalid SQL parameters");
+      throw new u("Invalid SQL statement");
+    if (t !== void 0 && !T(t))
+      throw new u("Invalid SQL parameters");
     if (!this.workerRPC)
-      throw new g("Worker not available");
+      throw new u("Worker not available");
     try {
       return await this.workerRPC.exec({ sql: e, params: t }), this.rowsModified++, this;
     } catch (s) {
       const r = s instanceof Error ? s.message : String(s);
-      throw new g(`SQL execution failed: ${r}`);
+      throw new u(`SQL execution failed: ${r}`);
     }
   }
   /**
@@ -397,9 +402,9 @@ class E {
    */
   prepare(e) {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     if (!b(e))
-      throw new g("Invalid SQL statement");
+      throw new u("Invalid SQL statement");
     const t = new O(this, e);
     return this.activeStatements.add(t), t;
   }
@@ -414,14 +419,14 @@ class E {
    */
   export() {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     try {
       return this._exportSyncCompat();
     } catch (e) {
-      if (e instanceof I)
+      if (e instanceof k)
         throw e;
       const t = e instanceof Error ? e.message : String(e);
-      throw new g(`Database export failed: ${t}`);
+      throw new u(`Database export failed: ${t}`);
     }
   }
   /**
@@ -429,14 +434,14 @@ class E {
    */
   async exportAsync() {
     if (!this.state.isOpen)
-      throw new g("Database is not open");
+      throw new u("Database is not open");
     if (!this.workerRPC)
-      throw new g("Worker not available");
+      throw new u("Worker not available");
     try {
       return await this.workerRPC.export();
     } catch (e) {
       const t = e instanceof Error ? e.message : String(e);
-      throw new g(`Database export failed: ${t}`);
+      throw new u(`Database export failed: ${t}`);
     }
   }
   /**
@@ -490,7 +495,7 @@ class E {
       this._runSyncCompat(`SAVEPOINT ${t}`);
     } catch (s) {
       const r = s instanceof Error ? s.message : String(s);
-      throw new g(`Savepoint creation failed: ${r}`);
+      throw new u(`Savepoint creation failed: ${r}`);
     }
   }
   /**
@@ -502,7 +507,7 @@ class E {
       this._runSyncCompat(`RELEASE SAVEPOINT ${t}`);
     } catch (s) {
       const r = s instanceof Error ? s.message : String(s);
-      throw new g(`Savepoint release failed: ${r}`);
+      throw new u(`Savepoint release failed: ${r}`);
     }
   }
   /**
@@ -514,7 +519,7 @@ class E {
       this._runSyncCompat(`ROLLBACK TO SAVEPOINT ${t}`);
     } catch (s) {
       const r = s instanceof Error ? s.message : String(s);
-      throw new g(`Savepoint rollback failed: ${r}`);
+      throw new u(`Savepoint rollback failed: ${r}`);
     }
   }
   /**
@@ -522,14 +527,14 @@ class E {
    */
   create_function(e, t) {
     if (this.compatConfig.enableWarnings && console.warn("create_function is not supported in LocalRetrieve. Use SQL functions instead."), this.compatConfig.throwOnSyncLimitations)
-      throw new g("create_function is not supported in Worker-based SQLite");
+      throw new u("create_function is not supported in Worker-based SQLite");
   }
   /**
    * Create aggregate function (sql.js compatible stub)
    */
   create_aggregate(e, t) {
     if (this.compatConfig.enableWarnings && console.warn("create_aggregate is not supported in LocalRetrieve. Use SQL aggregate functions instead."), this.compatConfig.throwOnSyncLimitations)
-      throw new g("create_aggregate is not supported in Worker-based SQLite");
+      throw new u("create_aggregate is not supported in Worker-based SQLite");
   }
   /**
    * Perform hybrid search (LocalRetrieve extension)
@@ -1160,7 +1165,7 @@ Possible solutions:
    */
   _execSyncCompat(e) {
     if (this.compatConfig.enableWarnings && console.warn("SYNC/ASYNC COMPATIBILITY WARNING: Using synchronous API with async Worker. Consider using execAsync() for better performance."), this.compatConfig.throwOnSyncLimitations)
-      throw new g(
+      throw new u(
         `SYNC/ASYNC COMPATIBILITY ISSUE:
 Worker communication is inherently async. SQL executed successfully but cannot return synchronously.
 SOLUTIONS:
@@ -1171,17 +1176,17 @@ SOLUTIONS:
 This is a known limitation of browser worker architecture.`
       );
     if (!this.workerRPC)
-      throw new g("Worker not available");
+      throw new u("Worker not available");
     let t = !1, s = null, r = null;
     if (this.workerRPC.select({ sql: e }).then((i) => {
       s = i, t = !0;
     }).catch((i) => {
       r = i, t = !0;
     }), this.compatConfig.workerTimeout, !t)
-      throw new g("Query execution timeout in sync compatibility mode");
+      throw new u("Query execution timeout in sync compatibility mode");
     if (r) {
       const i = r instanceof Error ? r.message : String(r);
-      throw new g(`Query execution failed: ${i}`);
+      throw new u(`Query execution failed: ${i}`);
     }
     return [L(s?.rows || [])];
   }
@@ -1190,17 +1195,17 @@ This is a known limitation of browser worker architecture.`
    */
   _runSyncCompat(e, t) {
     if (this.compatConfig.enableWarnings && console.warn("SYNC/ASYNC COMPATIBILITY WARNING: Using synchronous API with async Worker. Consider using runAsync() for better performance."), !this.workerRPC)
-      throw new g("Worker not available");
+      throw new u("Worker not available");
     let s = !1, r = null;
     if (this.workerRPC.exec({ sql: e, params: t }).then(() => {
       this.rowsModified++, s = !0;
     }).catch((i) => {
       r = i, s = !0;
     }), this.compatConfig.workerTimeout, !s)
-      throw new g("Query execution timeout in sync compatibility mode");
+      throw new u("Query execution timeout in sync compatibility mode");
     if (r) {
       const i = r instanceof Error ? r.message : String(r);
-      throw new g(`Query execution failed: ${i}`);
+      throw new u(`Query execution failed: ${i}`);
     }
   }
   /**
@@ -1208,17 +1213,17 @@ This is a known limitation of browser worker architecture.`
    */
   _exportSyncCompat() {
     if (this.compatConfig.enableWarnings && console.warn("SYNC/ASYNC COMPATIBILITY WARNING: Using synchronous export with async Worker. Consider using exportAsync() for better performance."), !this.workerRPC)
-      throw new g("Worker not available");
+      throw new u("Worker not available");
     let e = !1, t = null, s = null;
     if (this.workerRPC.export().then((a) => {
       t = a, e = !0;
     }).catch((a) => {
       s = a, e = !0;
     }), this.compatConfig.workerTimeout, !e)
-      throw new g("Export timeout in sync compatibility mode");
+      throw new u("Export timeout in sync compatibility mode");
     if (s) {
       const a = s instanceof Error ? s.message : String(s);
-      throw new g(`Export failed: ${a}`);
+      throw new u(`Export failed: ${a}`);
     }
     return t || new Uint8Array(0);
   }
@@ -1234,7 +1239,7 @@ This is a known limitation of browser worker architecture.`
       e = s;
     }), e) {
       const s = e instanceof Error ? e.message : String(e);
-      throw new g(`Close failed: ${s}`);
+      throw new u(`Close failed: ${s}`);
     }
   }
   // Enhanced error handling with graceful degradation (Task 6.1)
@@ -1432,15 +1437,15 @@ class y {
       truncationIndicator: t.truncationIndicator
     });
     n = h.text;
-    const u = h.wasTruncated;
-    u && a.push("text_truncation");
+    const f = h.wasTruncated;
+    f && a.push("text_truncation");
     const m = n.length, d = Math.ceil(m / y.CHARS_PER_TOKEN), w = performance.now() - s;
-    return this.updateStatistics(r, m, w, u), {
+    return this.updateStatistics(r, m, w, f), {
       processedText: n,
       originalLength: r,
       processedLength: m,
       estimatedTokens: d,
-      wasTruncated: u,
+      wasTruncated: f,
       appliedOperations: a,
       metadata: i
     };
@@ -1528,7 +1533,7 @@ class y {
     }
     if (e.length <= h)
       return { text: e, wasTruncated: !1 };
-    const u = n ? l.length : 0, m = h - u;
+    const f = n ? l.length : 0, m = h - f;
     if (m <= 0)
       return { text: l, wasTruncated: !0 };
     let d;
@@ -1668,7 +1673,7 @@ class y {
     return e.replace(y.HTML_TAG_REGEX, " ").replace(y.HTML_ENTITY_REGEX, " ").replace(y.MULTIPLE_WHITESPACE_REGEX, " ").trim();
   }
 }
-class f {
+class g {
   static {
     this.hashCache = /* @__PURE__ */ new Map();
   }
@@ -1698,16 +1703,16 @@ class f {
       salt: a
     };
     r && (n.timestamp = Date.now());
-    const l = f.sortObjectKeys(n), h = JSON.stringify(l), u = `${s}:${h}`;
-    if (f.hashCache.has(u))
-      return f.hashCache.get(u);
+    const l = g.sortObjectKeys(n), h = JSON.stringify(l), f = `${s}:${h}`;
+    if (g.hashCache.has(f))
+      return g.hashCache.get(f);
     const d = {
-      hash: await f.hashString(h, s),
+      hash: await g.hashString(h, s),
       algorithm: s,
       timestamp: /* @__PURE__ */ new Date(),
       input: i ? l : void 0
     };
-    return f.addToHashCache(u, d), d;
+    return g.addToHashCache(f, d), d;
   }
   /**
    * Генерация хеша текста с учетом предобработки
@@ -1724,7 +1729,7 @@ class f {
         textPreprocessing: t
       }
     };
-    return f.generateCacheKey(r, s);
+    return g.generateCacheKey(r, s);
   }
   /**
    * Хеширование строки с использованием Web Crypto API
@@ -1735,12 +1740,12 @@ class f {
    */
   static async hashString(e, t = "SHA-256") {
     if (typeof crypto > "u" || !crypto.subtle)
-      return f.simpleHash(e);
+      return g.simpleHash(e);
     try {
       const r = new TextEncoder().encode(e), a = await crypto.subtle.digest(t, r);
       return Array.from(new Uint8Array(a)).map((n) => n.toString(16).padStart(2, "0")).join("");
     } catch (s) {
-      return console.warn("Web Crypto API failed, using simple hash:", s), f.simpleHash(e);
+      return console.warn("Web Crypto API failed, using simple hash:", s), g.simpleHash(e);
     }
   }
   /**
@@ -1765,7 +1770,7 @@ class f {
   static hashText(e, t = {}) {
     const s = t.algorithm === "simple" ? "simple" : "djb2";
     return {
-      hash: f.simpleHash(e),
+      hash: g.simpleHash(e),
       algorithm: s,
       timestamp: /* @__PURE__ */ new Date()
     };
@@ -1780,10 +1785,10 @@ class f {
     if (e === null || typeof e != "object")
       return e;
     if (Array.isArray(e))
-      return e.map((r) => f.sortObjectKeys(r));
+      return e.map((r) => g.sortObjectKeys(r));
     const t = Object.keys(e).sort(), s = {};
     for (const r of t)
-      s[r] = f.sortObjectKeys(e[r]);
+      s[r] = g.sortObjectKeys(e[r]);
     return s;
   }
   /**
@@ -1793,17 +1798,17 @@ class f {
    * @param result - Результат хеширования
    */
   static addToHashCache(e, t) {
-    if (f.hashCache.size >= f.MAX_HASH_CACHE_SIZE) {
-      const s = f.hashCache.keys().next().value;
-      s !== void 0 && f.hashCache.delete(s);
+    if (g.hashCache.size >= g.MAX_HASH_CACHE_SIZE) {
+      const s = g.hashCache.keys().next().value;
+      s !== void 0 && g.hashCache.delete(s);
     }
-    f.hashCache.set(e, t);
+    g.hashCache.set(e, t);
   }
   /**
    * Очистка кеша хешей
    */
   static clearHashCache() {
-    f.hashCache.clear();
+    g.hashCache.clear();
   }
   /**
    * Валидация размерностей эмбеддинга
@@ -1889,13 +1894,13 @@ class f {
     if (e instanceof Date)
       return new Date(e.getTime());
     if (e instanceof Array)
-      return e.map((t) => f.deepClone(t));
+      return e.map((t) => g.deepClone(t));
     if (e instanceof Float32Array)
       return new Float32Array(e);
     if (typeof e == "object") {
       const t = {};
       for (const s in e)
-        e.hasOwnProperty(s) && (t[s] = f.deepClone(e[s]));
+        e.hasOwnProperty(s) && (t[s] = g.deepClone(e[s]));
       return t;
     }
     return e;
@@ -1908,11 +1913,11 @@ class f {
    * @returns Объединенная конфигурация
    */
   static mergeConfigs(e, t) {
-    const s = f.deepClone(e);
+    const s = g.deepClone(e);
     for (const r in t)
       if (t.hasOwnProperty(r)) {
         const a = t[r];
-        a !== void 0 && (typeof a == "object" && !Array.isArray(a) && a !== null ? s[r] = f.mergeConfigs(
+        a !== void 0 && (typeof a == "object" && !Array.isArray(a) && a !== null ? s[r] = g.mergeConfigs(
           s[r] || {},
           a
         ) : s[r] = a);
@@ -2007,9 +2012,9 @@ class f {
    */
   static async getBrowserCapabilities() {
     return {
-      webWorkers: f.supportsWebWorkers(),
-      sharedArrayBuffer: f.supportsSharedArrayBuffer(),
-      opfs: await f.supportsOPFS(),
+      webWorkers: g.supportsWebWorkers(),
+      sharedArrayBuffer: g.supportsSharedArrayBuffer(),
+      opfs: await g.supportsOPFS(),
       webCrypto: typeof crypto < "u" && !!crypto.subtle,
       userAgent: navigator.userAgent
     };
@@ -2230,7 +2235,7 @@ class se {
         text: e,
         collectionConfig: t,
         globalConfig: s
-      }, i = (await f.generateCacheKey(r)).hash;
+      }, i = (await g.generateCacheKey(r)).hash;
       this.metrics.totalAccesses++;
       const n = this.cache.get(i);
       return n ? (n.entry.lastAccessedAt = /* @__PURE__ */ new Date(), n.entry.accessCount++, this.metrics.hits++, this.updateHitRate(), this.moveToHead(n), this.config.enableLogging && console.log(`[MemoryCache] Попадание в кэш для ключа: ${i.substring(0, 16)}...`), n.entry.embedding) : (this.metrics.misses++, this.updateHitRate(), this.config.enableLogging && console.log(`[MemoryCache] Промах кэша для ключа: ${i.substring(0, 16)}...`), null);
@@ -2254,12 +2259,12 @@ class se {
         text: e,
         collectionConfig: s,
         globalConfig: r
-      }, l = (await f.generateCacheKey(i)).hash, h = this.calculateEntrySize(e, t, a);
+      }, l = (await g.generateCacheKey(i)).hash, h = this.calculateEntrySize(e, t, a);
       if (h > this.config.maxSizeBytes) {
         this.config.enableLogging && console.warn("[MemoryCache] Запись слишком большая для кэширования:", h);
         return;
       }
-      const u = {
+      const f = {
         embedding: new Float32Array(t),
         // Создаем копию
         keyHash: l,
@@ -2272,11 +2277,11 @@ class se {
         providerMetadata: a ? { ...a } : void 0
       }, m = this.cache.get(l);
       if (m) {
-        this.metrics.totalSizeBytes -= m.entry.sizeBytes, m.entry = u, this.metrics.totalSizeBytes += h, this.moveToHead(m), this.config.enableLogging && console.log(`[MemoryCache] Обновлена запись для ключа: ${l.substring(0, 16)}...`);
+        this.metrics.totalSizeBytes -= m.entry.sizeBytes, m.entry = f, this.metrics.totalSizeBytes += h, this.moveToHead(m), this.config.enableLogging && console.log(`[MemoryCache] Обновлена запись для ключа: ${l.substring(0, 16)}...`);
         return;
       }
       this.evictIfNeeded(h);
-      const d = new F(l, u);
+      const d = new F(l, f);
       this.cache.set(l, d), this.addToHead(d), this.metrics.currentSize = this.cache.size, this.metrics.totalSizeBytes += h, this.config.enableLogging && console.log(`[MemoryCache] Добавлена новая запись для ключа: ${l.substring(0, 16)}...`);
     } catch (i) {
       throw this.config.enableLogging && console.error("[MemoryCache] Ошибка при сохранении в кэш:", i), new M(
@@ -2302,7 +2307,7 @@ class se {
         text: e,
         collectionConfig: t,
         globalConfig: s
-      }, a = await f.generateCacheKey(r);
+      }, a = await g.generateCacheKey(r);
       return this.cache.has(a.hash);
     } catch (r) {
       return this.config.enableLogging && console.error("[MemoryCache] Ошибка при проверке наличия в кэше:", r), !1;
@@ -2527,10 +2532,10 @@ const S = {
   }
 };
 async function ae(c) {
-  return T.createProvider(c);
+  return R.createProvider(c);
 }
 function ie(c) {
-  return T.validateConfiguration(c);
+  return R.validateConfiguration(c);
 }
 function ne(c) {
   const {
@@ -2598,13 +2603,13 @@ class Q {
       this.stats.cacheMisses++;
       const a = await this.getProviderForCollection(t), i = s?.timeout || 5e3, n = this.generateFreshEmbedding(e, a), l = new Promise(
         (d, w) => setTimeout(() => w(new W(`Embedding generation timeout after ${i}ms`, i, "generateQueryEmbedding")), i)
-      ), h = await Promise.race([n, l]), u = Date.now() - r;
-      this.stats.totalGenerationTime += u;
+      ), h = await Promise.race([n, l]), f = Date.now() - r;
+      this.stats.totalGenerationTime += f;
       const m = {
         embedding: h,
         dimensions: h.length,
         source: "provider_fresh",
-        processingTime: u,
+        processingTime: f,
         metadata: {
           cacheHit: !1,
           modelUsed: a.getModelInfo?.()?.name,
@@ -2632,12 +2637,12 @@ class Q {
     if (e.length === 0)
       return [];
     const s = t?.batchSize || 32, r = t?.concurrency || 3, a = [], i = [];
-    for (let u = 0; u < e.length; u += s)
-      i.push(e.slice(u, u + s));
+    for (let f = 0; f < e.length; f += s)
+      i.push(e.slice(f, f + s));
     let n = 0;
-    const l = e.length, h = async (u) => {
+    const l = e.length, h = async (f) => {
       const m = [];
-      for (const d of u)
+      for (const d of f)
         try {
           t?.onProgress?.(n, l, d.query.substring(0, 50) + "...");
           const w = await this.generateQueryEmbedding(
@@ -2663,8 +2668,8 @@ class Q {
         }
       return m;
     };
-    for (let u = 0; u < i.length; u += r) {
-      const d = i.slice(u, u + r).map(h), w = await Promise.all(d);
+    for (let f = 0; f < i.length; f += r) {
+      const d = i.slice(f, f + r).map(h), w = await Promise.all(d);
       a.push(...w.flat());
     }
     return t?.onProgress?.(n, l, "Completed"), a;
@@ -2768,11 +2773,11 @@ class Q {
    */
   validateInputs(e, t) {
     if (!e || typeof e != "string" || e.trim().length === 0)
-      throw new R("Query must be a non-empty string", "query", "non-empty string", e);
+      throw new P("Query must be a non-empty string", "query", "non-empty string", e);
     if (e.length > 8192)
-      throw new R("Query is too long (max 8192 characters)", "query", "string with length <= 8192", e.length);
+      throw new P("Query is too long (max 8192 characters)", "query", "string with length <= 8192", e.length);
     if (!t || typeof t != "string")
-      throw new R("Collection must be specified", "collection", "non-empty string", t);
+      throw new P("Collection must be specified", "collection", "non-empty string", t);
   }
   /**
    * Получение провайдера для коллекции
@@ -2780,7 +2785,7 @@ class Q {
   async getProviderForCollection(e) {
     if (this.providers.has(e))
       return this.providers.get(e);
-    const t = await this.getCollectionConfig(e), s = await T.createProvider(t);
+    const t = await this.getCollectionConfig(e), s = await R.createProvider(t);
     return this.providers.set(e, s), this.collectionConfigs.set(e, t), s;
   }
   /**
@@ -2819,7 +2824,7 @@ class Q {
    * Генерация ключа кэша
    */
   generateCacheKey(e, t) {
-    const s = this.collectionConfigs.get(t), r = s ? f.hashText(JSON.stringify(s), { algorithm: "simple" }).hash : "default", a = f.hashText(e.trim().toLowerCase(), { algorithm: "simple" }).hash;
+    const s = this.collectionConfigs.get(t), r = s ? g.hashText(JSON.stringify(s), { algorithm: "simple" }).hash : "default", a = g.hashText(e.trim().toLowerCase(), { algorithm: "simple" }).hash;
     return `embedding:${t}:${r}:${a}`;
   }
   /**
@@ -2915,16 +2920,16 @@ class q {
       const w = m.lastUsed + m.usageCount * 1e3, p = d.lastUsed + d.usageCount * 1e3;
       return w - p;
     });
-    let h = 0, u = 0;
+    let h = 0, f = 0;
     for (const m of l) {
-      if (!(i - h > t || n - u > s)) break;
+      if (!(i - h > t || n - f > s)) break;
       try {
-        await this.unloadModel(m.modelId), h += m.memoryUsage, u++;
+        await this.unloadModel(m.modelId), h += m.memoryUsage, f++;
       } catch (w) {
         console.warn(`Failed to unload model ${m.modelId}:`, w);
       }
     }
-    console.log(`Memory optimization completed: freed ${h}MB, unloaded ${u} models`);
+    console.log(`Memory optimization completed: freed ${h}MB, unloaded ${f} models`);
   }
   /**
    * Получение статуса всех моделей
@@ -3007,7 +3012,7 @@ class q {
     };
     this.models.set(s, i), this.modelConfigs.set(s, a);
     try {
-      const n = await T.createProvider(a), l = Date.now() - r;
+      const n = await R.createProvider(a), l = Date.now() - r;
       return i.providerInstance = n, i.loadTime = l, i.status = "ready", i.usageCount = 1, this.stats.totalLoads++, this.stats.avgLoadTime = (this.stats.avgLoadTime * (this.stats.totalLoads - 1) + l) / this.stats.totalLoads, console.log(`Model ${s} loaded successfully in ${l}ms`), {
         config: a,
         provider: n,
@@ -3356,8 +3361,8 @@ class G {
     const a = [], i = Array.from(this.cache.entries()), n = this.sortForEviction(i);
     for (const [l, h] of n) {
       a.push(l), r += h.size;
-      const u = this.getMemoryUsage() - r, m = this.cache.size - a.length;
-      if (u <= t && u <= this.config.maxMemory - e && m <= s)
+      const f = this.getMemoryUsage() - r, m = this.cache.size - a.length;
+      if (f <= t && f <= this.config.maxMemory - e && m <= s)
         break;
     }
     for (const l of a)
@@ -3382,8 +3387,8 @@ class G {
       case "hybrid":
       default:
         return e.sort((s, r) => {
-          const a = { low: 0, normal: 1, high: 2 }, i = (m) => a[m.priority] * 1e3, n = (m) => m.accessCount * 100, l = (m) => (Date.now() - m.lastAccessed) / 1e3, h = i(s[1]) + n(s[1]) - l(s[1]), u = i(r[1]) + n(r[1]) - l(r[1]);
-          return h - u;
+          const a = { low: 0, normal: 1, high: 2 }, i = (m) => a[m.priority] * 1e3, n = (m) => m.accessCount * 100, l = (m) => (Date.now() - m.lastAccessed) / 1e3, h = i(s[1]) + n(s[1]) - l(s[1]), f = i(r[1]) + n(r[1]) - l(r[1]);
+          return h - f;
         });
     }
   }
@@ -3650,8 +3655,8 @@ class K {
     const n = [];
     for (const [l, h] of a) {
       n.push(l), i += h.modelInfo.memoryUsage;
-      const u = this.getCurrentMemoryUsage() - i, m = this.cache.size - n.length;
-      if (u <= t && m <= s)
+      const f = this.getCurrentMemoryUsage() - i, m = this.cache.size - n.length;
+      if (f <= t && m <= s)
         break;
     }
     for (const l of n)
@@ -3806,7 +3811,7 @@ class X {
         tags: i
       })), await Promise.all(h);
     } catch (h) {
-      throw new P(
+      throw new I(
         `Failed to set cache value for key "${e}": ${h instanceof Error ? h.message : String(h)}`,
         "SET_FAILED",
         e,
@@ -3822,7 +3827,7 @@ class X {
     try {
       t.push(this.queryCache.invalidate(e)), t.push(this.modelCache.invalidate(e)), t.push(this.invalidateIndexedDB(e)), t.push(this.invalidateDatabase(e)), await Promise.all(t);
     } catch (s) {
-      throw new P(
+      throw new I(
         `Failed to invalidate cache pattern "${e}": ${s instanceof Error ? s.message : String(s)}`,
         "INVALIDATION_FAILED",
         e
@@ -3958,7 +3963,7 @@ class X {
       case "database":
         return this.getFromDatabase(e);
       default:
-        throw new P(`Unknown cache level: ${t}`, "read", `unknown:${t}`);
+        throw new I(`Unknown cache level: ${t}`, "read", `unknown:${t}`);
     }
   }
   /**
@@ -4156,7 +4161,7 @@ async function ue(c = "opfs:/localretrieve/default.db", e) {
   }
   return s;
 }
-async function ge(c, e = ":memory:") {
+async function fe(c, e = ":memory:") {
   return E.create(c, e);
 }
 var _;
@@ -4168,7 +4173,7 @@ export {
   ye as BaseEmbeddingProvider,
   X as CacheManagerImpl,
   te as CollectionUtils,
-  R as ConfigurationError,
+  P as ConfigurationError,
   N as DEFAULT_DATABASE_CONFIG,
   E as Database,
   o as DatabaseError,
@@ -4176,7 +4181,7 @@ export {
   A as EmbeddingConstants,
   M as EmbeddingError,
   ve as EmbeddingProviderFactoryImpl,
-  f as EmbeddingUtils,
+  g as EmbeddingUtils,
   Ce as ExternalProvider,
   me as FEATURES,
   Q as InternalPipelineImpl,
@@ -4205,7 +4210,7 @@ export {
   oe as checkConfigCompatibility,
   ke as checkProviderSupport,
   he as createCacheManager,
-  ge as createDatabase,
+  fe as createDatabase,
   ae as createEmbeddingProvider,
   ce as createInternalPipeline,
   le as createModelManager,
@@ -4223,7 +4228,7 @@ export {
   z as isSQLValue,
   Y as isStatementResult,
   Be as isValidModelDimensionCombo,
-  T as providerFactory,
+  R as providerFactory,
   Z as resolveWorkerUrl,
   ie as validateEmbeddingConfig,
   He as validateProviderConfig,

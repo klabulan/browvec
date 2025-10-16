@@ -135,8 +135,11 @@ export class Database implements SQLDatabase {
 
   /**
    * Execute SQL statement(s) asynchronously (enhanced API)
+   *
+   * CRITICAL: Supports parameter binding for non-ASCII text (Cyrillic, CJK, etc.)
+   * Always use parameter binding instead of inline SQL for non-ASCII strings!
    */
-  async execAsync(sql: string): Promise<QueryExecResult[]> {
+  async execAsync(sql: string, params?: SQLParams): Promise<QueryExecResult[]> {
     if (!this.state.isOpen) {
       throw new SQLDatabaseError('Database is not open');
     }
@@ -145,12 +148,16 @@ export class Database implements SQLDatabase {
       throw new SQLDatabaseError('Invalid SQL statement');
     }
 
+    if (params !== undefined && !isSQLParams(params)) {
+      throw new SQLDatabaseError('Invalid SQL parameters');
+    }
+
     if (!this.workerRPC) {
       throw new SQLDatabaseError('Worker not available');
     }
 
     try {
-      const result = await this.workerRPC.select({ sql });
+      const result = await this.workerRPC.select({ sql, params });
       return [transformToSQLResult(result.rows || [])];
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
