@@ -178,8 +178,9 @@ export class SQLiteManager {
 
     // If no parameters, use simple exec
     if (!params || params.length === 0) {
-      const sqlPtr = this.sqlite3._malloc(sql.length + 1);
-      this.sqlite3.stringToUTF8(sql, sqlPtr, sql.length + 1);
+      const utf8Length = this.sqlite3.lengthBytesUTF8(sql);
+      const sqlPtr = this.sqlite3._malloc(utf8Length + 1);
+      this.sqlite3.stringToUTF8(sql, sqlPtr, utf8Length + 1);
 
       const result = this.sqlite3._sqlite3_exec(this.dbPtr, sqlPtr, 0, 0, 0);
       this.sqlite3._free(sqlPtr);
@@ -200,8 +201,9 @@ export class SQLiteManager {
     }
 
     // Use prepared statement for parameterized queries
-    const sqlPtr = this.sqlite3._malloc(sql.length + 1);
-    this.sqlite3.stringToUTF8(sql, sqlPtr, sql.length + 1);
+    const utf8LengthStmt = this.sqlite3.lengthBytesUTF8(sql);
+    const sqlPtr = this.sqlite3._malloc(utf8LengthStmt + 1);
+    this.sqlite3.stringToUTF8(sql, sqlPtr, utf8LengthStmt + 1);
 
     const stmtPtrPtr = this.sqlite3._malloc(4);
     const result = this.sqlite3._sqlite3_prepare_v2(this.dbPtr, sqlPtr, -1, stmtPtrPtr, 0);
@@ -272,8 +274,9 @@ export class SQLiteManager {
    * Execute SQL query with parameters and return results
    */
   private executeQuery(dbPtr: number, sql: string, params?: ExtendedSQLParams): Record<string, any>[] {
-    const sqlPtr = this.sqlite3!._malloc(sql.length + 1);
-    this.sqlite3!.stringToUTF8(sql, sqlPtr, sql.length + 1);
+    const utf8LengthQuery = this.sqlite3!.lengthBytesUTF8(sql);
+    const sqlPtr = this.sqlite3!._malloc(utf8LengthQuery + 1);
+    this.sqlite3!.stringToUTF8(sql, sqlPtr, utf8LengthQuery + 1);
 
     const stmtPtrPtr = this.sqlite3!._malloc(4);
     const result = this.sqlite3!._sqlite3_prepare_v2(dbPtr, sqlPtr, -1, stmtPtrPtr, 0);
@@ -346,8 +349,12 @@ export class SQLiteManager {
         this.sqlite3._sqlite3_bind_double(stmtPtr, index, param);
       }
     } else if (typeof param === 'string') {
-      const paramPtr = this.sqlite3._malloc(param.length + 1);
-      this.sqlite3.stringToUTF8(param, paramPtr, param.length + 1);
+      // CRITICAL FIX: Use lengthBytesUTF8() to calculate correct buffer size
+      // param.length returns CHARACTER count, but UTF-8 needs BYTE count
+      // Russian/Cyrillic: 2 bytes per char, CJK: 3 bytes per char, etc.
+      const utf8Length = this.sqlite3.lengthBytesUTF8(param);
+      const paramPtr = this.sqlite3._malloc(utf8Length + 1); // +1 for null terminator
+      this.sqlite3.stringToUTF8(param, paramPtr, utf8Length + 1);
       this.sqlite3._sqlite3_bind_text(stmtPtr, index, paramPtr, -1, SQLITE_TRANSIENT);
       this.sqlite3._free(paramPtr);
     } else if (param instanceof Uint8Array) {

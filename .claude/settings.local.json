@@ -35,7 +35,10 @@
       "Bash(certutil:*)",
       "Bash(git add:*)",
       "Bash(npm install:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "WebFetch(domain:www.anthropic.com)",
+      "Read(//d/books/papers/AI_world_encode_think_generate//**)",
+      "Read(//d/books/papers/AI_world_encode_think_generate/**)"
     ],
     "deny": [],
     "ask": []

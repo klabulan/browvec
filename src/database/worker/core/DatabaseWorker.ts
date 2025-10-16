@@ -543,7 +543,21 @@ export class DatabaseWorker {
               [rowid, validParams.document.title || '', validParams.document.content || '', metadataJson]
             );
 
-            this.logger.debug(`[InsertDoc] ✓ FTS5 sync completed for document: ${documentId} (rowid: ${rowid})`);
+            // CRITICAL FIX (Task 2.5): Verify single-document FTS sync
+            const verifyResult = await this.sqliteManager.select(
+              'SELECT COUNT(*) as count FROM fts_default WHERE rowid = ?',
+              [rowid]
+            );
+
+            const ftsCount = verifyResult.rows[0]?.count || 0;
+            if (ftsCount === 0) {
+              throw new Error(
+                `FTS sync verification failed for document ${documentId} (rowid: ${rowid}). ` +
+                `Document was inserted but FTS index update failed.`
+              );
+            }
+
+            this.logger.debug(`[InsertDoc] ✓ FTS5 sync completed and verified for document: ${documentId} (rowid: ${rowid})`);
           }
         } catch (ftsError) {
           // Log FTS5 error but don't fail the insert - document is already in docs_default
@@ -752,30 +766,61 @@ export class DatabaseWorker {
               await this.sqliteManager.exec('BEGIN TRANSACTION');
 
               try {
-                for (const document of ftsSubBatch) {
-                  // Get document ID (it was generated during insert)
-                  const docId = results.find(r => {
-                    const doc = document as any;
-                    return doc.id ? r.id === doc.id : true; // Match by ID if available
-                  })?.id;
+                for (let subBatchDocIdx = 0; subBatchDocIdx < ftsSubBatch.length; subBatchDocIdx++) {
+                  const document = ftsSubBatch[subBatchDocIdx];
 
-                  if (docId) {
-                    // Get rowid and sync to FTS5
-                    const rowidResult = await this.sqliteManager.select(
-                      'SELECT rowid FROM docs_default WHERE id = ? AND collection = ?',
-                      [docId, collection]
+                  // CRITICAL FIX (Task 2.1): Match by array position, not fuzzy find
+                  // The old logic used `.find()` with `true` fallback, which matched FIRST result always
+                  // New logic: Calculate exact position in results array
+                  const globalFtsIdx = batchStartIdx + ftsIdx + subBatchDocIdx;
+                  const docId = results[globalFtsIdx]?.id;
+
+                  // CRITICAL FIX (Task 2.1): Fail fast if no match (don't silently skip)
+                  if (!docId) {
+                    throw new Error(
+                      `FTS sync failed: Cannot find result for document at global index ${globalFtsIdx} ` +
+                      `(batch ${batchNum}, FTS sub-batch ${ftsBatchNum}, local index ${subBatchDocIdx}). ` +
+                      `Total results: ${results.length}`
                     );
-
-                    if (rowidResult.rows.length > 0) {
-                      const rowid = rowidResult.rows[0].rowid;
-                      const metadataJson = JSON.stringify(document.metadata || {});
-
-                      await this.sqliteManager.exec(
-                        'INSERT INTO fts_default(rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
-                        [rowid, document.title || '', document.content || '', metadataJson]
-                      );
-                    }
                   }
+
+                  // Get rowid and sync to FTS5
+                  const rowidResult = await this.sqliteManager.select(
+                    'SELECT rowid FROM docs_default WHERE id = ? AND collection = ?',
+                    [docId, collection]
+                  );
+
+                  if (rowidResult.rows.length === 0) {
+                    throw new Error(
+                      `FTS sync failed: Document ID ${docId} not found in docs_default. ` +
+                      `Collection: ${collection}, global index: ${globalFtsIdx}`
+                    );
+                  }
+
+                  const rowid = rowidResult.rows[0].rowid;
+                  const metadataJson = JSON.stringify(document.metadata || {});
+
+                  // Insert into FTS5
+                  await this.sqliteManager.exec(
+                    'INSERT INTO fts_default(rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
+                    [rowid, document.title || '', document.content || '', metadataJson]
+                  );
+
+                  // CRITICAL FIX (Task 2.2): Verify FTS sync succeeded
+                  const verifyFtsResult = await this.sqliteManager.select(
+                    'SELECT COUNT(*) as count FROM fts_default WHERE rowid = ?',
+                    [rowid]
+                  );
+
+                  const ftsIndexed = verifyFtsResult.rows[0]?.count || 0;
+                  if (ftsIndexed === 0) {
+                    throw new Error(
+                      `FTS sync verification failed: rowid ${rowid} not found in fts_default after insert. ` +
+                      `Document: ${docId}, Collection: ${collection}, global index: ${globalFtsIdx}`
+                    );
+                  }
+
+                  this.logger.debug(`[BatchInsert] ✓ FTS sync verified for document ${docId} (rowid: ${rowid})`);
                 }
 
                 // Commit FTS5 batch
@@ -783,12 +828,28 @@ export class DatabaseWorker {
                 this.logger.debug(`[BatchInsert] ✓ FTS5 sub-batch ${ftsBatchNum} committed`);
 
               } catch (ftsError) {
-                // Rollback FTS5 batch on error
+                // CRITICAL FIX (Task 2.3): Propagate FTS errors, don't swallow
+                // Documents without FTS index are UNUSABLE for search
+                // Better to fail fast than create partial indexes
+
+                // Rollback FTS5 sub-batch transaction
                 try {
                   await this.sqliteManager.exec('ROLLBACK');
-                } catch {}
-                this.logger.warn(`[BatchInsert] FTS5 sync failed for sub-batch ${ftsBatchNum}: ${ftsError instanceof Error ? ftsError.message : String(ftsError)}`);
-                // Don't throw - FTS5 failure shouldn't fail the whole batch
+                  this.logger.debug(`[BatchInsert] FTS sub-batch ${ftsBatchNum} rolled back`);
+                } catch (rollbackError) {
+                  this.logger.warn(`[BatchInsert] Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+                }
+
+                // Re-throw with context (fail fast principle)
+                this.logger.error(
+                  `[BatchInsert] FTS sync failed for sub-batch ${ftsBatchNum}/${ftsSubBatches}: ` +
+                  `${ftsError instanceof Error ? ftsError.message : String(ftsError)}`
+                );
+                throw new Error(
+                  `FTS index sync failed for batch ${batchNum}, FTS sub-batch ${ftsBatchNum}. ` +
+                  `Search will not work without FTS index. ` +
+                  `Original error: ${ftsError instanceof Error ? ftsError.message : String(ftsError)}`
+                );
               }
             }
 

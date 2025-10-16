@@ -25,7 +25,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'dist',
-    emptyOutDir: false,
+    emptyOutDir: true,  // Clean dist before build (WASM files copied after)
     copyPublicDir: false,
     sourcemap: true,
     lib: {

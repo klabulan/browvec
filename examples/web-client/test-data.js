@@ -50,6 +50,24 @@ const TEST_DATA = {
             title: "Software Engineering Best Practices",
             content: "Software engineering encompasses design patterns, testing methodologies, and development practices. Version control systems like Git enable collaboration. Continuous integration and deployment automate software delivery. Code reviews, documentation, and refactoring maintain code quality over time.",
             vector: generateMockVector([0.5, 0.9, 0.3, 0.4, 0.6]) // Software engineering-related vector
+        },
+        {
+            id: 9,
+            title: "Русская литература и классика",
+            content: "Русская литература богата великими произведениями. Александр Пушкин считается основателем современного русского литературного языка. Лев Толстой написал эпические романы Война и мир и Анна Каренина. Фёдор Достоевский исследовал глубины человеческой психологии в произведениях Преступление и наказание и Братья Карамазовы.",
+            vector: generateMockVector([0.6, 0.3, 0.8, 0.5, 0.4]) // Literature-related vector
+        },
+        {
+            id: 10,
+            title: "История России и культура",
+            content: "Российская история охватывает более тысячи лет. Киевская Русь была первым восточнославянским государством. Московское царство объединило русские земли. Российская империя стала одной из великих держав мира. Советский Союз внёс значительный вклад в мировую историю и науку.",
+            vector: generateMockVector([0.4, 0.7, 0.5, 0.6, 0.3]) // History-related vector
+        },
+        {
+            id: 11,
+            title: "Российские технологии и наука",
+            content: "Россия имеет богатые научные традиции. Дмитрий Менделеев создал периодическую таблицу элементов. Константин Циолковский разработал основы космонавтики. Советские учёные запустили первый искусственный спутник Земли и отправили первого человека в космос. Современные российские программисты создают инновационные технологии.",
+            vector: generateMockVector([0.8, 0.5, 0.7, 0.4, 0.6]) // Science/tech-related vector
         }
     ],
 
@@ -76,14 +94,28 @@ const TEST_DATA = {
             "-- Use getTestVectorJoinQuery() in browser console to get working vector search with titles",
             "-- Use getExactMatchQuery() in browser console to test with exact vector from test data",
             "-- Example: SELECT rowid, distance FROM vec_default_dense WHERE embedding MATCH '[0.1,0.2,0.3,...]' ORDER BY distance LIMIT 3;",
-            "-- Note: sqlite-vec v0.1.7-alpha.2 uses direct JSON array strings, not vec_f32() wrapper"
+            "-- Note: sqlite-vec v0.1.7-alpha.2 uses direct JSON array strings, not vec_f32() wrapper",
+            "-- Russian/Cyrillic FTS5 search tests (requires unicode61 tokenizer)",
+            "SELECT * FROM fts_default WHERE fts_default MATCH 'Пушкин';",
+            "SELECT * FROM fts_default WHERE fts_default MATCH 'литература';",
+            "SELECT * FROM fts_default WHERE fts_default MATCH 'Толстой';",
+            "SELECT * FROM fts_default WHERE fts_default MATCH 'Россия';",
+            "SELECT * FROM fts_default WHERE fts_default MATCH 'космос';",
+            "SELECT d.title, d.content FROM docs_default d JOIN fts_default f ON d.rowid = f.rowid WHERE fts_default MATCH 'наука' LIMIT 5;"
         ],
         search: [
             { text: "machine learning", vector: null },
             { text: "database systems", vector: null },
             { text: "web development", vector: null },
             { text: "artificial intelligence", vector: null },
-            { text: "cloud computing", vector: null }
+            { text: "cloud computing", vector: null },
+            // Russian search queries
+            { text: "Пушкин", vector: null },
+            { text: "литература", vector: null },
+            { text: "Толстой", vector: null },
+            { text: "Россия", vector: null },
+            { text: "космос", vector: null },
+            { text: "наука технологии", vector: null }
         ]
     }
 };

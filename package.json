@@ -5,9 +5,9 @@
   "main": "dist/localretrieve.mjs",
   "types": "dist/localretrieve.d.ts",
   "scripts": {
-    "build:wasm": "bash scripts/build-wasm.sh",
+    "build:wasm": "node scripts/build-wasm.js",
     "build:sdk": "vite build && mkdir -p public/database && cp dist/database/worker.js public/database/worker.js",
-    "build": "npm run build:wasm && npm run build:sdk",
+    "build": "npm run build:sdk && npm run build:wasm",
     "dev": "bash scripts/dev-server.sh",
     "dev:vite": "vite --host",
     "test": "vitest",

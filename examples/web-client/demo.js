@@ -336,54 +336,63 @@ class LocalRetrieveDemo {
             // Clear existing data safely
             await this.clearExistingData();
 
-            // Insert sample documents
-            for (let i = 0; i < documents.length; i++) {
-                const doc = documents[i];
-
-                // Debug: Check document data
-                console.debug(`Inserting document ${i + 1}/${documents.length}:`, {
-                    id: doc.id,
+            // Use SDK's batch insert API which handles FTS sync correctly
+            const documentsToInsert = documents
+                .filter(doc => doc.content && typeof doc.content === 'string')
+                .map(doc => ({
+                    id: String(doc.id),
                     title: doc.title,
-                    contentLength: doc.content?.length || 'undefined',
-                    contentType: typeof doc.content
+                    content: doc.content,
+                    metadata: {}
+                }));
+
+            console.log(`Preparing to insert ${documentsToInsert.length} documents using SDK batch insert`);
+
+            try {
+                // Use the SDK's batchInsertDocuments method
+                // This will handle FTS sync and rowid alignment correctly
+                const result = await this.db.batchInsertDocuments({
+                    collection: 'default',
+                    documents: documentsToInsert,
+                    options: {
+                        generateEmbedding: false // We'll insert vectors separately for demo
+                    }
                 });
 
-                if (!doc.content || typeof doc.content !== 'string') {
-                    console.error(`Document ${doc.id} has invalid content:`, doc);
-                    continue; // Skip documents without valid content
+                console.log(`✅ Batch insert completed:`, result);
+
+                // Now insert the vectors manually (since we have pre-generated vectors for the demo)
+                for (let i = 0; i < documents.length; i++) {
+                    const doc = documents[i];
+                    if (!doc.vector) continue;
+
+                    try {
+                        // Get the rowid for this document
+                        const rowidResult = await this.db.execAsync(
+                            'SELECT rowid FROM docs_default WHERE id = ?',
+                            [String(doc.id)]
+                        );
+
+                        if (rowidResult[0]?.values?.length > 0) {
+                            const rowid = rowidResult[0].values[0][0];
+                            const vectorJson = `[${doc.vector.join(',')}]`;
+
+                            await this.db.runAsync(
+                                'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
+                                [rowid, vectorJson]
+                            );
+
+                            console.log(`✓ Inserted vector for document ${doc.id} (rowid: ${rowid})`);
+                        }
+                    } catch (vecError) {
+                        console.warn(`Failed to insert vector for document ${doc.id}:`, vecError.message);
+                    }
                 }
 
-                try {
-                    // Insert into docs table and get the rowid
-                    const docInsertResult = await this.db.runAsync(
-                        'INSERT INTO docs_default (id, title, content) VALUES (?, ?, ?)',
-                        [doc.id, doc.title, doc.content]
-                    );
-
-                    // Get the actual rowid from the docs table insertion
-                    const actualRowId = docInsertResult.lastInsertRowid || doc.id;
-                    console.log(`Inserted document ${doc.id} with rowid: ${actualRowId}`);
-
-                    // Insert into FTS table using the same rowid
-                    await this.db.runAsync(
-                        'INSERT INTO fts_default (rowid, title, content, metadata) VALUES (?, ?, ?, ?)',
-                        [actualRowId, doc.title, doc.content, JSON.stringify({ id: doc.id })]
-                    );
-
-                    // Insert into vector table using the same rowid
-                    const vectorJson = `[${doc.vector.join(',')}]`;
-                    console.log(`Inserting vector for rowid ${actualRowId}: ${vectorJson.substring(0, 50)}...`);
-
-                    await this.db.runAsync(
-                        'INSERT INTO vec_default_dense (rowid, embedding) VALUES (?, vec_f32(?))',
-                        [actualRowId, vectorJson]
-                    );
-
-                    console.log(`Successfully inserted document ${doc.id} with all data linked to rowid ${actualRowId}`);
-                } catch (docError) {
-                    console.error(`Failed to insert document ${doc.id}:`, docError);
-                    // Continue with next document instead of failing completely
-                }
+                console.log(`✅ All documents and vectors inserted successfully`);
+            } catch (batchError) {
+                console.error('Batch insert failed:', batchError);
+                throw new Error(`Failed to insert documents: ${batchError.message}`);
             }
 
             const loadTime = performance.now() - startTime;
