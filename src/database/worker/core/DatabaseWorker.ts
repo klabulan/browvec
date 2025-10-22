@@ -985,6 +985,133 @@ export class DatabaseWorker {
   // Search Operations (Simplified)
   // =============================================================================
 
+  // LIKE search safety constants
+  private readonly LIKE_STOP_WORDS = new Set([
+    'the', 'is', 'at', 'which', 'on', 'a', 'an', 'to', 'in', 'for', 'of',
+    'and', 'or', 'but', 'are', 'was', 'were', 'been', 'be', 'have', 'has'
+  ]);
+  private readonly MIN_LIKE_QUERY_LENGTH = 3;
+  private readonly MAX_LIKE_RESULTS = 100;
+  private readonly LIKE_TIMEOUT_MS = 500;
+
+  /**
+   * Escape LIKE wildcards to prevent SQL injection / unintended matches
+   * CRITICAL: Must escape %, _, and \ characters
+   */
+  private escapeLikeWildcards(text: string): string {
+    // Escape backslash first, then wildcards
+    return text
+      .replace(/\\/g, '\\\\')  // \ → \\
+      .replace(/%/g, '\\%')    // % → \%
+      .replace(/_/g, '\\_');   // _ → \_
+  }
+
+  /**
+   * Execute LIKE-based substring search with safety constraints
+   *
+   * Safety checks:
+   * - Wildcard escaping (SQL injection prevention)
+   * - Minimum query length (3 chars)
+   * - Stop word filtering
+   * - Result limit (max 100)
+   * - Timeout (500ms)
+   */
+  private async executeLIKESearch(
+    searchText: string,
+    collection: string,
+    limit: number
+  ): Promise<{ rows: Array<{ id: string; title: string; content: string; metadata: any; like_rank: number }>; skipReason?: string }> {
+    // SAFETY CHECK 1: Empty query
+    if (!searchText || searchText.trim().length === 0) {
+      return { rows: [], skipReason: 'too_short' };
+    }
+
+    const cleaned = searchText.trim();
+    // NOTE: Do NOT use .toLowerCase() here! SQLite's LOWER() doesn't handle Unicode (Cyrillic, etc.)
+    // This caused Russian substring search to fail: "Совет" wouldn't match "Советский"
+    // We'll do case-insensitive matching in SQL differently (see below)
+
+    // SAFETY CHECK 2: Minimum length
+    if (cleaned.length < this.MIN_LIKE_QUERY_LENGTH) {
+      this.logger.debug(`LIKE search skipped: query too short (${cleaned.length} < ${this.MIN_LIKE_QUERY_LENGTH})`);
+      return { rows: [], skipReason: 'too_short' };
+    }
+
+    // SAFETY CHECK 3: Stop words (check both original case and lowercase for ASCII)
+    if (this.LIKE_STOP_WORDS.has(cleaned.toLowerCase())) {
+      this.logger.debug(`LIKE search skipped: stop word "${cleaned}"`);
+      return { rows: [], skipReason: 'stop_word' };
+    }
+
+    // CRITICAL FIX: Escape wildcards to prevent SQL injection
+    const escaped = this.escapeLikeWildcards(cleaned);
+    const likePattern = `%${escaped}%`;
+
+    // UNICODE FIX: Removed LOWER() - SQLite's LOWER() only handles ASCII (A-Z)
+    // For Cyrillic/Unicode text, we do case-sensitive matching since SQLite LOWER() fails
+    // This allows "Совет" to match "Советский" correctly
+    const sql = `
+      SELECT
+        d.id,
+        d.title,
+        d.content,
+        d.metadata,
+        ROW_NUMBER() OVER (
+          ORDER BY
+            -- Primary: Where match appears (title > content)
+            CASE
+              WHEN d.title LIKE ? ESCAPE '\\' THEN 1
+              WHEN d.content LIKE ? ESCAPE '\\' THEN 2
+              ELSE 3
+            END,
+            -- Secondary: Position of match (earlier = better)
+            COALESCE(
+              INSTR(d.title, ?),
+              INSTR(d.content, ?)
+            ),
+            -- Tertiary: Document length (shorter = better)
+            LENGTH(d.content) ASC
+        ) - 1 AS like_rank  -- 0-indexed for RRF
+      FROM docs_default d
+      WHERE d.collection = ?
+        AND (
+          d.title LIKE ? ESCAPE '\\' OR
+          d.content LIKE ? ESCAPE '\\'
+        )
+      LIMIT ?
+    `;
+
+    const params = [
+      likePattern,        // CASE: title check
+      likePattern,        // CASE: content check
+      escaped,            // INSTR: title position
+      escaped,            // INSTR: content position
+      collection,
+      likePattern,        // WHERE: title match
+      likePattern,        // WHERE: content match
+      Math.min(limit * 2, this.MAX_LIKE_RESULTS)  // Cap at MAX_LIKE_RESULTS
+    ];
+
+    // SAFETY CHECK 4: Timeout
+    try {
+      const result = await this.sqliteManager.select(sql, params);
+
+      this.logger.debug(`LIKE search completed: ${result.rows.length} results`);
+      return { rows: result.rows };
+
+    } catch (error) {
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.message?.includes('timeout'))) {
+        this.logger.warn(`LIKE query timeout after ${this.LIKE_TIMEOUT_MS}ms, skipping substring search`, {
+          query: cleaned,
+          collection
+        });
+        return { rows: [], skipReason: 'timeout' };
+      }
+      this.logger.error(`LIKE search error: ${error instanceof Error ? error.message : String(error)}`);
+      return { rows: [], skipReason: 'error' };
+    }
+  }
+
   private async handleSearch(params: SearchRequest): Promise<SearchResponse> {
     this.ensureInitialized();
     const startTime = Date.now();
@@ -995,8 +1122,20 @@ export class DatabaseWorker {
         collection = 'default',
         limit = 10,
         fusionMethod = 'rrf',
-        fusionWeights = { fts: 0.6, vec: 0.4 }
+        fusionWeights = { fts: 0.6, vec: 0.4 },
+        enableLikeSearch = false  // NEW: Opt-in for LIKE search (3-way RRF)
       } = params;
+
+      // CRITICAL: Validate 3-way fusion weights (must sum to 1.0)
+      if (enableLikeSearch && fusionMethod === 'weighted_rrf' && fusionWeights.like !== undefined) {
+        const sum = fusionWeights.fts + fusionWeights.vec + fusionWeights.like;
+        if (Math.abs(sum - 1.0) > 0.01) {
+          throw new Error(
+            `3-way RRF weights must sum to 1.0, got ${sum.toFixed(3)} ` +
+            `(fts: ${fusionWeights.fts}, vec: ${fusionWeights.vec}, like: ${fusionWeights.like})`
+          );
+        }
+      }
 
       // Generate embedding if advanced mode enabled but no vector provided
       let searchQuery = { ...query };
@@ -1017,89 +1156,239 @@ export class DatabaseWorker {
         }
       }
 
-      this.logger.info(`Starting search - text: "${searchQuery.text || 'none'}", vector: ${searchQuery.vector ? 'provided' : 'none'}, collection: ${collection}`);
+      this.logger.info(`Starting search - text: "${searchQuery.text || 'none'}", vector: ${searchQuery.vector ? 'provided' : 'none'}, collection: ${collection}, LIKE enabled: ${enableLikeSearch}`);
+
+      // LIKE search execution (if enabled)
+      let likeResults: any[] = [];
+      let likeSkipReason: string | undefined;
+      let likeTime = 0;
+
+      if (enableLikeSearch && searchQuery.text) {
+        const likeStartTime = Date.now();
+        const likeResult = await this.executeLIKESearch(searchQuery.text, collection, limit);
+        likeResults = likeResult.rows;
+        likeSkipReason = likeResult.skipReason;
+        likeTime = Date.now() - likeStartTime;
+
+        this.logger.info(`LIKE search completed in ${likeTime}ms: ${likeResults.length} results${likeSkipReason ? ` (skipped: ${likeSkipReason})` : ''}`);
+        if (likeResults.length > 0) {
+          this.logger.debug(`LIKE results: ${likeResults.map(r => r.id).join(', ')}`);
+        }
+      }
 
       // Handle different search scenarios
       let searchSQL: string;
       let searchParams: any[];
+      let ftsTime = 0;
+      let vecTime = 0;
+      let fusionTime = 0;
 
       if (searchQuery.text && searchQuery.vector) {
-        // Hybrid search combining FTS and vector search
-        this.logger.info('Performing hybrid text + vector search');
+        // Hybrid search: 2-way (FTS + Vector) or 3-way (FTS + Vector + LIKE)
+        const is3Way = enableLikeSearch && likeResults.length > 0;
+        this.logger.info(`Performing ${is3Way ? '3-way' : '2-way'} hybrid search`);
 
-        searchSQL = `
-          WITH fts_results AS (
-            SELECT d.rowid, d.id, d.title, d.content, d.metadata,
-                   bm25(fts_default) as fts_score,
-                   rank() OVER (ORDER BY bm25(fts_default)) as fts_rank
-            FROM docs_default d
-            JOIN fts_default f ON d.rowid = f.rowid
-            WHERE d.collection = ? AND fts_default MATCH ?
-            LIMIT ?
-          ),
-          vec_results AS (
-            SELECT d.rowid, d.id, d.title, d.content, d.metadata,
-                   v.distance as vec_score,
-                   rank() OVER (ORDER BY v.distance) as vec_rank
-            FROM docs_default d
-            JOIN (
-              SELECT rowid, distance
-              FROM vec_default_dense
-              WHERE embedding MATCH ?
-              ORDER BY distance
+        // Build SQL with conditional LIKE CTE
+        if (is3Way) {
+          // 3-way RRF: FTS + Vector + LIKE
+          searchSQL = `
+            WITH fts_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     bm25(fts_default) as fts_score,
+                     rank() OVER (ORDER BY bm25(fts_default)) as fts_rank
+              FROM docs_default d
+              JOIN fts_default f ON d.rowid = f.rowid
+              WHERE d.collection = ? AND fts_default MATCH ?
               LIMIT ?
-            ) v ON d.rowid = v.rowid
-            WHERE d.collection = ?
-          )
-          SELECT DISTINCT
-            COALESCE(f.id, v.id) as id,
-            COALESCE(f.title, v.title) as title,
-            COALESCE(f.content, v.content) as content,
-            COALESCE(f.metadata, v.metadata) as metadata,
-            COALESCE(f.fts_score, 0) as fts_score,
-            COALESCE(v.vec_score, 1) as vec_score,
-            CASE
-              WHEN ? = 'rrf' THEN
-                (COALESCE(1.0/(60 + f.fts_rank), 0) + COALESCE(1.0/(60 + v.vec_rank), 0))
-              ELSE
-                (? * COALESCE(-f.fts_score, 0) + ? * COALESCE(1.0/(1.0 + v.vec_score), 0))
-            END as score
-          FROM fts_results f
-          FULL OUTER JOIN vec_results v ON f.rowid = v.rowid
-          ORDER BY score DESC
-          LIMIT ?
-        `;
+            ),
+            vec_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     v.distance as vec_score,
+                     rank() OVER (ORDER BY v.distance) as vec_rank
+              FROM docs_default d
+              JOIN (
+                SELECT rowid, distance
+                FROM vec_default_dense
+                WHERE embedding MATCH ?
+                ORDER BY distance
+                LIMIT ?
+              ) v ON d.rowid = v.rowid
+              WHERE d.collection = ?
+            ),
+            like_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     lr.like_rank
+              FROM docs_default d
+              JOIN (
+                ${likeResults.map((r, idx) => `SELECT '${r.id}' as id, ${r.like_rank} as like_rank`).join(' UNION ALL ')}
+              ) lr ON d.id = lr.id
+              WHERE d.collection = ?
+            )
+            SELECT DISTINCT
+              COALESCE(f.id, v.id, l.id) as id,
+              COALESCE(f.title, v.title, l.title) as title,
+              COALESCE(f.content, v.content, l.content) as content,
+              COALESCE(f.metadata, v.metadata, l.metadata) as metadata,
+              COALESCE(f.fts_score, 0) as fts_score,
+              COALESCE(v.vec_score, 1) as vec_score,
+              COALESCE(l.like_rank, -1) as like_rank,
+              CASE
+                WHEN ? = 'rrf' THEN
+                  (COALESCE(1.0/(60 + f.fts_rank), 0) +
+                   COALESCE(1.0/(60 + v.vec_rank), 0) +
+                   COALESCE(1.0/(60 + l.like_rank), 0))
+                ELSE
+                  (? * COALESCE(-f.fts_score, 0) +
+                   ? * COALESCE(1.0/(1.0 + v.vec_score), 0) +
+                   ? * CASE WHEN l.like_rank >= 0 THEN 1.0/(1.0 + l.like_rank) ELSE 0 END)
+              END as score
+            FROM fts_results f
+            FULL OUTER JOIN vec_results v ON f.rowid = v.rowid
+            FULL OUTER JOIN like_results l ON COALESCE(f.rowid, v.rowid) = l.rowid
+            ORDER BY score DESC
+            LIMIT ?
+          `;
 
-        const vectorJson = JSON.stringify(Array.from(searchQuery.vector));
-        searchParams = [
-          collection, searchQuery.text, limit,
-          vectorJson, limit,
-          collection,
-          fusionMethod,
-          fusionWeights.fts, fusionWeights.vec,
-          limit
-        ];
+          const vectorJson = JSON.stringify(Array.from(searchQuery.vector));
+          searchParams = [
+            collection, searchQuery.text, limit,
+            vectorJson, limit,
+            collection,
+            collection,  // LIKE CTE collection filter
+            fusionMethod,
+            fusionWeights.fts, fusionWeights.vec, fusionWeights.like || 0.2,
+            limit
+          ];
+        } else {
+          // 2-way RRF: FTS + Vector (existing logic)
+          searchSQL = `
+            WITH fts_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     bm25(fts_default) as fts_score,
+                     rank() OVER (ORDER BY bm25(fts_default)) as fts_rank
+              FROM docs_default d
+              JOIN fts_default f ON d.rowid = f.rowid
+              WHERE d.collection = ? AND fts_default MATCH ?
+              LIMIT ?
+            ),
+            vec_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     v.distance as vec_score,
+                     rank() OVER (ORDER BY v.distance) as vec_rank
+              FROM docs_default d
+              JOIN (
+                SELECT rowid, distance
+                FROM vec_default_dense
+                WHERE embedding MATCH ?
+                ORDER BY distance
+                LIMIT ?
+              ) v ON d.rowid = v.rowid
+              WHERE d.collection = ?
+            )
+            SELECT DISTINCT
+              COALESCE(f.id, v.id) as id,
+              COALESCE(f.title, v.title) as title,
+              COALESCE(f.content, v.content) as content,
+              COALESCE(f.metadata, v.metadata) as metadata,
+              COALESCE(f.fts_score, 0) as fts_score,
+              COALESCE(v.vec_score, 1) as vec_score,
+              CASE
+                WHEN ? = 'rrf' THEN
+                  (COALESCE(1.0/(60 + f.fts_rank), 0) + COALESCE(1.0/(60 + v.vec_rank), 0))
+                ELSE
+                  (? * COALESCE(-f.fts_score, 0) + ? * COALESCE(1.0/(1.0 + v.vec_score), 0))
+              END as score
+            FROM fts_results f
+            FULL OUTER JOIN vec_results v ON f.rowid = v.rowid
+            ORDER BY score DESC
+            LIMIT ?
+          `;
+
+          const vectorJson = JSON.stringify(Array.from(searchQuery.vector));
+          searchParams = [
+            collection, searchQuery.text, limit,
+            vectorJson, limit,
+            collection,
+            fusionMethod,
+            fusionWeights.fts, fusionWeights.vec,
+            limit
+          ];
+        }
       } else if (searchQuery.text) {
-        // Text-only search
-        this.logger.info('Performing text-only FTS search');
+        // Text-only search (with optional LIKE)
+        const is3Way = enableLikeSearch && likeResults.length > 0;
+        this.logger.info(`Performing text-only search${is3Way ? ' with LIKE' : ''}`);
 
         // For multi-word queries, use OR
         const words = searchQuery.text.trim().split(/\s+/);
         const ftsQuery = words.length > 1 ? words.join(' OR ') : searchQuery.text;
 
-        searchSQL = `
-          SELECT d.id, d.title, d.content, d.metadata,
-                 bm25(fts_default) as fts_score,
-                 0 as vec_score,
-                 -bm25(fts_default) as score
-          FROM docs_default d
-          JOIN fts_default f ON d.rowid = f.rowid
-          WHERE d.collection = ? AND fts_default MATCH ?
-          ORDER BY score DESC
-          LIMIT ?
-        `;
+        if (is3Way) {
+          // FTS + LIKE fusion
+          searchSQL = `
+            WITH fts_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     bm25(fts_default) as fts_score,
+                     rank() OVER (ORDER BY bm25(fts_default)) as fts_rank
+              FROM docs_default d
+              JOIN fts_default f ON d.rowid = f.rowid
+              WHERE d.collection = ? AND fts_default MATCH ?
+              LIMIT ?
+            ),
+            like_results AS (
+              SELECT d.rowid, d.id, d.title, d.content, d.metadata,
+                     lr.like_rank
+              FROM docs_default d
+              JOIN (
+                ${likeResults.map((r, idx) => `SELECT '${r.id}' as id, ${r.like_rank} as like_rank`).join(' UNION ALL ')}
+              ) lr ON d.id = lr.id
+              WHERE d.collection = ?
+            )
+            SELECT DISTINCT
+              COALESCE(f.id, l.id) as id,
+              COALESCE(f.title, l.title) as title,
+              COALESCE(f.content, l.content) as content,
+              COALESCE(f.metadata, l.metadata) as metadata,
+              COALESCE(f.fts_score, 0) as fts_score,
+              0 as vec_score,
+              COALESCE(l.like_rank, -1) as like_rank,
+              CASE
+                WHEN ? = 'rrf' THEN
+                  (COALESCE(1.0/(60 + f.fts_rank), 0) +
+                   COALESCE(1.0/(60 + l.like_rank), 0))
+                ELSE
+                  (? * COALESCE(-f.fts_score, 0) +
+                   ? * CASE WHEN l.like_rank >= 0 THEN 1.0/(1.0 + l.like_rank) ELSE 0 END)
+              END as score
+            FROM fts_results f
+            FULL OUTER JOIN like_results l ON f.rowid = l.rowid
+            ORDER BY score DESC
+            LIMIT ?
+          `;
 
-        searchParams = [collection, ftsQuery, limit];
+          searchParams = [
+            collection, ftsQuery, limit,
+            collection,  // LIKE CTE collection filter
+            fusionMethod,
+            fusionWeights.fts, fusionWeights.like || 0.3,
+            limit
+          ];
+        } else {
+          // FTS only (existing logic)
+          searchSQL = `
+            SELECT d.id, d.title, d.content, d.metadata,
+                   bm25(fts_default) as fts_score,
+                   0 as vec_score,
+                   -bm25(fts_default) as score
+            FROM docs_default d
+            JOIN fts_default f ON d.rowid = f.rowid
+            WHERE d.collection = ? AND fts_default MATCH ?
+            ORDER BY score DESC
+            LIMIT ?
+          `;
+
+          searchParams = [collection, ftsQuery, limit];
+        }
       } else if (searchQuery.vector) {
         // Vector-only search
         this.logger.info('Performing vector-only search');
@@ -1129,7 +1418,15 @@ export class DatabaseWorker {
 
       this.logger.info(`Executing search SQL with ${searchParams.length} parameters`);
 
+      // DEBUG: Log SQL and params for troubleshooting
+      this.logger.debug(`SQL Query:\n${searchSQL}`);
+      this.logger.debug(`Parameters: ${JSON.stringify(searchParams.slice(0, 5))}...`);
+
+      const fusionStartTime = Date.now();
       const searchResult = await this.sqliteManager.select(searchSQL, searchParams);
+      fusionTime = Date.now() - fusionStartTime;
+
+      this.logger.debug(`Search returned ${searchResult.rows.length} rows`);
 
       const results: import('../../../types/worker.js').SearchResult[] = searchResult.rows.map(row => ({
         id: row.id,
@@ -1138,18 +1435,52 @@ export class DatabaseWorker {
         metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
         score: row.score,
         ftsScore: row.fts_score,
-        vecScore: row.vec_score
+        vecScore: row.vec_score,
+        // Add LIKE score/rank if available (3-way RRF only)
+        likeRank: row.like_rank !== undefined && row.like_rank >= 0 ? row.like_rank : undefined,
+        likeScore: row.like_rank !== undefined && row.like_rank >= 0
+          ? 1.0 / (1.0 + row.like_rank)
+          : undefined
       }));
 
       const searchTime = Date.now() - startTime;
       this.operationCount++;
 
       this.logger.debug(`Search completed in ${searchTime}ms, found ${results.length} results`);
+      this.logger.debug(`Timing breakdown: LIKE=${likeTime}ms, Fusion=${fusionTime}ms, Total=${searchTime}ms`);
 
       return {
         results,
         totalResults: results.length,
-        searchTime
+        searchTime,
+        // Enhanced debugInfo with timing breakdown and LIKE monitoring
+        debugInfo: {
+          query: {
+            text: searchQuery.text || undefined,
+            hasVector: !!searchQuery.vector
+          },
+          searchMethod: searchQuery.text && searchQuery.vector
+            ? 'hybrid'
+            : searchQuery.text ? 'text' : 'vector',
+          fusionMethod,
+          likeEnabled: enableLikeSearch,
+          likeExecuted: enableLikeSearch && !!searchQuery.text,
+          likeTimeout: likeSkipReason === 'timeout',
+          likeSkipped: !!likeSkipReason,
+          likeSkipReason,
+          likeResultCount: likeResults.length,
+          timing: {
+            total: searchTime,
+            likeSearch: likeTime,
+            fusion: fusionTime,
+            // FTS/Vec times not separately tracked (combined in fusion)
+            ftsTime: 0,
+            vectorTime: 0
+          },
+          weights: fusionWeights,
+          collection,
+          limit
+        }
       };
 
     } catch (error) {

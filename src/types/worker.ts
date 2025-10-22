@@ -36,8 +36,9 @@ export interface SearchRequest {
   query: SearchQuery;
   collection?: string;
   limit?: number;
-  fusionMethod?: 'rrf' | 'weighted';
-  fusionWeights?: { fts: number; vec: number };
+  fusionMethod?: 'rrf' | 'weighted_rrf';  // Added 'weighted_rrf' for 3-way fusion
+  fusionWeights?: { fts: number; vec: number; like?: number };  // Added optional 'like' weight
+  enableLikeSearch?: boolean;  // Opt-in flag for LIKE substring search (default: false)
 }
 
 export interface SearchResult {
@@ -48,12 +49,28 @@ export interface SearchResult {
   score: number;
   ftsScore?: number;
   vecScore?: number;
+  likeScore?: number;  // LIKE substring search score (for 3-way RRF)
+  likeRank?: number;   // LIKE substring search rank (for 3-way RRF)
 }
 
 export interface SearchResponse {
   results: SearchResult[];
   totalResults: number;
   searchTime: number;
+  debugInfo?: {
+    ftsCount: number;
+    vectorCount: number;
+    likeCount: number;
+    ftsTime: number;
+    vectorTime: number;
+    likeTime: number;
+    likeTimeout: boolean;
+    likeSkipped: boolean;
+    likeSkipReason?: 'disabled' | 'too_short' | 'stop_word' | 'timeout' | 'error';
+    fusionTime: number;
+    fusionMethod?: string;
+    weights?: { fts: number; vec: number; like?: number };
+  };
 }
 
 // Collection management types

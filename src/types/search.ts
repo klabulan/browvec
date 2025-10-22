@@ -133,6 +133,7 @@ export interface SearchExecutionPlan {
 export interface SearchWeights {
   fts: number;                // Вес полнотекстового поиска
   vector: number;             // Вес векторного поиска
+  like?: number;              // Вес LIKE substring search (optional, for 3-way RRF)
   exactMatch: number;         // Вес точных совпадений
   phraseMatch: number;        // Вес совпадения фраз
   proximity: number;          // Вес близости слов
@@ -306,6 +307,8 @@ export interface SearchResult {
   normalizedScore?: number;
   ftsScore?: number;
   vecScore?: number;
+  likeScore?: number;         // LIKE substring search score (for 3-way RRF)
+  likeRank?: number;          // LIKE substring search rank (for 3-way RRF)
   explanation?: ScoreExplanation;
   snippets?: string[];
   highlights?: Record<string, string[]>;

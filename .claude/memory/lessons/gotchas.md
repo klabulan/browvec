@@ -415,4 +415,65 @@ const results = await db.execAsync(
 
 ---
 
+### 24. SQLite LOWER() Is ASCII-Only (Breaks Cyrillic/Unicode)
+
+**Scenario:** Using LIKE substring search with Cyrillic/Unicode text
+**Problem:** SQLite's built-in `LOWER()` function ONLY handles ASCII characters (A-Z → a-z)
+
+```typescript
+// ❌ WRONG - Causes case mismatch for Cyrillic
+const cleaned = searchText.toLowerCase();  // JS: "Совет" → "совет"
+const sql = `SELECT * FROM docs WHERE LOWER(content) LIKE ?`;
+// SQL: LOWER("Советский") → "Советский" (unchanged!)
+// Pattern "%совет%" doesn't match "Советский" ❌
+
+// ✅ CORRECT - Case-sensitive matching for Unicode
+const cleaned = searchText.trim();  // Keep original case
+const sql = `SELECT * FROM docs WHERE content LIKE ? ESCAPE '\\'`;
+// SQL: "Советский" LIKE "%Совет%" → TRUE ✅
+```
+
+**Why it fails:**
+- JavaScript `.toLowerCase()` uses Unicode case conversion (works for all scripts)
+- SQLite `LOWER()` ONLY converts A-Z → a-z (ignores Cyrillic, Chinese, Arabic, etc.)
+- Pattern becomes lowercase (JavaScript) but content stays uppercase (SQLite) → mismatch
+
+**Impact:**
+- Russian text: "Совет" won't match "Советский"
+- Chinese text: "中文" matching broken
+- Arabic text: "العربية" matching broken
+- Any non-ASCII script affected
+
+**Fix:** Remove both JavaScript `.toLowerCase()` and SQL `LOWER()`
+```typescript
+// DO NOT lowercase for Unicode compatibility
+const cleaned = searchText.trim();  // No .toLowerCase()!
+
+const sql = `
+  SELECT * FROM docs_default d
+  WHERE d.content LIKE ? ESCAPE '\\'  -- No LOWER()!
+`;
+```
+
+**Trade-off:**
+- ✅ Russian/Cyrillic substring search works
+- ⚠️ LIKE is now case-sensitive (e.g., "совет" won't match "Советский")
+- ✅ FTS5 still provides case-insensitive full-word search
+
+**Alternative solutions (if case-insensitive needed):**
+1. Use FTS5 for all searches (best option)
+2. Add SQLite ICU extension to WASM build (complex, increases size)
+3. Create dual LIKE patterns (search both cases)
+
+**Symptom:**
+- Substring searches with Cyrillic/Unicode return 0 results
+- Full word searches work (use FTS5, not LIKE)
+- English text works fine (ASCII-only)
+
+**File:** `src/database/worker/core/DatabaseWorker.ts` (lines 1029-1082)
+
+**Date discovered:** 2025-10-22 (Task 20251016_russian_search_diagnosis)
+
+---
+
 *This document captures surprising behaviors and easy-to-miss details. Update when you encounter a gotcha!*
