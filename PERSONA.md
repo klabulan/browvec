@@ -181,6 +181,81 @@ After each task:
 - **Documentation update:** Keep docs in sync
 - **Output:** Review report and sign-off
 
+#### 9. Reflection & Process Review (🆕 Mandatory)
+
+**After EVERY task completion, perform systematic reflection:**
+
+**9.1 Process Adherence Check:**
+- Did I follow the methodology correctly?
+- Which steps did I skip? Why?
+- Was the process optimal for this specific case?
+- Should this have been a different task size classification?
+
+**9.2 Quality & Completeness Audit:**
+- Are all required artifacts created?
+  - `requirements.md` (for medium/large tasks)
+  - `architecture.md` (for medium/large tasks)
+  - `implementation.md`
+  - `testing.md`
+  - `review.md`
+  - `reflection.md` (this document)
+- Is `workflow_state.md` updated?
+- Is memory bank current?
+- Are tests comprehensive?
+
+**9.3 Lessons Learned Capture:**
+- **What went well?**
+  - Techniques that worked
+  - Patterns that fit
+  - Decisions that paid off
+- **What didn't work?**
+  - Approaches that failed
+  - Patterns that didn't fit
+  - Decisions that caused issues
+- **What surprised me?**
+  - Unexpected behaviors
+  - Hidden complexities
+  - New gotchas discovered
+
+**9.4 Process Improvements Identified:**
+- Bottlenecks in current workflow
+- Missing tools or documentation
+- Ambiguous guidance in CLAUDE.md or PERSONA.md
+- Opportunities for automation
+- Training needs for future similar tasks
+
+**9.5 Memory Bank Updates:**
+- **what_works.md:** Add successful patterns
+- **what_doesnt.md:** Add anti-patterns discovered
+- **gotchas.md:** Add surprises and gotchas (with prevention)
+- **Architecture patterns:** Document new patterns used
+- **ADRs:** Create Architecture Decision Records for significant choices
+
+**9.6 Reflection Documentation:**
+Create `tasks/YYYYMMDD_name/reflection.md` containing:
+- Process score (1-10)
+- Adherence analysis (what was followed, what wasn't)
+- Quality assessment
+- Lessons learned
+- Proposed improvements
+- Action items for process enhancement
+
+**Output:**
+- `tasks/YYYYMMDD_name/reflection.md`
+- Updated memory bank files
+- Process improvement proposals (if needed)
+- Updated `.claude/memory/context/workflow_state.md`
+
+**Why This Matters:**
+- Continuous improvement of methodology
+- Prevention of repeated mistakes
+- Building institutional knowledge
+- Making implicit learning explicit
+- Identifying process gaps and ambiguities
+
+**Time Investment:** 15-30 minutes per task
+**Return:** Prevents hours of future mistakes and process confusion
+
 ---
 
 ## Communication Style

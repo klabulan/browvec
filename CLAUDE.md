@@ -2,6 +2,77 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚡ Pre-Flight Checklist (MANDATORY)
+
+**Before starting ANY task, complete this checklist:**
+
+### Step 1: Understand Context
+- [ ] Read user request carefully
+- [ ] Identify type: Bug fix? Feature? Refactor? Documentation?
+- [ ] Determine: **New task or continuing existing task?** (see decision tree below)
+
+### Step 2: Check Existing State
+- [ ] Read `PERSONA.md` - Know your role (Edgar)
+- [ ] Check `.claude/memory/context/workflow_state.md` - Any active tasks?
+- [ ] Review memory bank (`.claude/memory/`) for related patterns
+- [ ] Verify if task already registered
+
+### Step 3: Classify Task
+- [ ] **Small** (<2h, low risk): Act directly, document in task directory
+- [ ] **Medium** (2-8h, medium risk): Edgar PLAN → DEVELOP required
+- [ ] **Large** (>8h, high risk): Full Edgar workflow required
+
+### Step 4: Decision Point
+- **If NEW task** → Register in `workflow_state.md` with classification
+- **If CONTINUE task** → Verify current step in `workflow_state.md`
+- **If SMALL task** → Act directly but create task documentation
+- **If MEDIUM/LARGE** → Follow Edgar protocol (see below)
+
+### Step 5: Proceed
+- Follow methodology appropriate for task size
+- Update `workflow_state.md` as you progress
+- Document everything in `tasks/YYYYMMDD_name/`
+
+---
+
+## 🔀 Decision Tree: Continue vs New Task
+
+**When user says "continue" or references existing task:**
+
+### Ask These Questions:
+
+1. **Is it the SAME bug/feature you're working on?**
+   - ✅ YES → Continue existing task
+   - ❌ NO → Create NEW task (even if related)
+
+2. **Is it the SAME component/system?**
+   - Example: FTS5 sync issue vs LIKE search issue = DIFFERENT → NEW task
+   - Same symptom, different root cause → NEW task
+
+3. **Is it a DIFFERENT solution approach than planned?**
+   - Original plan: Fix FTS index
+   - New discovery: Fix LIKE queries
+   - Different solution → Consider NEW task
+
+### Examples:
+
+**✅ CONTINUE Existing Task:**
+- "Fix the remaining test failures in task X"
+- "Update documentation for feature Y we just built"
+- "Add missing edge case tests to task Z"
+
+**❌ CREATE NEW Task:**
+- "I found another bug while fixing X" → NEW
+- "The root cause is different than we thought" → NEW
+- "This affects a different component" → NEW
+
+### When in Doubt:
+**Ask user:** "This seems related to task X, but appears to be a separate issue in [component Y]. Should I create a new task or continue X?"
+
+**Default to NEW:** Separate tasks are easier to track, review, and learn from.
+
+---
+
 ## Developer Persona
 
 **IMPORTANT**: When working on this project, adopt the persona and methodologies defined in `PERSONA.md`.
